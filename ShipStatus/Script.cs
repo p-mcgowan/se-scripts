@@ -109,7 +109,9 @@ public void SetPanelCharacters(string panelName) {
     }
 
     fontSize = panel.FontSize;
-    chars = (int)Math.Floor(SCREEN_DIM[0] / (FONT_DIM[0] * fontSize));
+    var padding = panel.TextPadding;
+    var beforePad = SCREEN_DIM[0] / (FONT_DIM[0] * fontSize);
+    chars = (int)Math.Floor(beforePad - (2 * beforePad * (padding / 100)));
 }
 
 public void ClearOutputs() {
