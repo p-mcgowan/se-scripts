@@ -7,8 +7,8 @@
  */
 
 // Config vars
-const double TIME_OPEN = 750f;           // Durarion before auto close (milliseconds)
-const string DOOR_MATCH = "Door(.*)";  // The name to match (Default will match regular doors).
+const double TIME_OPEN = 750f;           // Duration before auto close (milliseconds)
+const string DOOR_MATCH = "Door(.*)";    // The name to match (Default will match regular doors).
                                          // The capture group "(.*)" is used when grouping airlock doors.
 const string DOOR_EXCLUDE = "Hangar";    // The exclusion tag (can be anything).
 
