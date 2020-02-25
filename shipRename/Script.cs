@@ -96,7 +96,7 @@ public void Main(string arg) {
                 if (dryRun) {
                     continue;
                 }
-                b.CustomName = newNameString;
+                b.CustomName = newNameString.Trim();
             }
         }
     }

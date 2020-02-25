@@ -1,22 +1,35 @@
-﻿const string MERGE = "Merge Block Main";
-const string SORTER = "IniScrub Conveyor Sorter";
-const string TOOLCON = "Connector Main";
-const string CARGOCON = "IniScrub Cargo Connector";
-const string WELDCON = "IniScrub Welder Output Connector";
+﻿public enum CFG {
+    CARGO_LIGHT,
+    CARGOCON,
+    MERGE,
+    SORTER,
+    TOOL_LIGHT,
+    TOOLCON,
+    WELD_LIGHT,
+    WELDCON
+};
 
-const string TOOL_LIGHT = "IniScrub Tool Light";
-const string CARGO_LIGHT = "IniScrub Cargo Light";
-const string WELD_LIGHT = "IniScrub Welder Light";
+public Dictionary<CFG, string> settings = new Dictionary<CFG, string>{
+    { CFG.MERGE, "Miner Merge Block" },
+    { CFG.TOOLCON, "Miner Connector Tool" },
+    { CFG.SORTER, "" },
+    { CFG.CARGOCON, "" },
+    { CFG.WELDCON, "" },
+    { CFG.TOOL_LIGHT, "" },
+    { CFG.CARGO_LIGHT, "" },
+    { CFG.WELD_LIGHT, "" }
+};
 
-Dictionary<string, IMyTerminalBlock> blocks = new Dictionary<string, IMyTerminalBlock>();
+Dictionary<CFG, IMyTerminalBlock> blocks = new Dictionary<CFG, IMyTerminalBlock>();
 
 // Multiple interface workaround
-public MyShipConnectorStatus Do(string name, string what) {
-    IMyTerminalBlock block = blocks[name];
-    if (block == null) {
+public MyShipConnectorStatus Do(CFG name, string what) {
+    if (!blocks.ContainsKey(name)) {
         Echo("Block not found: " + name);
         return MyShipConnectorStatus.Unconnected;
     }
+
+    IMyTerminalBlock block = blocks[name];
     switch (what) {
         case "SwitchLock":
             (block as IMyShipConnector).ApplyAction("SwitchLock");
@@ -47,12 +60,12 @@ public MyShipConnectorStatus Do(string name, string what) {
 }
 
 // Connector helper
-public bool Is(string name, string what) {
-    IMyShipConnector block = blocks[name] as IMyShipConnector;
-    if (block == null) {
+public bool Is(CFG name, string what) {
+    if (!blocks.ContainsKey(name)) {
         Echo("Block not found: " + name);
         return false;
     }
+    IMyShipConnector block = blocks[name] as IMyShipConnector;
     MyShipConnectorStatus status = block.Status;
     switch (what) {
         case "Connected": return status == MyShipConnectorStatus.Connected;
@@ -63,36 +76,36 @@ public bool Is(string name, string what) {
 }
 
 public void setLights() {
-    Do(TOOL_LIGHT, "Disable");
-    Do(CARGO_LIGHT, "Disable");
-    Do(WELD_LIGHT, "Disable");
-    if (Is(WELDCON, "Connected")) {
-        Do(WELD_LIGHT, "Enable");
+    Do(CFG.TOOL_LIGHT, "Disable");
+    Do(CFG.CARGO_LIGHT, "Disable");
+    Do(CFG.WELD_LIGHT, "Disable");
+    if (Is(CFG.WELDCON, "Connected")) {
+        Do(CFG.WELD_LIGHT, "Enable");
     }
-    if (Is(TOOLCON, "Connected")) {
-        Do(TOOL_LIGHT, "Enable");
+    if (Is(CFG.TOOLCON, "Connected")) {
+        Do(CFG.TOOL_LIGHT, "Enable");
     }
-    if (Is(CARGOCON, "Connected")) {
-        Do(CARGO_LIGHT, "Enable");
+    if (Is(CFG.CARGOCON, "Connected")) {
+        Do(CFG.CARGO_LIGHT, "Enable");
     }
 }
 
-public bool SetConnection(string which, string dir = "Lock") {
-    switch (which) {
-        case CARGOCON:
-            Do(SORTER, "Enable");
-            Do(TOOLCON, "Lock");
-            Do(WELDCON, "Unlock");
-        break;
-        case WELDCON:
-            Do(SORTER, "Disable");
-            Do(TOOLCON, "Unlock");
-        break;
-        case TOOLCON:
-            Do(SORTER, "Enable");
-            Do(WELDCON, "Unlock");
-        break;
+public bool SetConnection(CFG which, string dir = "Lock") {
+    if (blocks[which] == null) {
+        return false;
     }
+    if (which == CFG.CARGOCON) {
+        Do(CFG.SORTER, "Enable");
+        Do(CFG.TOOLCON, "Lock");
+        Do(CFG.WELDCON, "Unlock");
+    } else if (which == CFG.WELDCON) {
+        Do(CFG.SORTER, "Disable");
+        Do(CFG.TOOLCON, "Unlock");
+    } else if (which == CFG.TOOLCON) {
+        Do(CFG.SORTER, "Enable");
+        Do(CFG.WELDCON, "Unlock");
+    }
+
     Do(which, dir);
     setLights();
     if (dir == "Lock") {
@@ -102,27 +115,25 @@ public bool SetConnection(string which, string dir = "Lock") {
     }
 }
 
-public void Main(string arg) {
+public void SetBlocks() {
     blocks.Clear();
-    blocks.Add(MERGE, GridTerminalSystem.GetBlockWithName(MERGE) as IMyShipMergeBlock);
-    blocks.Add(SORTER, GridTerminalSystem.GetBlockWithName(SORTER) as IMyConveyorSorter);
-    blocks.Add(TOOLCON, GridTerminalSystem.GetBlockWithName(TOOLCON) as IMyShipConnector);
-    blocks.Add(CARGOCON, GridTerminalSystem.GetBlockWithName(CARGOCON) as IMyShipConnector);
-    blocks.Add(WELDCON, GridTerminalSystem.GetBlockWithName(WELDCON) as IMyShipConnector);
-    blocks.Add(TOOL_LIGHT, GridTerminalSystem.GetBlockWithName(TOOL_LIGHT) as IMyInteriorLight);
-    blocks.Add(CARGO_LIGHT, GridTerminalSystem.GetBlockWithName(CARGO_LIGHT) as IMyInteriorLight);
-    blocks.Add(WELD_LIGHT, GridTerminalSystem.GetBlockWithName(WELD_LIGHT) as IMyInteriorLight);
+    foreach (KeyValuePair<CFG, string> setting in settings) {
+        if (setting.Value != "") {
+            blocks.Add(setting.Key, GridTerminalSystem.GetBlockWithName(setting.Value));
+        }
+    }
+}
 
-    var err = false;
+public void Main(string arg) {
+    SetBlocks();
+
     foreach (var dictionKeyVal in blocks) {
         if (dictionKeyVal.Value == null) {
-            err = true;
             Echo("WARN: Couldnt find block: " + dictionKeyVal.Key);
         }
     }
-    // if (err) { return; }
 
-    if (arg.Length > 0 && arg == "TOGGLE") {
+    if (arg.Length > 0 && arg.ToLower() == "toggle") {
         var tools = new List<IMyShipToolBase>();
         GridTerminalSystem.GetBlocksOfType<IMyShipToolBase>(tools, t => t is IMyShipGrinder || t is IMyShipWelder);
         bool on = false;
@@ -136,35 +147,45 @@ public void Main(string arg) {
             tool.Enabled = !on;
         }
         return;
-    } else if (arg.Length > 0 && arg == "MERGE") {
-        bool mergeOn = blocks[MERGE].GetValue<bool>("OnOff");
-        bool toolConnected = Is(TOOLCON, "Connected");
-        if (mergeOn && Is(TOOLCON, "Connected")) {  // Merge block off
-            Do(TOOLCON, "Unlock");
-            Do(WELDCON, "Unlock");
-            Do(MERGE, "OnOff_Off");
-        } else if (mergeOn && Is(TOOLCON, "Connectable")) {
-            Do(TOOLCON, "Lock");
+    } else if (arg.Length > 0 && arg.ToLower() == "merge") {
+        bool mergeOn = blocks[CFG.MERGE].GetValue<bool>("OnOff");
+        bool toolConnected = Is(CFG.TOOLCON, "Connected");
+        bool toolConnectable = Is(CFG.TOOLCON, "Connectable");
+
+        Echo("mergeOn: " + mergeOn.ToString());
+        Echo("toolConnected: " + toolConnected.ToString());
+        Echo("toolConnectable: " + toolConnectable.ToString());
+
+        if (mergeOn) {  // CFG.Merge block off
+            if (toolConnected) {
+                Do(CFG.TOOLCON, "Unlock");
+                Do(CFG.WELDCON, "Unlock");
+                Do(CFG.MERGE, "OnOff_Off");
+            } else if (toolConnectable) {
+                Do(CFG.TOOLCON, "Lock");
+            } else {
+                Do(CFG.MERGE, "OnOff_Off");
+            }
         } else {
-            Do(MERGE, "OnOff_On");
-            Do(TOOLCON, "Lock");  // Chances are this will not lock, but try anyway
+            Do(CFG.MERGE, "OnOff_On");
+            Do(CFG.TOOLCON, "Lock");  // Chances are this will not lock, but try anyway
         }
         setLights();
         return;
     }
 
-    Do(MERGE, "OnOff_On");
-    if (Is(CARGOCON, "Connectable")) {
-        SetConnection(CARGOCON);
-    } else if (Is(CARGOCON, "Connected")) {
-        SetConnection(CARGOCON, "Unlock");
+    Do(CFG.MERGE, "OnOff_On");
+    if (Is(CFG.CARGOCON, "Connectable")) {
+        SetConnection(CFG.CARGOCON);
+    } else if (Is(CFG.CARGOCON, "Connected")) {
+        SetConnection(CFG.CARGOCON, "Unlock");
     } else {
         var grinders = new List<IMyShipGrinder>();
         GridTerminalSystem.GetBlocksOfType<IMyShipGrinder>(grinders);
-        if (!grinders.Any() && Is(TOOLCON, "Connected")) {
-            SetConnection(WELDCON);
+        if (!grinders.Any() && Is(CFG.TOOLCON, "Connected")) {
+            SetConnection(CFG.WELDCON);
         } else {
-            SetConnection(TOOLCON);
+            SetConnection(CFG.TOOLCON);
         }
     }
 }

@@ -3,51 +3,80 @@
  */
 
 public enum CFG {
-    BLOCK_HEALTH, POWER, PRODUCTION, CARGO, CARGO_CAP, CARGO_CAP_STYLE, INPUT, POWER_BAR, JUMP_BAR
+    BLOCK_HEALTH,
+    POWER,
+    PRODUCTION,
+    CARGO,
+    CARGO_CAP,
+    CARGO_CAP_STYLE,
+    INPUT,
+    POWER_BAR,
+    JUMP_BAR
 };
 
-// By default, most things go to the same panel
-const string MAIN_PANEL = "Text panel status";
+public Dictionary<string, CFG> stringToConfig = new Dictionary<string, CFG> {
+    { "BLOCK_HEALTH", CFG.BLOCK_HEALTH },
+    { "POWER", CFG.POWER },
+    { "PRODUCTION", CFG.PRODUCTION },
+    { "CARGO", CFG.CARGO },
+    { "CARGO_CAP", CFG.CARGO_CAP },
+    { "CARGO_CAP_STYLE", CFG.CARGO_CAP_STYLE },
+    { "INPUT", CFG.INPUT },
+    { "POWER_BAR", CFG.POWER_BAR },
+    { "JUMP_BAR", CFG.JUMP_BAR }
+};
 
 // non-empty strings enable programs
 // for surface selection, use 'name <number>' eg: 'Cockpit <1>'
+// You can also set the program block's CustomData instead (split on '\n' or ',')
+// This will override settings eg:
+/*
+BLOCK_HEALTH=Text panel Status
+POWER=Control Seat <0>
+PRODUCTION=Text panel Production
+CARGO=Text panel Cargo
+CARGO_CAP=Control Seat <2>
+CARGO_CAP_STYLE=small
+INPUT=Corner LCD
+POWER_BAR=Control Seat <1>
+JUMP_BAR=Jump panel
+*/
 public Dictionary<CFG, string> settings = new Dictionary<CFG, string>{
-    { CFG.BLOCK_HEALTH, MAIN_PANEL },
-    { CFG.POWER, MAIN_PANEL },
-    { CFG.PRODUCTION, MAIN_PANEL },
-    { CFG.CARGO, MAIN_PANEL },
-    { CFG.CARGO_CAP, "Cargo bar" },
+    { CFG.BLOCK_HEALTH, "Corvette Cockpit <2>" },
+    { CFG.POWER, "Corvette Cockpit <1>" },
+    { CFG.PRODUCTION, "" },
+    { CFG.CARGO, "Corvette Cockpit <0>" },
+    { CFG.CARGO_CAP, "" },
     // If style is "small", does not print "Cargo status: " on the first line
     // (only the precent bar)
     { CFG.CARGO_CAP_STYLE, "" },
-    { CFG.INPUT, "Console input" },
-    { CFG.POWER_BAR, "Power bar" },
-    { CFG.JUMP_BAR, "Jump bar" }
+    { CFG.INPUT, "" },
+    { CFG.POWER_BAR, "Corvette Cockpit <1>" },
+    { CFG.JUMP_BAR, "" }
 };
 
+// Run once on start - set to false to disable CustomData check
+public bool shouldCheckCustomData = true;
+
+// drawing config
 const char BAR_EMPTY = '_';
 const char BAR_FULL = '\u2588';
 const char LINE_SPACER = ' ';  // for small fonts, will help find corresponding value
-const double CHECK_FREQ_MS = 2 * 60 * 1000;  // how often we turn the machines back on
-const double ON_WAIT_MS = 5 * 1000;
-const double OUT_TIME_MS = 3 * 1000;  // after entering cmd, show text for this length of time
-const string IGNORE_STRING = "[x]";  // Don't show these blocks
-const string PRODUCTION_INPUT_PANEL = "Text panel production input";
-const string STATUS_PANEL_CFG = "Text panel status";
 public static readonly float[] FONT_DIM = { 30f - 2f, 42f - 2f };
 public static readonly int[] SCREEN_DIM = { 738, 708 };
 
+// production config
+const double PRODUCTION_CHECK_FREQ_MS = 2 * 60 * 1000;  // how often we turn the machines back on
+const double PRODUCTION_ON_WAIT_MS = 5 * 1000;
+const double PRODUCTION_OUT_TIME_MS = 3 * 1000;  // after entering cmd, show text for this length of time
+const string PRODUCTION_IGNORE_STRING = "[x]";  // Don't show these blocks
 bool checking = false;
-Color blue = new Color(0, 60, 255);
-Color green = new Color(0, 240, 0);
-Color red = new Color(255, 0, 0);
-Color yellow = new Color(255, 255, 0);
-double fontSize = 0;
 double idleTime = 0;
 double lastCheck = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
 double outLock = 0;
 double timeDisabled = 0;
-int chars = 0;
+
+// globals so we don't look for them every update
 List<IMyTerminalBlock> cargo = new List<IMyTerminalBlock>();
 List<ProductionBlock> productionBlocks = new List<ProductionBlock>();
 
@@ -95,8 +124,9 @@ public static class Util {
     }
 }
 
-public bool invalid(CFG cfg) {
-    return settings[cfg] == "" || !SetPanelCharacters(settings[cfg]);
+public bool CanWriteToSurface(string name) {
+    int chars;
+    return name != "" && GetPanelWidthInChars(name, out chars);
 }
 
 System.Text.RegularExpressions.Regex pnameSplitter = new System.Text.RegularExpressions.Regex(
@@ -121,7 +151,8 @@ public void GetPanelAndSurfaceId(string input, out IMyTerminalBlock panel, out i
     return;
 }
 
-public bool SetPanelCharacters(string panelName) {
+public bool GetPanelWidthInChars(string panelName, out int chars) {
+    chars = 0;
     if (panelName == "") {
         return false;
     }
@@ -139,10 +170,24 @@ public bool SetPanelCharacters(string panelName) {
         return false;
     }
 
-    fontSize = surface.FontSize;
+    surface.ContentType = ContentType.TEXT_AND_IMAGE;
+    StringBuilder sb = new StringBuilder(" ");
+    Vector2 charSizeInPx = surface.MeasureStringInPixels(sb, surface.Font, surface.FontSize);
+
     var padding = surface.TextPadding;
-    var beforePad = SCREEN_DIM[0] / (FONT_DIM[0] * fontSize);
-    chars = (int)Math.Floor(beforePad - (2 * beforePad * (padding / 100)));
+    var surfaceWidthPx = surface.SurfaceSize.X;
+    var textableSurfacePx = surfaceWidthPx - (padding / 50 * surfaceWidthPx);
+    var charsPerWidth = Math.Floor(textableSurfacePx / charSizeInPx.X);
+
+    float aspect = surface.SurfaceSize.X / surface.SurfaceSize.Y;
+
+    if (aspect < 1.6f) {  // irregular panels (cockpit sides, etc)
+        charsPerWidth *= 2;
+    } else if (aspect > 4f) {  // flight seat is huge
+        charsPerWidth *= 4;
+    }
+    chars = (int)(charsPerWidth - 1f);  // magic numbers
+
     return true;
 }
 
@@ -155,6 +200,9 @@ public void ClearOutputs() {
 }
 
 public void WriteToLCD(string panelName, string msg, bool append = false) {
+    if (!CanWriteToSurface(panelName)) {
+        return;
+    }
     IMyTerminalBlock panel;
     int surfaceId;
     GetPanelAndSurfaceId(panelName, out panel, out surfaceId);
@@ -163,21 +211,35 @@ public void WriteToLCD(string panelName, string msg, bool append = false) {
         return;
     }
 
-    IMyTextSurface surface = panel is IMyTextSurface
-        ? (IMyTextSurface)panel
-        : ((IMyTextSurfaceProvider)panel).GetSurface(surfaceId);
+    IMyTextSurface surface;
+    if (panel is IMyTextSurface) {
+        surface = (IMyTextSurface)panel;
+    } else {
+        surface = ((IMyTextSurfaceProvider)panel).GetSurface(surfaceId);
+    }
+
+    if (surface == null) {
+        Echo("no surface?" + panelName);
+        return;
+    }
 
     surface.ContentType = ContentType.TEXT_AND_IMAGE;
     surface.Font = "Monospace";
     surface.WriteText(msg, append);
 }
 
-public string ProgressBar(float charge, bool withPct = true, int gaps = 6) {
+public string ProgressBar(CFG cfg, float charge, bool withPct = true, int gaps = 6) {
+    string targetPanel = settings[cfg];
+    int chars;
+    if (!GetPanelWidthInChars(targetPanel, out chars)) {
+        return "";
+    }
+
     var pct = Util.PctString(charge);
     var barLen = (int)chars - gaps;
     var barFillLen = (int)Math.Floor(barLen * charge);
     if (barFillLen < 0 || barLen - barFillLen < 0) {
-        Echo("Got odd value to bar length");
+        Echo("Got odd value for bar length: " + chars.ToString());
         return "~~~~~";
     }
     return "[".PadRight(barFillLen, BAR_FULL) +
@@ -246,7 +308,7 @@ public class ProductionBlock {
 public void GetProductionBlocks(Program p) {
     var producers = new List<IMyProductionBlock>();
     GridTerminalSystem.GetBlocksOfType<IMyProductionBlock>(producers, b =>
-        b.CubeGrid == Me.CubeGrid && (b is IMyAssembler || b is IMyRefinery) && !b.CustomName.Contains(IGNORE_STRING));
+        b.CubeGrid == Me.CubeGrid && (b is IMyAssembler || b is IMyRefinery) && !b.CustomName.Contains(PRODUCTION_IGNORE_STRING));
     productionBlocks.Clear();
     foreach (var block in producers) {
         productionBlocks.Add(new ProductionBlock(p, block));
@@ -255,26 +317,19 @@ public void GetProductionBlocks(Program p) {
 }
 
 public void HandleInput() {
-    if (settings[CFG.INPUT] == "") {
+    if (!CanWriteToSurface(settings[CFG.INPUT])) {
         return;
     }
     var now = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
 
     // Wait 4s before accepting more input
     if (outLock != 0) {
-        if (now - outLock > OUT_TIME_MS) {
+        if (now - outLock > PRODUCTION_OUT_TIME_MS) {
             outLock = 0;
-            if (!SetPanelCharacters(settings[CFG.INPUT])) {
-                return;
-            };
             WriteToLCD(settings[CFG.INPUT], ">: ");
         } else {
             return;
         }
-    }
-
-    if (!SetPanelCharacters(settings[CFG.INPUT])) {
-        return;
     }
 
     var productionInputPanel = GridTerminalSystem.GetBlockWithName(settings[CFG.INPUT]) as IMyTextPanel;
@@ -329,19 +384,31 @@ public void HandleInput() {
                     "off            : turn off all machines",
                     "d, disassemble : run disassembler(s)",
                     "h, help        : show this menu" };
-                if (!SetPanelCharacters(settings[CFG.PRODUCTION])) {
-                    return;
-                }
                 WriteToLCD(settings[CFG.PRODUCTION], String.Join("\n", o));
             }
         break;
     }
 }
 
-public string[] DoPowerDetails(Program program) {
-    if (invalid(CFG.POWER) && invalid(CFG.JUMP_BAR) && invalid(CFG.POWER) && invalid(CFG.POWER_BAR)) {
+public class PowerDetails {
+    public string main;
+    public string jumpBar;
+    public string powerBar;
+
+    public PowerDetails() {
+        this.main = "";
+        this.jumpBar = "";
+        this.powerBar = "";
+    }
+}
+
+public PowerDetails DoPowerDetails(Program program) {
+    if (!CanWriteToSurface(settings[CFG.POWER]) && !CanWriteToSurface(settings[CFG.JUMP_BAR]) && !CanWriteToSurface(settings[CFG.POWER]) && !CanWriteToSurface(settings[CFG.POWER_BAR])) {
         return null;
     }
+
+    PowerDetails details = new PowerDetails();
+
     List<IMyJumpDrive> jumpDrives = new List<IMyJumpDrive>();
     List<IMyBatteryBlock> batteries = new List<IMyBatteryBlock>();
     List<IMyReactor> reactors = new List<IMyReactor>();
@@ -356,33 +423,26 @@ public string[] DoPowerDetails(Program program) {
     float currentReactorOut = 0;
     MyFixedPoint uraniumCount = 0;
     List<string> progressBars = new List<string>();
-    string[] powerAndJump = new string[6];
 
-    if (jumpDrives.Any() && (settings[CFG.POWER] != "" || settings[CFG.JUMP_BAR] != "")) {
+    if (jumpDrives.Any() && (CanWriteToSurface(settings[CFG.POWER]) || CanWriteToSurface(settings[CFG.JUMP_BAR]))) {
         foreach (IMyJumpDrive d in jumpDrives) {
-            // progressBars.Add(d.CustomName + Util.PctString(d.CurrentStoredPower / d.MaxStoredPower).PadLeft((int)chars - d.CustomName.Length));
             currentCharge += d.CurrentStoredPower;
             maxCharge += d.MaxStoredPower;
         }
-        SetPanelCharacters(settings[CFG.POWER]);
-        powerAndJump[0] = "Jump drive status (" + jumpDrives.Count.ToString() + " found):\n" + ProgressBar(currentCharge / maxCharge);
-        SetPanelCharacters(settings[CFG.JUMP_BAR]);
-        powerAndJump[2] = "Jump drive status (" + jumpDrives.Count.ToString() + " found):\n" + ProgressBar(currentCharge / maxCharge);
+        details.main = "Jump drive status (" + jumpDrives.Count.ToString() + " found):\n" + ProgressBar(CFG.POWER, currentCharge / maxCharge) + "\n";
+        details.jumpBar = "Jump drive status (" + jumpDrives.Count.ToString() + " found):\n" + ProgressBar(CFG.JUMP_BAR, currentCharge / maxCharge) + "\n";
     }
 
-    if (batteries.Any() && (settings[CFG.POWER] != "" || settings[CFG.POWER_BAR] != "")) {
+    if (batteries.Any() && (CanWriteToSurface(settings[CFG.POWER]) || CanWriteToSurface(settings[CFG.POWER_BAR]))) {
         foreach (IMyBatteryBlock d in batteries) {
-            // progressBars.Add(d.CustomName + Util.PctString(d.CurrentStoredPower / d.MaxStoredPower).PadLeft((int)chars - d.CustomName.Length));
             currentBattCharge += d.CurrentStoredPower;
             maxBattCharge += d.MaxStoredPower;
         }
-        SetPanelCharacters(settings[CFG.POWER]);
-        powerAndJump[1] = "Battery status (" + batteries.Count.ToString() + " found):\n" + ProgressBar(currentBattCharge / maxBattCharge);
-        SetPanelCharacters(settings[CFG.POWER_BAR]);
-        powerAndJump[3] = "Battery status (" + batteries.Count.ToString() + " found):\n" + ProgressBar(currentBattCharge / maxBattCharge);
+        details.main += "Battery status (" + batteries.Count.ToString() + " found):\n" + ProgressBar(CFG.POWER, currentBattCharge / maxBattCharge) + "\n";
+        details.powerBar = "Battery status (" + batteries.Count.ToString() + " found):\n" + ProgressBar(CFG.POWER_BAR, currentBattCharge / maxBattCharge) + "\n";
     }
 
-    if (reactors.Any() && (!invalid(CFG.POWER))) {
+    if (reactors.Any() && CanWriteToSurface(settings[CFG.POWER])) {
         foreach (IMyReactor d in reactors) {
             currentReactorOut += d.CurrentOutput;
             var inv = d.GetInventory(0);
@@ -393,21 +453,19 @@ public string[] DoPowerDetails(Program program) {
                 uraniumCount += items[i].Amount;
             }
         }
-        SetPanelCharacters(settings[CFG.POWER]);
-        powerAndJump[4] = "Reactor status (" + reactors.Count.ToString() + " found):\n"
-            + "Output: " + currentReactorOut.ToString() + " MW\nUranium: " + Util.FormatNumber(uraniumCount);
+
+        details.main += "Reactor status (" + reactors.Count.ToString() + " found):\n"
+            + "Output: " + currentReactorOut.ToString() + " MW\nUranium: " + Util.FormatNumber(uraniumCount) + "\n";
     }
 
-    return powerAndJump;
+    return details;
 }
 
 
 public string DoProductionDetails(Program p) {
-    if (invalid(CFG.PRODUCTION)) {
+    if (!CanWriteToSurface(settings[CFG.PRODUCTION])) {
         return "";
     }
-
-    SetPanelCharacters(settings[CFG.PRODUCTION]);
 
     if (!productionBlocks.Any()) {
         GetProductionBlocks(p);
@@ -442,8 +500,8 @@ public string DoProductionDetails(Program p) {
             timeDisabled = timeNow;
         } else {
             if (!checking) {
-                if (timeNow - lastCheck > CHECK_FREQ_MS)  {
-                    // We disabled them over CHECK_FREQ_MS ago, and need to check them
+                if (timeNow - lastCheck > PRODUCTION_CHECK_FREQ_MS)  {
+                    // We disabled them over PRODUCTION_CHECK_FREQ_MS ago, and need to check them
                     // Do another check for blocks, just to make sure we have the latest
                     GetProductionBlocks(p);
                     foreach (var block in productionBlocks) {
@@ -454,7 +512,7 @@ public string DoProductionDetails(Program p) {
                     output = String.Format("Power saving mode {0} (checking)\n\n", Util.TimeFormat(timeNow - idleTime));
                 }
             } else {
-                if (timeNow - lastCheck > ON_WAIT_MS) {
+                if (timeNow - lastCheck > PRODUCTION_ON_WAIT_MS) {
                     // We waited 5 seconds and they are still not producing
                     foreach (var block in productionBlocks) {
                         block.Enabled = false;
@@ -469,7 +527,7 @@ public string DoProductionDetails(Program p) {
         if (output == "") {
             output = String.Format("Power saving mode {0} (check in {1})\n\n",
                 Util.TimeFormat(timeNow - idleTime),
-                Util.TimeFormat(CHECK_FREQ_MS - (timeNow - lastCheck), true));
+                Util.TimeFormat(PRODUCTION_CHECK_FREQ_MS - (timeNow - lastCheck), true));
         }
     } else {
         if (productionBlocks.Where(b => b.Status() == "Blocked").ToList().Any()) {
@@ -516,18 +574,21 @@ public class CargoStatus {
     public string itemText;
     public float pct;
 
-    public CargoStatus(string bar, string barCap, string text, float pct) {
-        this.bar = bar;
-        this.barCap = barCap;
-        this.itemText = text;
-        this.pct = pct;
+    public CargoStatus() {
+        this.bar = "";
+        this.barCap = "";
+        this.itemText = "";
+        this.pct = 0f;
     }
 }
 
 public CargoStatus DoCargoStatus() {
-    if (invalid(CFG.CARGO) && invalid(CFG.CARGO_CAP)) {
+    if (!CanWriteToSurface(settings[CFG.CARGO]) && !CanWriteToSurface(settings[CFG.CARGO_CAP])) {
         return null;
     }
+
+    CargoStatus status = new CargoStatus();
+
     GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(cargo, c => c.CubeGrid == Me.CubeGrid &&
         (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipWelder || c is IMyShipGrinder || c is IMyShipConnector));
 
@@ -553,21 +614,37 @@ public CargoStatus DoCargoStatus() {
             }
         }
     }
-    float charge = (float)vol / (float)max;
-    SetPanelCharacters(settings[CFG.CARGO_CAP]);
-    string barCap = ProgressBar(charge, false, 1);
 
-    SetPanelCharacters(settings[CFG.CARGO]);
-    string barMain = ProgressBar(charge, false, 1);
+    status.pct = (float)vol / (float)max;
+    status.barCap = ProgressBar(CFG.CARGO_CAP, status.pct, false, 2);
+    status.bar = ProgressBar(CFG.CARGO, status.pct, false, 2);
+
     string itemText = "";
+    int chars;
+    GetPanelWidthInChars(settings[CFG.CARGO], out chars);
+
+    int itemIndex = 0;
+    int doubleColumn = 60;
     foreach (var item in itemList) {
         var fmtd = Util.FormatNumber(item.Value);
-        var padLen = (int)(chars - item.Key.ToString().Length - fmtd.Length);
+        int maxChars = chars;
+        if (chars > doubleColumn) {
+            maxChars = (chars - 4) / 2;
+        }
+        var padLen = (int)(maxChars - item.Key.ToString().Length - fmtd.Length);
         string spacing = (padLen >= 0 ? "".PadRight(padLen, LINE_SPACER) : "\n  ");
-        itemText += String.Format("{0}{1}{2}\n", item.Key, spacing, fmtd);
+        itemText += String.Format("{0}{1}{2}", item.Key, spacing, fmtd);
+        if (chars <= doubleColumn || itemIndex % 2 != 0) {
+            itemText += '\n';
+        } else if (chars > doubleColumn) {
+            itemText += "   ";
+        }
+        itemIndex++;
     }
 
-    return new CargoStatus(barMain, barCap, itemText, charge);
+    status.itemText = itemText;
+
+    return status;
 }
 
 // Show damaged blocks
@@ -580,20 +657,22 @@ public float GetHealth(IMyTerminalBlock block) {
 }
 
 public string DoBlockHealth() {
-    if (invalid(CFG.BLOCK_HEALTH)) {
+    if (!CanWriteToSurface(settings[CFG.BLOCK_HEALTH])) {
         return null;
     }
-    SetPanelCharacters(settings[CFG.BLOCK_HEALTH]);
+
     var blocks = new List<IMyTerminalBlock>();
-    GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(blocks);
+    GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(blocks, b => b.CubeGrid == Me.CubeGrid);
     string output = "";
+
+    int chars;
+    GetPanelWidthInChars(settings[CFG.BLOCK_HEALTH], out chars);
 
     foreach (var b in blocks) {
         var health = GetHealth(b);
         if (health != 1f) {
-            Echo(b.CustomName + " " + Util.PctString(GetHealth(b)));
-            if (settings[CFG.BLOCK_HEALTH] != "") {
-                output += b.CustomName + Util.PctString(GetHealth(b)).PadLeft((int)chars - b.CustomName.Length) + '\n';
+            if (CanWriteToSurface(settings[CFG.BLOCK_HEALTH])) {
+                output += b.CustomName + " [" + Util.PctString(GetHealth(b)) + "]\n";
             }
             b.ShowOnHUD = true;
         } else {
@@ -610,57 +689,82 @@ public string DoBlockHealth() {
     return output + '\n';
 }
 
+public void ParseCustomData() {
+    shouldCheckCustomData = false;
+    string sx = Me.CustomData;
+    if (Me.CustomData == null || Me.CustomData == "") {
+        return;
+    }
+
+    // clear cfg
+    Array values = Enum.GetValues(typeof(CFG));
+    foreach (CFG val in values) {
+        settings[val] = "";
+    }
+
+    var items = sx.Split(new[] { '\n', ',' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Split(new[] { '=' }));
+    foreach (var item in items) {
+        if (stringToConfig.ContainsKey(item[0])) {
+            CFG setting;
+            stringToConfig.TryGetValue(item[0], out setting);
+            settings[setting] = item[1];
+        } else {
+            Echo(String.Format("Unknown config '{0}'", item[0].ToString()));
+        }
+    }
+}
+
 public void Main(string argument, UpdateType updateSource) {
+    if (shouldCheckCustomData) {
+        ParseCustomData();
+    }
     HandleInput();
     if (outLock != 0) {
         return;
     }
     ClearOutputs();
 
-    string[] allPower = DoPowerDetails(this);
+    PowerDetails powerDetails = DoPowerDetails(this);
 
-    if (!invalid(CFG.POWER)) {
-        string jump = allPower[0] != null ? allPower[0] + "\n\n" : "";
-        string batt = allPower[1] != null ? allPower[1] + "\n\n" : "";
-        string react = allPower[4] != null ? allPower[4] + "\n\n" : "";
-        WriteToLCD(settings[CFG.POWER], jump + batt + react, true);
+    if (CanWriteToSurface(settings[CFG.POWER]) && powerDetails.main != "") {
+        WriteToLCD(settings[CFG.POWER], powerDetails.main, true);
     }
 
-    if (!invalid(CFG.JUMP_BAR)) {
-        WriteToLCD(settings[CFG.JUMP_BAR], allPower[2]);
+    if (CanWriteToSurface(settings[CFG.JUMP_BAR]) && powerDetails.jumpBar != "") {
+        WriteToLCD(settings[CFG.JUMP_BAR], powerDetails.jumpBar, true);
     }
 
-    if (!invalid(CFG.POWER_BAR)) {
-        WriteToLCD(settings[CFG.POWER_BAR], allPower[3]);
+    if (CanWriteToSurface(settings[CFG.POWER_BAR]) && powerDetails.powerBar != "") {
+        WriteToLCD(settings[CFG.POWER_BAR], powerDetails.powerBar, true);
     }
 
-    if (!invalid(CFG.BLOCK_HEALTH)) {
+    if (CanWriteToSurface(settings[CFG.BLOCK_HEALTH])) {
         string blockHealth = DoBlockHealth();
         WriteToLCD(settings[CFG.BLOCK_HEALTH], blockHealth, true);
     }
 
-    if (!invalid(CFG.PRODUCTION)) {
+    if (CanWriteToSurface(settings[CFG.PRODUCTION])) {
         WriteToLCD(settings[CFG.PRODUCTION], DoProductionDetails(this), true);
     }
 
     CargoStatus cStats = null;
 
-    if (!invalid(CFG.CARGO_CAP)) {
+    if (CanWriteToSurface(settings[CFG.CARGO_CAP])) {
         cStats = DoCargoStatus();
         if (settings[CFG.CARGO_CAP_STYLE] == "small") {
-            SetPanelCharacters(settings[CFG.CARGO_CAP]);
-            WriteToLCD(settings[CFG.CARGO_CAP], ProgressBar(cStats.pct, false, 7));
+            WriteToLCD(settings[CFG.CARGO_CAP], ProgressBar(CFG.CARGO_CAP, cStats.pct, false, 7), true);
         } else {
-            WriteToLCD(settings[CFG.CARGO_CAP], "Cargo status: " + Util.PctString(cStats.pct) + '\n' + cStats.barCap);
+            WriteToLCD(settings[CFG.CARGO_CAP], "Cargo status: " + Util.PctString(cStats.pct) + '\n' + cStats.barCap, true);
         }
     }
 
-    if (!invalid(CFG.CARGO)) {
+    if (CanWriteToSurface(settings[CFG.CARGO])) {
         if (cStats == null) {
             cStats = DoCargoStatus();
         }
 
-        if (settings[CFG.CARGO_CAP] == "") {
+        // dont write status if it's on another panel
+        if (!CanWriteToSurface(settings[CFG.CARGO_CAP])) {
             WriteToLCD(settings[CFG.CARGO], "Cargo status: " + Util.PctString(cStats.pct) + '\n' + cStats.bar, true);
         }
         WriteToLCD(settings[CFG.CARGO], cStats.itemText, true);
