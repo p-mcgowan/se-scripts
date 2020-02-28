@@ -124,12 +124,19 @@ public static class Util {
     }
 }
 
+public static System.Text.RegularExpressions.Regex Regex(
+    string pattern,
+    System.Text.RegularExpressions.RegexOptions opts = System.Text.RegularExpressions.RegexOptions.None
+) {
+    return new System.Text.RegularExpressions.Regex(pattern, opts);
+}
+
 public bool CanWriteToSurface(string name) {
     int chars;
     return name != "" && GetPanelWidthInChars(name, out chars);
 }
 
-System.Text.RegularExpressions.Regex pnameSplitter = new System.Text.RegularExpressions.Regex(
+System.Text.RegularExpressions.Regex pnameSplitter = Regex(
     @"\s<(\d+)>$",
     System.Text.RegularExpressions.RegexOptions.Compiled
 );
@@ -596,6 +603,8 @@ public CargoStatus DoCargoStatus() {
     VRage.MyFixedPoint vol = 0;
     var itemList = new Dictionary<string, VRage.MyFixedPoint>();
     System.Text.RegularExpressions.Regex regex = new System.Text.RegularExpressions.Regex(".*/");
+    var ingot = Regex("Ingot/");
+    var ore = Regex("Ore/(?!Ice)");
 
     foreach (var c in cargo) {
         var inv = c.GetInventory(0);
@@ -605,7 +614,14 @@ public CargoStatus DoCargoStatus() {
         var items = new List<MyInventoryItem>();
         inv.GetItems(items);
         for (var i = 0; i < items.Count; i++) {
-            string itemName = regex.Replace(items[i].ToString(), "");
+            string fullName = items[i].Type.ToString();
+            string itemName = regex.Replace(fullName, "");
+            if (ingot.IsMatch(fullName)) {
+                itemName += " Ingot";
+            } else if (ore.IsMatch(fullName)) {
+                itemName += " Ore";
+            }
+
             var itemQty = items[i].Amount;
             if (!itemList.ContainsKey(itemName)) {
                 itemList.Add(itemName, itemQty);
@@ -765,7 +781,7 @@ public void Main(string argument, UpdateType updateSource) {
 
         // dont write status if it's on another panel
         if (!CanWriteToSurface(settings[CFG.CARGO_CAP])) {
-            WriteToLCD(settings[CFG.CARGO], "Cargo status: " + Util.PctString(cStats.pct) + '\n' + cStats.bar, true);
+            WriteToLCD(settings[CFG.CARGO], "Cargo status: " + Util.PctString(cStats.pct) + '\n' + cStats.bar + '\n', true);
         }
         WriteToLCD(settings[CFG.CARGO], cStats.itemText, true);
     }

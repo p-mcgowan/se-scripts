@@ -43,7 +43,10 @@ void Main()
 
 public void RenameList(bool dryRun) {
     var blocks = new List<IMyTerminalBlock>();
-    GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(blocks);
+    var shouldIgnore = Regex(ignore, System.Text.RegularExpressions.RegexOptions.Compiled);
+    GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(blocks, b => {
+        return !shouldIgnore.IsMatch(b.CustomName);
+    });
     Dictionary<string, int> nameToCount = new Dictionary<string, int>();
 
     foreach (var b in blocks) {
@@ -79,8 +82,10 @@ public void Main(string arg) {
     GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(blocks);
     var oldNameReg = Regex(@"" + oldName + "[ ]*", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
+    var shouldIgnore = Regex(ignore);
+
     foreach (var b in blocks) {
-        if (!b.CustomName.Contains(ignore) && (onlyReplaceOldName ? b.CustomName.Contains(oldName) : true)) {
+        if (!shouldIgnore.IsMatch(b.CustomName) && (onlyReplaceOldName ? b.CustomName.Contains(oldName) : true)) {
             string newNameString = b.CustomName;
             if (oldName.Length > 0) {
                 newNameString = oldNameReg.Replace(b.CustomName + " ", "");
