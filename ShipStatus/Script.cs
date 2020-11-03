@@ -1,31 +1,6 @@
 /*
- * Config
+ * User config
  */
-
-public enum CFG {
-    BLOCK_HEALTH,
-    POWER,
-    PRODUCTION,
-    CARGO,
-    CARGO_CAP,
-    CARGO_CAP_STYLE,
-    INPUT,
-    POWER_BAR,
-    JUMP_BAR
-};
-
-public Dictionary<string, CFG> stringToConfig = new Dictionary<string, CFG> {
-    { "BLOCK_HEALTH", CFG.BLOCK_HEALTH },
-    { "POWER", CFG.POWER },
-    { "PRODUCTION", CFG.PRODUCTION },
-    { "CARGO", CFG.CARGO },
-    { "CARGO_CAP", CFG.CARGO_CAP },
-    { "CARGO_CAP_STYLE", CFG.CARGO_CAP_STYLE },
-    { "INPUT", CFG.INPUT },
-    { "POWER_BAR", CFG.POWER_BAR },
-    { "JUMP_BAR", CFG.JUMP_BAR }
-};
-
 // non-empty strings enable programs
 // for surface selection, use 'name <number>' eg: 'Cockpit <1>'
 // You can also set the program block's CustomData instead (split on '\n' or ',')
@@ -40,19 +15,54 @@ CARGO_CAP_STYLE=small
 INPUT=Corner LCD
 POWER_BAR=Control Seat <1>
 JUMP_BAR=Jump panel
+DO_AIRLOCK=
+HEALTH_IGNORE=Hydrogen Thruster, Suspension
 */
 public Dictionary<CFG, string> settings = new Dictionary<CFG, string>{
     { CFG.BLOCK_HEALTH, "Corvette Cockpit <2>" },
-    { CFG.POWER, "Corvette Cockpit <1>" },
+    { CFG.POWER, "Control Seat <0>" },
     { CFG.PRODUCTION, "" },
-    { CFG.CARGO, "Corvette Cockpit <0>" },
+    { CFG.CARGO, "Control Seat <0>" },
     { CFG.CARGO_CAP, "" },
     // If style is "small", does not print "Cargo status: " on the first line
     // (only the precent bar)
-    { CFG.CARGO_CAP_STYLE, "" },
+    { CFG.CARGO_CAP_STYLE, "small" },
     { CFG.INPUT, "" },
     { CFG.POWER_BAR, "Corvette Cockpit <1>" },
-    { CFG.JUMP_BAR, "" }
+    { CFG.JUMP_BAR, "" },
+    { CFG.DO_AIRLOCK, "true" },
+    { CFG.HEALTH_IGNORE, "" }
+};
+
+/*
+ * Script Config
+ */
+public enum CFG {
+    BLOCK_HEALTH,
+    POWER,
+    PRODUCTION,
+    CARGO,
+    CARGO_CAP,
+    CARGO_CAP_STYLE,
+    INPUT,
+    POWER_BAR,
+    JUMP_BAR,
+    DO_AIRLOCK,
+    HEALTH_IGNORE
+};
+
+public Dictionary<string, CFG> stringToConfig = new Dictionary<string, CFG> {
+    { "BLOCK_HEALTH", CFG.BLOCK_HEALTH },
+    { "POWER", CFG.POWER },
+    { "PRODUCTION", CFG.PRODUCTION },
+    { "CARGO", CFG.CARGO },
+    { "CARGO_CAP", CFG.CARGO_CAP },
+    { "CARGO_CAP_STYLE", CFG.CARGO_CAP_STYLE },
+    { "INPUT", CFG.INPUT },
+    { "POWER_BAR", CFG.POWER_BAR },
+    { "JUMP_BAR", CFG.JUMP_BAR },
+    { "DO_AIRLOCK", CFG.DO_AIRLOCK },
+    { "HEALTH_IGNORE", CFG.HEALTH_IGNORE }
 };
 
 // Run once on start - set to false to disable CustomData check
@@ -79,10 +89,6 @@ double timeDisabled = 0;
 // globals so we don't look for them every update
 List<IMyTerminalBlock> cargo = new List<IMyTerminalBlock>();
 List<ProductionBlock> productionBlocks = new List<ProductionBlock>();
-
-public Program() {
-    Runtime.UpdateFrequency = UpdateFrequency.Update100;
-}
 
 // Util
 public static class Util {
@@ -232,7 +238,7 @@ public void WriteToLCD(string panelName, string msg, bool append = false) {
 
     surface.ContentType = ContentType.TEXT_AND_IMAGE;
     surface.Font = "Monospace";
-    surface.WriteText(msg, append);
+    surface.WriteText(msg + (append ? "\n" : ""), append);
 }
 
 public string ProgressBar(CFG cfg, float charge, bool withPct = true, int gaps = 6) {
@@ -597,7 +603,8 @@ public CargoStatus DoCargoStatus() {
     CargoStatus status = new CargoStatus();
 
     GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(cargo, c => c.CubeGrid == Me.CubeGrid &&
-        (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipWelder || c is IMyShipGrinder || c is IMyShipConnector));
+        (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector));
+        // (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipWelder || c is IMyShipGrinder || c is IMyShipConnector));
 
     VRage.MyFixedPoint max = 0;
     VRage.MyFixedPoint vol = 0;
@@ -669,6 +676,7 @@ public float GetHealth(IMyTerminalBlock block) {
     float MaxIntegrity = slimblock.MaxIntegrity;
     float BuildIntegrity = slimblock.BuildIntegrity;
     float CurrentDamage = slimblock.CurrentDamage;
+
     return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
 }
 
@@ -676,6 +684,13 @@ public string DoBlockHealth() {
     if (!CanWriteToSurface(settings[CFG.BLOCK_HEALTH])) {
         return null;
     }
+
+    System.Text.RegularExpressions.Regex ignoreHealth = null;
+    if (settings[CFG.HEALTH_IGNORE] != "") {
+        string input = System.Text.RegularExpressions.Regex.Replace(settings[CFG.HEALTH_IGNORE], @"\s*,\s*", "|");
+        ignoreHealth = Regex(input);
+    }
+    // CFG.HEALTH_IGNORE, "Hydrogen Thruster, Suspension"
 
     var blocks = new List<IMyTerminalBlock>();
     GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(blocks, b => b.CubeGrid == Me.CubeGrid);
@@ -685,6 +700,10 @@ public string DoBlockHealth() {
     GetPanelWidthInChars(settings[CFG.BLOCK_HEALTH], out chars);
 
     foreach (var b in blocks) {
+        if (ignoreHealth != null && ignoreHealth.IsMatch(b.CustomName)) {
+            continue;
+        }
+
         var health = GetHealth(b);
         if (health != 1f) {
             if (CanWriteToSurface(settings[CFG.BLOCK_HEALTH])) {
@@ -730,7 +749,151 @@ public void ParseCustomData() {
     }
 }
 
+/**
+ * Airlock doors - Auto close doors and lock airlock pairs"
+ *
+ * By default, all doors with default names will auto close (see DOOR_MATCH).
+ * For airlock doors to pair together (lock when the other is open), give them the same name. This works for any number of doors.
+ * If you want to include all doors by default but exclude a few, name the doors so that they contain the DOOR_EXCLUDE tag.
+ */
+
+// Config vars
+const double TIME_OPEN = 750f;           // Duration before auto close (milliseconds)
+const string DOOR_MATCH = "Door(.*)";    // The name to match (Default will match regular doors).
+                                         // The capture group "(.*)" is used when grouping airlock doors.
+const string DOOR_EXCLUDE = "Hangar";    // The exclusion tag (can be anything).
+
+// Script vars
+Dictionary<string, Airlock> airlocks = new Dictionary<string, Airlock>();
+System.Text.RegularExpressions.Regex include = new System.Text.RegularExpressions.Regex(DOOR_MATCH, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+System.Text.RegularExpressions.Regex exclude = new System.Text.RegularExpressions.Regex(DOOR_EXCLUDE, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+// Utility class containing for each individual airlock
+//
+public class Airlock {
+    private List<IMyFunctionalBlock> blocks;
+    private double openTimer;
+
+    public Airlock(List<IMyFunctionalBlock> doors, IMyFunctionalBlock light = null) {
+        this.blocks = new List<IMyFunctionalBlock>(doors);
+        this.openTimer = -1;
+    }
+
+    private bool IsOpen(IMyFunctionalBlock door) {
+        return (door as IMyDoor).OpenRatio > 0;
+    }
+
+    private void Lock(List<IMyFunctionalBlock> doors = null) {
+        doors = doors ?? this.blocks;
+        foreach (var door in doors) {
+            (door as IMyDoor).Enabled = false;
+        }
+    }
+
+    private void Unlock(List<IMyFunctionalBlock> doors = null) {
+        doors = doors ?? this.blocks;
+        foreach (var door in doors) {
+            (door as IMyDoor).Enabled = true;
+        }
+    }
+
+    private void OpenClose(string action, IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
+        (door1 as IMyDoor).ApplyAction(action);
+        if (door2 != null) {
+            (door2 as IMyDoor).ApplyAction(action);
+        }
+    }
+    private void Open(IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
+        OpenClose("Open_On", door1, door2);
+    }
+    private void OpenAll() {
+        foreach (var door in this.blocks) {
+            OpenClose("Open_On", door);
+        }
+    }
+    private void Close(IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
+        OpenClose("Open_Off", door1, door2);
+    }
+    private void CloseAll() {
+        foreach (var door in this.blocks) {
+            OpenClose("Open_Off", door);
+        }
+    }
+
+    public bool Test() {
+        int openCount = 0;
+        var areClosed = new List<IMyFunctionalBlock>();
+        var areOpen = new List<IMyFunctionalBlock>();
+        foreach (var door in this.blocks) {
+            if (this.IsOpen(door)) {
+                openCount++;
+                areOpen.Add(door);
+            } else {
+                areClosed.Add(door);
+            }
+        }
+        if (areOpen.Count > 0) {
+            if (this.openTimer == -1) {
+                this.openTimer = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
+                this.Lock(areClosed);
+                this.Unlock(areOpen);
+            } else if (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond - this.openTimer > TIME_OPEN) {
+                this.CloseAll();
+            }
+        } else {
+            this.Unlock();
+            this.openTimer = -1;
+        }
+
+        return true;
+    }
+}
+
+// Map block list into hash
+//
+public void GetMappedAirlocks() {
+    var airlockBlocks = new List<IMyTerminalBlock>();
+    GridTerminalSystem.GetBlocksOfType<IMyDoor>(airlockBlocks, door => door.CubeGrid == Me.CubeGrid);
+
+    // Parse into hash (identifier => List(door)), where name is "Door <identifier>"
+    var locationToAirlockMap = new Dictionary<string, List<IMyFunctionalBlock>>();
+
+    // Get all door blocks
+    foreach (var block in airlockBlocks) {
+        var match = include.Match(block.CustomName);
+        var ignore = exclude.Match(block.CustomName);
+        if (ignore.Success) { continue; }
+        if (!match.Success) {
+            continue;  // TODO: lights
+        }
+        var key = match.Groups[1].ToString();
+        if (!locationToAirlockMap.ContainsKey(key)) {
+            locationToAirlockMap.Add(key, new List<IMyFunctionalBlock>());
+        }
+        locationToAirlockMap[key].Add(block as IMyFunctionalBlock);
+    }
+    foreach (var locAirlock in locationToAirlockMap) {
+        airlocks.Add(locAirlock.Key, new Airlock(locAirlock.Value));
+    }
+}
+
+public Program() {
+    Runtime.UpdateFrequency = UpdateFrequency.Update10;
+    // Runtime.UpdateFrequency = UpdateFrequency.Update100;
+}
+
+
 public void Main(string argument, UpdateType updateSource) {
+    if (settings[CFG.DO_AIRLOCK] == "true") {
+        if (!airlocks.Any()) {
+            GetMappedAirlocks();
+        }
+
+        foreach (var al in airlocks) {
+            al.Value.Test();
+        }
+    }
+
     if (shouldCheckCustomData) {
         ParseCustomData();
     }
