@@ -43,7 +43,7 @@ void Main()
 
 public void RenameList(bool dryRun) {
     var blocks = new List<IMyTerminalBlock>();
-    var shouldIgnore = Regex(ignore, System.Text.RegularExpressions.RegexOptions.Compiled);
+    var shouldIgnore = Regex(System.Text.RegularExpressions.Regex.Escape(ignore), System.Text.RegularExpressions.RegexOptions.Compiled);
     GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(blocks, b => {
         return !shouldIgnore.IsMatch(b.CustomName);
     });
@@ -58,7 +58,9 @@ public void RenameList(bool dryRun) {
         var newBlockName = (newName == "" ? "" : newName + " ") + blockName + (current == 1 ? "" : " " + current.ToString());
         nameToCount.Remove(blockName);
         nameToCount.Add(blockName, ++current);
-        Echo(b.CustomName.ToString() + " => " + newBlockName);
+        if (b.CustomName.ToString() != newBlockName) {
+            Echo(b.CustomName.ToString() + " => " + newBlockName);
+        }
         if (dryRun) {
             continue;
         }
