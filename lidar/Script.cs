@@ -84,6 +84,8 @@ public void Main(string argument, UpdateType updateSource) {
         Echo("  plane in custom data, save");
         Echo("  intersection as gps to custom");
         Echo("  data");
+        Echo("-n, --name NAME  set gps name");
+        Echo("-p, --point PNT  use point from cam (meters)");
 
         return;
     }
@@ -92,6 +94,8 @@ public void Main(string argument, UpdateType updateSource) {
     string raycast = cli.Switch("--cast", 0) == null ? cli.Switch("-c", 0) : cli.Switch("--cast", 0);
     string leftCam = cli.Switch("--left", 0) == null ? cli.Switch("-l", 0) : cli.Switch("--left", 0);
     string rightCam = cli.Switch("--right", 0) == null ? cli.Switch("-r", 0) : cli.Switch("--right", 0);
+    string name = cli.Switch("--name", 0) == null ? cli.Switch("-n", 0) : cli.Switch("--name", 0);
+    string point = cli.Switch("--point", 0) == null ? cli.Switch("-p", 0) : cli.Switch("--point", 0);
 
     if (cli.Switch("-on") || cli.Switch("o") || cli.Switch("-off") || cli.Switch("O")) {
         bool on = cli.Switch("-on") || cli.Switch("o");
@@ -102,14 +106,30 @@ public void Main(string argument, UpdateType updateSource) {
         return;
     }
 
+    if (point != null) {
+        IMyTerminalBlock block = GridTerminalSystem.GetBlockWithName(raycast);
+        if (block == null) {
+            Echo("Did not find cam: " + raycast);
+            return;
+        }
+
+        Vector3D vec = new Vector3D(block.GetPosition() + float.Parse(point, System.Globalization.CultureInfo.InvariantCulture) * block.WorldMatrix.Forward);
+        Me.CustomData = GpsAt(vec, name ?? "point");
+
+        return;
+    }
+
     if (raycast != null) {
         IMyTerminalBlock block = GridTerminalSystem.GetBlockWithName(raycast);
         if (block == null) {
             Echo("Did not find cam: " + raycast);
             return;
         }
+
         float dist = distance == null ? -1 : float.Parse(distance, System.Globalization.CultureInfo.InvariantCulture);
         Me.CustomData = GetRayPoint((IMyCameraBlock)block, dist);
+
+        return;
     }
 
     if (leftCam != null) {
@@ -118,8 +138,11 @@ public void Main(string argument, UpdateType updateSource) {
             Echo("Did not find cam: " + leftCam);
             return;
         }
+
         Plane leftPlane = GetBlockPlane(block);
         WritePlaneToCustomData(leftPlane);
+
+        return;
     }
 
     if (rightCam != null) {
@@ -128,13 +151,16 @@ public void Main(string argument, UpdateType updateSource) {
             Echo("Did not find cam: " + rightCam);
             return;
         }
+
         Ray ray = new Ray(block.GetPosition(), block.WorldMatrix.Forward);
         Plane leftCamPlane = ReadPlaneFromCustomData();
         float? intersectionDistance = ray.Intersects(leftCamPlane);
 
         if (intersectionDistance != null) {
-            Vector3D point = new Vector3D(block.GetPosition() + (float)intersectionDistance * block.WorldMatrix.Forward);
-            Me.CustomData = GpsAt(point, "target");
+            Vector3D vec = new Vector3D(block.GetPosition() + (float)intersectionDistance * block.WorldMatrix.Forward);
+            Me.CustomData = GpsAt(vec, name ?? "target");
         }
+
+        return;
     }
 }
