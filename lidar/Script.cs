@@ -1,8 +1,8 @@
-public string GpsAt(Vector3D point, string name = ".", string colour = "") {
-    if (point == null) {
-        return "";
-    }
+public void Fail(string message) {
+    throw new Exception(message);
+}
 
+public string GpsAt(Vector3D point, string name = ".", string colour = "") {
     return "GPS:" + name + ":" +
         point.X.ToString() + ":" +
         point.Y.ToString() + ":" +
@@ -10,10 +10,6 @@ public string GpsAt(Vector3D point, string name = ".", string colour = "") {
 }
 
 public Plane GetBlockPlane(IMyTerminalBlock block) {
-    if (block == null) {
-        return new Plane(0,0,0,0);
-    }
-
     return new Plane(block.GetPosition(), block.WorldMatrix.Right);
 }
 
@@ -37,28 +33,18 @@ public Plane ReadPlaneFromCustomData() {
 
 public string GetRayPoint(IMyCameraBlock block, float distance) {
     block.EnableRaycast = true;
-    Echo(block.AvailableScanRange.ToString());
     MyDetectedEntityInfo info = block.Raycast(distance == -1 ? block.AvailableScanRange : distance, 0, 0);
     Vector3D? point = info.HitPosition;
-    Echo(info.HitPosition.ToString());
-    if (point.HasValue) {
-        return GpsAt((Vector3D)point, "cast");
-    }
-    return "";
+
+    return GpsAt((Vector3D)point, "cast");
 }
 
 public void SetCamRaycasting(string blockName, bool on) {
-    if (blockName == "" || blockName == null) {
-        return;
-    }
-
     IMyCameraBlock block = (IMyCameraBlock)GridTerminalSystem.GetBlockWithName(blockName);
-    if (block != null) {
-        block.EnableRaycast = on;
-    }
+    block.EnableRaycast = on;
 }
 
-public void Main(string argument, UpdateType updateSource) {
+public void Run(string argument, UpdateType updateSource) {
     MyCommandLine cli = new MyCommandLine();
     cli.TryParse(argument);
 
@@ -108,11 +94,6 @@ public void Main(string argument, UpdateType updateSource) {
 
     if (point != null) {
         IMyTerminalBlock block = GridTerminalSystem.GetBlockWithName(raycast);
-        if (block == null) {
-            Echo("Did not find cam: " + raycast);
-            return;
-        }
-
         Vector3D vec = new Vector3D(block.GetPosition() + float.Parse(point, System.Globalization.CultureInfo.InvariantCulture) * block.WorldMatrix.Forward);
         Me.CustomData = GpsAt(vec, name ?? "point");
 
@@ -121,11 +102,6 @@ public void Main(string argument, UpdateType updateSource) {
 
     if (raycast != null) {
         IMyTerminalBlock block = GridTerminalSystem.GetBlockWithName(raycast);
-        if (block == null) {
-            Echo("Did not find cam: " + raycast);
-            return;
-        }
-
         float dist = distance == null ? -1 : float.Parse(distance, System.Globalization.CultureInfo.InvariantCulture);
         Me.CustomData = GetRayPoint((IMyCameraBlock)block, dist);
 
@@ -134,11 +110,6 @@ public void Main(string argument, UpdateType updateSource) {
 
     if (leftCam != null) {
         IMyTerminalBlock block = GridTerminalSystem.GetBlockWithName(leftCam);
-        if (block == null) {
-            Echo("Did not find cam: " + leftCam);
-            return;
-        }
-
         Plane leftPlane = GetBlockPlane(block);
         WritePlaneToCustomData(leftPlane);
 
@@ -147,11 +118,6 @@ public void Main(string argument, UpdateType updateSource) {
 
     if (rightCam != null) {
         IMyTerminalBlock block = GridTerminalSystem.GetBlockWithName(rightCam);
-        if (block == null) {
-            Echo("Did not find cam: " + rightCam);
-            return;
-        }
-
         Ray ray = new Ray(block.GetPosition(), block.WorldMatrix.Forward);
         Plane leftCamPlane = ReadPlaneFromCustomData();
         float? intersectionDistance = ray.Intersects(leftCamPlane);
@@ -162,5 +128,14 @@ public void Main(string argument, UpdateType updateSource) {
         }
 
         return;
+    }
+}
+
+public void Main(string argument, UpdateType updateSource) {
+    try {
+        Run(argument, updateSource);
+    } catch (Exception e) {
+        Echo("Lidar failed:");
+        Echo(e.Message);
     }
 }
