@@ -147,6 +147,15 @@ System.Text.RegularExpressions.Regex pnameSplitter = Regex(
     System.Text.RegularExpressions.RegexOptions.Compiled
 );
 
+public IMyTerminalBlock GetBlockWithName(string name) {
+    List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
+    GridTerminalSystem.SearchBlocksOfName(name, blocks, c => c.CubeGrid == Me.CubeGrid);
+    if (blocks.Count != 1) {
+        return null;
+    }
+    return blocks[0];
+}
+
 public void GetPanelAndSurfaceId(string input, out IMyTerminalBlock panel, out int id) {
     var matches = pnameSplitter.Matches(input);
     if (matches.Count > 0 && matches[0].Groups.Count > 1) {
@@ -156,9 +165,9 @@ public void GetPanelAndSurfaceId(string input, out IMyTerminalBlock panel, out i
         }
         id = panelId;
         var panelName = input.Replace(matches[0].Groups[0].Value, "");
-        panel = GridTerminalSystem.GetBlockWithName(panelName);
+        panel = GetBlockWithName(panelName);
     } else {
-        panel = GridTerminalSystem.GetBlockWithName(input);
+        panel = GetBlockWithName(input);
         id = 0;
     }
     return;
@@ -345,7 +354,7 @@ public void HandleInput() {
         }
     }
 
-    var productionInputPanel = GridTerminalSystem.GetBlockWithName(settings[CFG.INPUT]) as IMyTextPanel;
+    IMyTextPanel productionInputPanel = (IMyTextPanel)GetBlockWithName(settings[CFG.INPUT]);
     if (productionInputPanel == null || !(productionInputPanel is IMyTextPanel)) {
         Echo("No input panel: " + settings[CFG.INPUT]);
         return;
