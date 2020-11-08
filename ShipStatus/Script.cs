@@ -12,6 +12,7 @@ PRODUCTION=Text panel Production
 CARGO=Text panel Cargo
 CARGO_CAP=Control Seat <2>
 CARGO_CAP_STYLE=small
+CARGO_LIGHT=Spotlight 2
 INPUT=Corner LCD
 POWER_BAR=Control Seat <1>
 JUMP_BAR=Jump panel
@@ -24,6 +25,7 @@ public Dictionary<CFG, string> settings = new Dictionary<CFG, string>{
     { CFG.PRODUCTION, "" },
     { CFG.CARGO, "Control Seat <0>" },
     { CFG.CARGO_CAP, "" },
+    { CFG.CARGO_LIGHT, "" },
     // If style is "small", does not print "Cargo status: " on the first line
     // (only the precent bar)
     { CFG.CARGO_CAP_STYLE, "small" },
@@ -43,6 +45,7 @@ public enum CFG {
     PRODUCTION,
     CARGO,
     CARGO_CAP,
+    CARGO_LIGHT,
     CARGO_CAP_STYLE,
     INPUT,
     POWER_BAR,
@@ -57,6 +60,7 @@ public Dictionary<string, CFG> stringToConfig = new Dictionary<string, CFG> {
     { "PRODUCTION", CFG.PRODUCTION },
     { "CARGO", CFG.CARGO },
     { "CARGO_CAP", CFG.CARGO_CAP },
+    { "CARGO_LIGHT", CFG.CARGO_LIGHT },
     { "CARGO_CAP_STYLE", CFG.CARGO_CAP_STYLE },
     { "INPUT", CFG.INPUT },
     { "POWER_BAR", CFG.POWER_BAR },
@@ -89,6 +93,7 @@ double timeDisabled = 0;
 // globals so we don't look for them every update
 List<IMyTerminalBlock> cargo = new List<IMyTerminalBlock>();
 List<ProductionBlock> productionBlocks = new List<ProductionBlock>();
+List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
 
 // Util
 public static class Util {
@@ -148,7 +153,7 @@ System.Text.RegularExpressions.Regex pnameSplitter = Regex(
 );
 
 public IMyTerminalBlock GetBlockWithName(string name) {
-    List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
+    blocks.Clear();
     GridTerminalSystem.SearchBlocksOfName(name, blocks, c => c.CubeGrid == Me.CubeGrid);
     if (blocks.Count != 1) {
         return null;
@@ -648,6 +653,19 @@ public CargoStatus DoCargoStatus() {
     }
 
     status.pct = (float)vol / (float)max;
+    if (settings[CFG.CARGO_LIGHT] != "") {
+        IMyLightingBlock light = (IMyLightingBlock)GetBlockWithName(settings[CFG.CARGO_LIGHT]);
+
+        if (light != null && light is IMyLightingBlock) {
+            if (status.pct > 0.98f) {
+                light.Color = Color.Red;
+            } else if (status.pct > 0.90f) {
+                light.Color = Color.Yellow;
+            } else {
+                light.Color = Color.White;
+            }
+        }
+    }
     status.barCap = ProgressBar(CFG.CARGO_CAP, status.pct, false, 2);
     status.bar = ProgressBar(CFG.CARGO, status.pct, false, 2);
 
