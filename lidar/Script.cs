@@ -1,3 +1,5 @@
+List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
+
 public void Fail(string message) {
     throw new Exception(message);
 }
@@ -40,7 +42,7 @@ public string GetRayPoint(IMyCameraBlock block, float distance) {
 }
 
 public void SetCamRaycasting(string blockName, bool on) {
-    IMyCameraBlock block = (IMyCameraBlock)GridTerminalSystem.GetBlockWithName(blockName);
+    IMyCameraBlock block = (IMyCameraBlock)GetBlockWithName(blockName);
     block.EnableRaycast = on;
 }
 
@@ -53,6 +55,16 @@ public string GetCli(MyCommandLine cli, string args, int argc) {
     }
 
     return null;
+}
+
+public IMyTerminalBlock GetBlockWithName(string name) {
+    blocks.Clear();
+    GridTerminalSystem.SearchBlocksOfName(name, blocks, c => c.CubeGrid == Me.CubeGrid && c.CustomName == name);
+    if (blocks.Count != 1) {
+        return null;
+    }
+
+    return blocks[0];
 }
 
 public void Run(string argument, UpdateType updateSource) {
@@ -104,7 +116,7 @@ public void Run(string argument, UpdateType updateSource) {
     }
 
     if (point != null) {
-        IMyTerminalBlock block = GridTerminalSystem.GetBlockWithName(raycast);
+        IMyTerminalBlock block = GetBlockWithName(raycast);
         Vector3D vec = new Vector3D(block.GetPosition() + float.Parse(point, System.Globalization.CultureInfo.InvariantCulture) * block.WorldMatrix.Forward);
         Me.CustomData = GpsAt(vec, name ?? "point");
 
@@ -112,7 +124,7 @@ public void Run(string argument, UpdateType updateSource) {
     }
 
     if (raycast != null) {
-        IMyTerminalBlock block = GridTerminalSystem.GetBlockWithName(raycast);
+        IMyTerminalBlock block = GetBlockWithName(raycast);
         float dist = distance == null ? -1 : float.Parse(distance, System.Globalization.CultureInfo.InvariantCulture);
         Me.CustomData = GetRayPoint((IMyCameraBlock)block, dist);
 
@@ -120,7 +132,7 @@ public void Run(string argument, UpdateType updateSource) {
     }
 
     if (leftCam != null) {
-        IMyTerminalBlock block = GridTerminalSystem.GetBlockWithName(leftCam);
+        IMyTerminalBlock block = GetBlockWithName(leftCam);
         Plane leftPlane = GetBlockPlane(block);
         WritePlaneToCustomData(leftPlane);
 
@@ -128,7 +140,7 @@ public void Run(string argument, UpdateType updateSource) {
     }
 
     if (rightCam != null) {
-        IMyTerminalBlock block = GridTerminalSystem.GetBlockWithName(rightCam);
+        IMyTerminalBlock block = GetBlockWithName(rightCam);
         Ray ray = new Ray(block.GetPosition(), block.WorldMatrix.Forward);
         Plane leftCamPlane = ReadPlaneFromCustomData();
         float? intersectionDistance = ray.Intersects(leftCamPlane);
