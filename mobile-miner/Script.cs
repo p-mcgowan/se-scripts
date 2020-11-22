@@ -1,5 +1,6 @@
 /*
 example custom data config:
+[blocks]
 connector=Minemobile Connector Drill
 merge=Minemobile Merge Block Drill
 hinge=Minemobile Hinge
@@ -11,11 +12,20 @@ sensor=Minemobile Sensor
 grinders=Grinders
 welders=Welders
 drills=Drills
+
+[output]
 outPanel=Sci-Fi One-Button Terminal
 */
 
+public enum RunMode {
+    Drill,
+    Retract
+};
+
+MyIni ini = new MyIni();
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
 List<MyDetectedEntityInfo> entities = new List<MyDetectedEntityInfo>();
+
 IMyMotorAdvancedStator hinge;
 IMyLandingGear landingGear;
 IMyPistonBase piston;
@@ -25,50 +35,152 @@ IMyBlockGroup welders;
 IMyBlockGroup grinders;
 IMyBlockGroup drills;
 IMyShipMergeBlock merge;
-IMyTimerBlock timer;
 IMySensorBlock sensor;
 IMyTextSurfaceProvider outPanel;
 
 float pistonDownSpeed = -0.5f;
 float pistonUpSpeed = 5f;
-// float hingeSpeedRPM = 1.5f;
+float pistonDownFindConnectorSpeed = -0.05f;
+float pistonDistanceThreshold = 0.1f;
 
-// public Program() {
-//     Runtime.UpdateFrequency = UpdateFrequency.Update100;
-// }
-
+public Program() {
+    Runtime.UpdateFrequency = UpdateFrequency.None;
+}
 
 public void Main(string argument, UpdateType updateSource) {
     if (!ParseCustomData()) {
-        Echo("Exiting");
+        Stop(true);
+        DrawStatus("Not configured");
         return;
     }
-    string state = "";
-    if (argument == "toggle") {
-        bool retracting = GetOnOffBlockGroup(grinders);
-        StartStop(retracting);
-        if (!PistonNearMin() && !PistonNearMax()) {
-            piston.Velocity = -1 * piston.Velocity;
-        }
-        state = "Mode: " + (retracting ? "Drilling" : "Retracting");
-    } else if (argument == "stop") {
-        EmergencyStop();
-        state = "Stopped";
-    } else {
-        timer.Enabled = true;
-        piston.Enabled = true;
-        state = TickState();
+
+    if (argument == "stop" || !landingGear.IsLocked) {
+        Stop(true);
+        DrawStatus(landingGear.IsLocked ? "Stopped" : "Unlocked", updateSource);
+        return;
     }
 
+    bool grinding = GetOnOffBlockGroup(grinders);
+    RunMode current = grinding ? RunMode.Retract : RunMode.Drill;
+    RunMode next = grinding ? RunMode.Drill : RunMode.Retract;
+    if (argument == "toggle") {
+        piston.Velocity = 0f;
+        SetRunMode(next);
+        DrawStatus($"Mode: {Enum.GetName(typeof (RunMode), next)}", updateSource);
+        return;
+    }
+    if (argument == "start") {
+        SetRunMode(current);
+        Runtime.UpdateFrequency = UpdateFrequency.Update100;
+        DrawStatus($"Mode: {Enum.GetName(typeof (RunMode), current)}", updateSource);
+        return;
+    }
+    if ((updateSource & UpdateType.Update100) == UpdateType.Update100) {
+        DrawStatus(TickState(grinding), updateSource);
+        return;
+    }
+}
+
+public string TickState(bool grinding) {
+    return grinding ? Retract() : Drill();
+}
+
+public string Retract() {
+    bool connected = connector.Status == MyShipConnectorStatus.Connected;
+    bool merged = merge.IsConnected;
+
+    if (PistonNearMin() && merged) {
+        if (connected) {
+            Disconnect();
+        } else {
+            piston.Velocity = pistonUpSpeed;
+        }
+        return "Retract:up";
+    }
+    if (PistonNearMin() && connected) {
+        if (!merged) {
+            merge.Enabled = true;
+            return "Retract:merge";
+        }
+        Disconnect();
+        return "Retract:disconnect";
+    }
+    if (PistonNearMax() && merged) {
+        if (connector.Status == MyShipConnectorStatus.Connectable) {
+            connector.Connect();
+            return "Retract:connect";
+        }
+
+        piston.Velocity = pistonDownSpeed;
+
+        if (SensorDetecting()) {
+            piston.Velocity = pistonDownFindConnectorSpeed;
+        } else {
+            Stop();
+            return "Idle";
+        }
+        Unmerge();
+        return "Retract:down";
+    }
+
+    if ((PistonNearMax() && connected) || (piston.Velocity == pistonDownFindConnectorSpeed && connected) || (piston.Velocity == pistonDownSpeed)) {
+        piston.Velocity = pistonDownSpeed;
+        return "Retract:grind";
+    }
+
+    piston.Velocity = pistonUpSpeed;
+    return "Retract:reposition up";
+}
+
+public string Drill() {
+    bool connected = connector.Status == MyShipConnectorStatus.Connected;
+    bool merged = merge.IsConnected;
+    string state = "Drill:unknown";
+
+    if (PistonNearMin() && merged) {
+        connector.Connect();
+        state = "Drill:connect";
+    }
+    if (PistonNearMin() && merged && connected && projector.RemainingBlocks == 0) {
+        Unmerge();
+        piston.Velocity = pistonUpSpeed;
+        return "Drill:reposition";
+    }
+    if (PistonNearMax() && !merged) {
+        merge.Enabled = true;
+        state = "Drill:merge";
+    }
+    if (PistonNearMax() && merged && connected) {
+        Disconnect();
+        state = "Drill:disconnect";
+    }
+    if (PistonNearMax() && merged && !connected) {
+        piston.Velocity = pistonDownSpeed;
+        return "Drill:mine";
+    }
+    if (piston.Velocity == pistonDownSpeed) {
+        return "Drill:mine";
+    }
+    if (connected && !merged) {
+        if (PistonNearMin() && (piston.Velocity == pistonDownSpeed || piston.Velocity == 0f)) {
+            merge.Enabled = true;
+        }
+        return "Drill:realign";
+    }
+
+    return state;
+}
+
+public void DrawStatus(string state, UpdateType updateSource = UpdateType.None) {
     Echo(
+        $"state: {state}\n" +
         $"connected: {connector.Status == MyShipConnectorStatus.Connected}\n" +
         $"merged: {merge.IsConnected}\n" +
         $"SensorDetecting: {SensorDetecting()}\n" +
-        $"p.MaxLimit: {piston.MaxLimit}\n" +
-        $"p.MinLimit: {piston.MinLimit}\n" +
         $"p.Velocity: {piston.Velocity}\n" +
-        $"p.CurrentPosition: {piston.CurrentPosition}\n" +
-        $"t.Enabled: {timer.Enabled}\n"
+        $"prj.Enabled: {projector.Enabled}\n" +
+        $"tick: {DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond}\n" +
+        $"source: {updateSource.ToString()}"
     );
 
     IMyTextSurface surface = ((IMyTextSurfaceProvider)Me).GetSurface(0);
@@ -82,20 +194,44 @@ public void Main(string argument, UpdateType updateSource) {
     }
 }
 
-public void EmergencyStop() {
-    projector.Enabled = false;
-    SetOnOffBlockGroup(welders, false);
-    SetOnOffBlockGroup(grinders, false);
-    SetOnOffBlockGroup(drills, false);
-    piston.Enabled = false;
-    timer.Enabled = false;
+public void SetRunMode(RunMode mode) {
+    bool drilling = (mode == RunMode.Drill);
+    piston.Enabled = true;
+    projector.Enabled = drilling;
+    SetOnOffBlockGroup(welders, drilling);
+    SetOnOffBlockGroup(grinders, !drilling);
+    SetOnOffBlockGroup(drills, true);
 }
 
-public bool GetOnOffBlockGroup(IMyBlockGroup group) {
+public float SwitchPistonDirection() {
+    if (PistonNearMin() || PistonNearMax()) {
+        return piston.Velocity;
+    }
+    if (piston.Velocity == pistonDownFindConnectorSpeed) {
+        return (piston.Velocity = pistonUpSpeed);
+    }
+    return (piston.Velocity = -1 * piston.Velocity);
+}
+
+public void Stop(bool emergency = false) {
+    projector.Enabled = false;
+    SetOnOffBlockGroup(grinders, false);
+    SetOnOffBlockGroup(drills, false);
+    SetOnOffBlockGroup(welders, false);
+    Runtime.UpdateFrequency = UpdateFrequency.None;
+    if (emergency) {
+        piston.Enabled = false;
+    } else {
+        piston.Velocity = -1 * pistonUpSpeed;
+    }
+}
+
+public bool GetOnOffBlockGroup(IMyBlockGroup blockGroup) {
     blocks.Clear();
-    group.GetBlocks(blocks);
+    blockGroup.GetBlocks(blocks);
     foreach (IMyFunctionalBlock block in blocks) {
         if (block.Enabled) {
+            Echo("returning true");
             return true;
         }
     }
@@ -103,19 +239,12 @@ public bool GetOnOffBlockGroup(IMyBlockGroup group) {
     return false;
 }
 
-public void SetOnOffBlockGroup(IMyBlockGroup group, bool enabled) {
+public void SetOnOffBlockGroup(IMyBlockGroup blockGroup, bool enabled) {
     blocks.Clear();
-    group.GetBlocks(blocks);
+    blockGroup.GetBlocks(blocks);
     foreach (IMyFunctionalBlock block in blocks) {
         block.Enabled = enabled;
     }
-}
-
-public void StartStop(bool start) {
-    projector.Enabled = start;
-    SetOnOffBlockGroup(welders, start);
-    SetOnOffBlockGroup(grinders, !start);
-    SetOnOffBlockGroup(drills, true);
 }
 
 public bool SensorDetecting() {
@@ -142,198 +271,40 @@ public void Unmerge() {
 }
 
 public bool PistonNearMax() {
-    return piston.CurrentPosition >= piston.MaxLimit - 0.2f && piston.CurrentPosition <= piston.MaxLimit + 0.2f;
+    return Math.Abs(piston.CurrentPosition - piston.MaxLimit) < pistonDistanceThreshold;
 }
 
 public bool PistonNearMin() {
-    return piston.CurrentPosition >= piston.MinLimit - 0.2f && piston.CurrentPosition <= piston.MinLimit + 0.2f;
-}
-
-public string Retract() {
-    StartStop(false);
-    bool connected = connector.Status == MyShipConnectorStatus.Connected;
-    bool merged = merge.IsConnected;
-    string state = "unknown";
-
-    if (PistonNearMin() && merged) {
-        if (connected) {
-            Disconnect();
-        } else {
-            piston.Velocity = pistonUpSpeed;
-        }
-        return "reposition up";
-    }
-    if (PistonNearMin() && connected) {
-        if (!merged) {
-            merge.Enabled = true;
-            return "merge";
-        }
-        Disconnect();
-        return "disconnect";
-    }
-    if (PistonNearMax() && merged) {
-        if (connector.Status == MyShipConnectorStatus.Connectable) {
-            connector.Connect();
-            return "connect";
-        }
-
-        piston.Velocity = pistonDownSpeed;
-
-        if (SensorDetecting()) {
-            piston.Velocity = -0.05f;
-        } else {
-            SetOnOffBlockGroup(grinders, false);
-            timer.Enabled = false;
-            piston.Velocity = -5f;
-            SetOnOffBlockGroup(drills, false);
-            return "Idle";
-        }
-        Unmerge();
-        return "reposition down";
-    }
-
-    if ((PistonNearMax() && connected) || (piston.Velocity == -0.05f && connected) || (piston.Velocity == pistonDownSpeed)) {
-        piston.Velocity = pistonDownSpeed;
-        return "grind";
-    }
-
-    return state;
-}
-
-public string Drill() {
-    StartStop(true);
-    bool connected = connector.Status == MyShipConnectorStatus.Connected;
-    bool merged = merge.IsConnected;
-    string state = "unknown";
-
-    // if (hinge.RotorLock && !landingGear.IsLocked) {
-    //     hinge.RotorLock = false;
-    //     hinge.TargetVelocityRPM = -1f * hingeSpeedRPM;
-    //     // start timer
-    //     return "Drill:init";
-    // }
-    // if (hinge.TargetVelocityRPM < 0f && landingGear.LockMode == LandingGearMode.Unlocked) {
-    //     return "Drill:starting";
-    // }
-    // if (!hinge.RotorLock && landingGear.LockMode == LandingGearMode.ReadyToLock) {
-    //     hinge.RotorLock = true;
-    //     landingGear.Lock();
-    //     StartStop(!GetOnOffBlockGroup(grinders));
-    //     return "Drill:ready";
-    // }
-
-    if (PistonNearMin() && merged) {
-        StartStop(!GetOnOffBlockGroup(grinders));
-        connector.Connect();
-        state = "connect";
-    }
-    // if (PistonNearMin() && connected && !merged) {
-    //     piston.Velocity = pistonUpSpeed;
-    //     return "reposition";
-    // }
-    if (PistonNearMin() && merged && connected && projector.RemainingBlocks == 0) {
-        Unmerge();
-        piston.Velocity = pistonUpSpeed;
-        return "reposition";
-    }
-    if (PistonNearMax() && !merged) {
-        merge.Enabled = true;
-        state = "merge";
-    }
-    if (PistonNearMax() && merged && connected) {
-        Disconnect();
-        state = "disconnect";
-    }
-    if (PistonNearMax() && merged && !connected) {
-        piston.Velocity = pistonDownSpeed;
-        return "mine";
-    }
-    if (piston.Velocity == pistonDownSpeed) {
-        return "mine";
-    }
-
-    return state;
-}
-
-public string TickState() {
-    string state = "NONE";
-    if (GetOnOffBlockGroup(grinders)) {
-        state = "Retract:" + Retract();
-    } else {
-        state = "Drill:" + Drill();
-    }
-
-    return state;
+    return Math.Abs(piston.CurrentPosition - piston.MinLimit) < pistonDistanceThreshold;
 }
 
 public bool ParseCustomData() {
-    try {
-        string sx = Me.CustomData;
-        if (Me.CustomData == null || Me.CustomData == "") {
-            return false;
-        }
-
-        var items = sx.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Split(new[] { '=' }));
-        foreach (string[] item in items) {
-            if (item.Count() < 2) {
-                Echo($"Malformed config {item[0]}");
-                continue;
-            }
-
-            switch (item[0]) {
-                case "hinge":
-                    hinge = (IMyMotorAdvancedStator)GridTerminalSystem.GetBlockWithName(item[1]);
-                    break;
-                case "landingGear":
-                    landingGear = (IMyLandingGear)GridTerminalSystem.GetBlockWithName(item[1]);
-                    break;
-                case "piston":
-                    piston = (IMyPistonBase)GridTerminalSystem.GetBlockWithName(item[1]);
-                    break;
-                case "connector":
-                    connector = (IMyShipConnector)GridTerminalSystem.GetBlockWithName(item[1]);
-                    break;
-                case "projector":
-                    projector = (IMyProjector)GridTerminalSystem.GetBlockWithName(item[1]);
-                    break;
-                case "welders":
-                    welders = (IMyBlockGroup)GridTerminalSystem.GetBlockGroupWithName(item[1]);
-                    break;
-                case "grinders":
-                    grinders = (IMyBlockGroup)GridTerminalSystem.GetBlockGroupWithName(item[1]);
-                    break;
-                case "drills":
-                    drills = (IMyBlockGroup)GridTerminalSystem.GetBlockGroupWithName(item[1]);
-                    break;
-                case "merge":
-                    merge = (IMyShipMergeBlock)GridTerminalSystem.GetBlockWithName(item[1]);
-                    break;
-                case "timer":
-                    timer = (IMyTimerBlock)GridTerminalSystem.GetBlockWithName(item[1]);
-                    break;
-                case "sensor":
-                    sensor = (IMySensorBlock)GridTerminalSystem.GetBlockWithName(item[1]);
-                    break;
-                case "outPanel":
-                    outPanel = (IMyTextSurfaceProvider)GridTerminalSystem.GetBlockWithName(item[1]);
-                    break;
-                default:
-                    Echo($"ignoring: {item[0]}:{item[1]}");
-                    break;
-            }
-        }
-
-        string notFound = BlocksNotFound();
-        if (BlocksNotFound() != "") {
-            Echo($"{notFound} not found");
-            return false;
-        }
-
-        return true;
-    } catch (Exception e) {
-        Echo(e.ToString());
+    MyIniParseResult result;
+    if (!ini.TryParse(Me.CustomData, out result)) {
+        Echo("failed to parse config");
         return false;
     }
+
+    hinge = (IMyMotorAdvancedStator)GridTerminalSystem.GetBlockWithName(ini.Get("blocks", "hinge").ToString());
+    landingGear = (IMyLandingGear)GridTerminalSystem.GetBlockWithName(ini.Get("blocks", "landingGear").ToString());
+    piston = (IMyPistonBase)GridTerminalSystem.GetBlockWithName(ini.Get("blocks", "piston").ToString());
+    connector = (IMyShipConnector)GridTerminalSystem.GetBlockWithName(ini.Get("blocks", "connector").ToString());
+    projector = (IMyProjector)GridTerminalSystem.GetBlockWithName(ini.Get("blocks", "projector").ToString());
+    welders = (IMyBlockGroup)GridTerminalSystem.GetBlockGroupWithName(ini.Get("blocks", "welders").ToString());
+    grinders = (IMyBlockGroup)GridTerminalSystem.GetBlockGroupWithName(ini.Get("blocks", "grinders").ToString());
+    drills = (IMyBlockGroup)GridTerminalSystem.GetBlockGroupWithName(ini.Get("blocks", "drills").ToString());
+    merge = (IMyShipMergeBlock)GridTerminalSystem.GetBlockWithName(ini.Get("blocks", "merge").ToString());
+    sensor = (IMySensorBlock)GridTerminalSystem.GetBlockWithName(ini.Get("blocks", "sensor").ToString());
+
+    outPanel = (IMyTextSurfaceProvider)GridTerminalSystem.GetBlockWithName(ini.Get("output", "outPanel").ToString());
+
+    string notFound = BlocksNotFound();
+    if (notFound != "") {
+        Echo($"{notFound} not found");
+        return false;
+    }
+
+    return true;
 }
 
 public string BlocksNotFound() {
@@ -365,9 +336,6 @@ public string BlocksNotFound() {
     }
     if (merge == null) {
         notFound += "merge, ";
-    }
-    if (timer == null) {
-        notFound += "timer, ";
     }
     if (sensor == null) {
         notFound += "sensor, ";
