@@ -84,7 +84,7 @@ public void Main(string arg) {
     GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(blocks);
     var oldNameReg = Regex(@"" + oldName + "[ ]*", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
-    var shouldIgnore = Regex(ignore);
+    var shouldIgnore = Regex(System.Text.RegularExpressions.Regex.Escape(ignore), System.Text.RegularExpressions.RegexOptions.Compiled);
 
     foreach (var b in blocks) {
         if (!shouldIgnore.IsMatch(b.CustomName) && (onlyReplaceOldName ? b.CustomName.Contains(oldName) : true)) {
