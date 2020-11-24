@@ -1,9 +1,8 @@
-System.Text.RegularExpressions.Regex surfaceIdMatcher = new System.Text.RegularExpressions.Regex(
-    @"\s+<(\d+)>$",
-    System.Text.RegularExpressions.RegexOptions.Compiled
-);
+// System.Text.RegularExpressions.Regex surfaceIdMatcher = new System.Text.RegularExpressions.Regex(
+//     @"\s+<(\d+)>$",
+//     System.Text.RegularExpressions.RegexOptions.Compiled
+// );
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
-List<string> sprites = new List<string>();
 
 public enum DrawableType {
     TEXT,
@@ -41,7 +40,7 @@ public CharInfo CharsPerWidth(IMyTextSurface surface, float padding = 0f) {
     );
 }
 
-public void WriteTextToSurface(IMyTextSurface surface, Drawable drawable) {
+public void WriteTextToSurface(IMyTextSurface surface, string text /*Drawable drawable*/) {
     surface.ContentType = ContentType.SCRIPT;
     surface.Script = "";
     surface.Font = "Monospace";

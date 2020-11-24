@@ -1,5 +1,5 @@
 {
   "ignore": ["Script.cs"],
   "ext": "*.cs",
-  "exec": "cat Main.cs Util.cs Airlock.cs Cargo.cs Health.cs Power.cs Production.cs >Script.cs"
+  "exec": "./build.sh"
 }

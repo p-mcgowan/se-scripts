@@ -16,67 +16,70 @@ public class CargoStatus {
     public string itemText;
     public float pct;
 
-    public CargoStatus(Program _program) {
-        program = _program;
-        itemText = "";
-        pct = 0f;
-        cargo = new List<IMyTerminalBlock>();
-        cargoItemCounts = new Dictionary<string, VRage.MyFixedPoint>();
-        inventoryItems = new List<MyInventoryItem>();
-        itemRegex = Util.Regex(".*/");
-        ingotRegex = Util.Regex("Ingot/");
-        oreRegex = Util.Regex("Ore/(?!Ice)");
+    public CargoStatus(Program program) {
+        this.program = program;
+        this.itemText = "";
+        this.pct = 0f;
+        this.cargo = new List<IMyTerminalBlock>();
+        this.cargoItemCounts = new Dictionary<string, VRage.MyFixedPoint>();
+        this.inventoryItems = new List<MyInventoryItem>();
+        this.itemRegex = Util.Regex(".*/");
+        this.ingotRegex = Util.Regex("Ingot/");
+        this.oreRegex = Util.Regex("Ore/(?!Ice)");
         GetCargoBlocks();
     }
 
     public void Clear() {
-        itemText = "";
-        pct = 0f;
-        cargo.Clear();
-        cargoItemCounts.Clear();
-        inventoryItems.Clear();
+        this.itemText = "";
+        this.pct = 0f;
+        this.cargoItemCounts.Clear();
+        this.inventoryItems.Clear();
     }
 
     public void GetCargoBlocks() {
-        program.GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(cargo, c =>
-            c.IsSameConstructAs(program.Me) &&
+        this.cargo.Clear();
+        this.program.GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.cargo, c =>
+            c.IsSameConstructAs(this.program.Me) &&
             (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector)
             // (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector || c is IMyShipWelder || c is IMyShipGrinder)
         );
     }
 
     public void Refresh() {
-        Clear();
+        this.Clear();
 
         VRage.MyFixedPoint max = 0;
         VRage.MyFixedPoint vol = 0;
 
-        foreach (var c in cargo) {
+        foreach (var c in this.cargo) {
             var inv = c.GetInventory(0);
             vol += inv.CurrentVolume;
             max += inv.MaxVolume;
 
-            inventoryItems.Clear();
-            inv.GetItems(inventoryItems);
-            for (var i = 0; i < inventoryItems.Count; i++) {
-                string fullName = inventoryItems[i].Type.ToString();
-                string itemName = itemRegex.Replace(fullName, "");
-                if (ingotRegex.IsMatch(fullName)) {
+            this.inventoryItems.Clear();
+            inv.GetItems(this.inventoryItems);
+            for (var i = 0; i < this.inventoryItems.Count; i++) {
+                string fullName = this.inventoryItems[i].Type.ToString();
+                string itemName = this.itemRegex.Replace(fullName, "");
+                if (this.ingotRegex.IsMatch(fullName)) {
                     itemName += " Ingot";
-                } else if (oreRegex.IsMatch(fullName)) {
+                } else if (this.oreRegex.IsMatch(fullName)) {
                     itemName += " Ore";
                 }
 
-                var itemQty = inventoryItems[i].Amount;
-                if (!cargoItemCounts.ContainsKey(itemName)) {
-                    cargoItemCounts.Add(itemName, itemQty);
+                var itemQty = this.inventoryItems[i].Amount;
+                if (!this.cargoItemCounts.ContainsKey(itemName)) {
+                    this.cargoItemCounts.Add(itemName, itemQty);
                 } else {
-                    cargoItemCounts[itemName] = cargoItemCounts[itemName] + itemQty;
+                    this.cargoItemCounts[itemName] = this.cargoItemCounts[itemName] + itemQty;
                 }
             }
         }
 
-        pct = (float)vol / (float)max;
+        this.pct = 0f;
+        if (max != 0) {
+            this.pct = (float)vol / (float)max;
+        }
         // if (settings[CFG.CARGO_LIGHT] != "") {
         //     IMyLightingBlock light = (IMyLightingBlock)GetBlockWithName(settings[CFG.CARGO_LIGHT]);
 
@@ -121,10 +124,12 @@ public class CargoStatus {
 
     public override string ToString() {
         string itemText = $"{pct}%";
-        foreach (var item in cargoItemCounts) {
+        foreach (var item in this.cargoItemCounts) {
             var fmtd = Util.FormatNumber(item.Value);
             itemText += $"{item.Key}:{fmtd},";
+            this.program.Echo($"{item.Key}:{fmtd},");
         }
+
         return itemText;
     }
 
@@ -133,3 +138,4 @@ public class CargoStatus {
     }
 }
 /* CARGO */
+
