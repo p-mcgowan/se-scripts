@@ -25,7 +25,6 @@ public class PowerDetails {
     public float solarOutputMax;
 
     public PowerDetails(Program _program) {
-        this.asdf = 10;
         program = _program;
         powerProducerBlocks = new List<IMyPowerProducer>();
         jumpDriveBlocks = new List<IMyJumpDrive>();

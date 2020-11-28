@@ -12,7 +12,6 @@ public class CargoStatus {
     public System.Text.RegularExpressions.Regex ingotRegex;
     public System.Text.RegularExpressions.Regex oreRegex;
 
-    public string bar;
     public string itemText;
     public float pct;
 
