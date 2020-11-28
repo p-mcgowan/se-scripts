@@ -2,54 +2,42 @@
 ; User config - place in custom data
 ;
 ; for surface selection, use 'name <number>' eg: 'Cockpit <1>'
-
 [BLOCK_HEALTH]
 enabled=false
 output=
 |Text panel
 |Text panel 2
-
 [POWER]
 enabled=true
 output=Control Seat <0>
-
 [PRODUCTION]
 enabled=false
 output=Text panel Production
-
 [CARGO]
 enabled=false
 output=Text panel Cargo
-
 [CARGO_CAP]
 enabled=false
 output=Control Seat <2>
-
 [CARGO_CAP_STYLE]
 enabled=false
 output=small
-
 [CARGO_LIGHT]
 enabled=false
 output=Spotlight 2
-
 [INPUT]
 enabled=false
 output=Corner LCD
-
 [POWER_BAR]
 enabled=false
 output=Control Seat <1>
-
 [JUMP_BAR]
 enabled=false
 output=Jump panel
-
 [AIRLOCK]
 enabled=false
 time_open=750
 door_exclude=Hangar
-
 [HEALTH_IGNORE]
 enabled=false
 blocks=
@@ -250,4 +238,3 @@ public void WriteTextToSurface(IMyTextSurface surface, string text /*Drawable dr
     }
 }
 /* MAIN */
-

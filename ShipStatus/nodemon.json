@@ -1,5 +1,0 @@
-{
-  "ignore": ["Script.cs"],
-  "ext": "*.cs",
-  "exec": "./build.sh"
-}
