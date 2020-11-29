@@ -239,144 +239,123 @@ public void WriteTextToSurface(IMyTextSurface surface, string text /*Drawable dr
 }
 /* MAIN */
 /*
- * CARGO
+ * UTIL
  */
-CargoStatus cargoStatus;
+public static class Util {
+    public static System.Text.RegularExpressions.Regex pnameSplitter =
+        Util.Regex(@"\s<(\d+)>$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-public class CargoStatus {
-    public Program program;
-    public List<IMyTerminalBlock> cargo;
-    public Dictionary<string, VRage.MyFixedPoint> cargoItemCounts;
-    public List<MyInventoryItem> inventoryItems;
-    public System.Text.RegularExpressions.Regex itemRegex;
-    public System.Text.RegularExpressions.Regex ingotRegex;
-    public System.Text.RegularExpressions.Regex oreRegex;
-
-    public string itemText;
-    public float pct;
-
-    public CargoStatus(Program program) {
-        this.program = program;
-        this.itemText = "";
-        this.pct = 0f;
-        this.cargo = new List<IMyTerminalBlock>();
-        this.cargoItemCounts = new Dictionary<string, VRage.MyFixedPoint>();
-        this.inventoryItems = new List<MyInventoryItem>();
-        this.itemRegex = Util.Regex(".*/");
-        this.ingotRegex = Util.Regex("Ingot/");
-        this.oreRegex = Util.Regex("Ore/(?!Ice)");
-        GetCargoBlocks();
-    }
-
-    public void Clear() {
-        this.itemText = "";
-        this.pct = 0f;
-        this.cargoItemCounts.Clear();
-        this.inventoryItems.Clear();
-    }
-
-    public void GetCargoBlocks() {
-        this.cargo.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.cargo, c =>
-            c.IsSameConstructAs(this.program.Me) &&
-            (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector)
-            // (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector || c is IMyShipWelder || c is IMyShipGrinder)
-        );
-    }
-
-    public void Refresh() {
-        this.Clear();
-
-        VRage.MyFixedPoint max = 0;
-        VRage.MyFixedPoint vol = 0;
-
-        foreach (var c in this.cargo) {
-            var inv = c.GetInventory(0);
-            vol += inv.CurrentVolume;
-            max += inv.MaxVolume;
-
-            this.inventoryItems.Clear();
-            inv.GetItems(this.inventoryItems);
-            for (var i = 0; i < this.inventoryItems.Count; i++) {
-                string fullName = this.inventoryItems[i].Type.ToString();
-                string itemName = this.itemRegex.Replace(fullName, "");
-                if (this.ingotRegex.IsMatch(fullName)) {
-                    itemName += " Ingot";
-                } else if (this.oreRegex.IsMatch(fullName)) {
-                    itemName += " Ore";
-                }
-
-                var itemQty = this.inventoryItems[i].Amount;
-                if (!this.cargoItemCounts.ContainsKey(itemName)) {
-                    this.cargoItemCounts.Add(itemName, itemQty);
-                } else {
-                    this.cargoItemCounts[itemName] = this.cargoItemCounts[itemName] + itemQty;
-                }
-            }
+    public static string FormatNumber(VRage.MyFixedPoint input) {
+        string fmt;
+        int n = Math.Max(0, (int)input);
+        if (n < 10000) {
+            fmt = "##";
+        } else if (n < 1000000) {
+            fmt = "###0,K";
+        } else {
+            fmt = "###0,,M";
         }
-
-        this.pct = 0f;
-        if (max != 0) {
-            this.pct = (float)vol / (float)max;
-        }
-        // if (settings[CFG.CARGO_LIGHT] != "") {
-        //     IMyLightingBlock light = (IMyLightingBlock)GetBlockWithName(settings[CFG.CARGO_LIGHT]);
-
-        //     if (light != null && light is IMyLightingBlock) {
-        //         if (pct > 0.98f) {
-        //             light.Color = Color.Red;
-        //         } else if (pct > 0.90f) {
-        //             light.Color = Color.Yellow;
-        //         } else {
-        //             light.Color = Color.White;
-        //         }
-        //     }
-        // }
-
-        // string itemText = "";
-        // int chars;
-        // GetPanelWidthInChars(settings[CFG.CARGO], out chars);
-
-        // int itemIndex = 0;
-        // int doubleColumn = 60;
-        // foreach (var item in cargoItemCounts) {
-        //     var fmtd = Util.FormatNumber(item.Value);
-        //     int maxChars = chars;
-        //     if (chars > doubleColumn) {
-        //         maxChars = (chars - 4) / 2;
-        //     }
-        //     var padLen = (int)(maxChars - item.Key.ToString().Length - fmtd.Length);
-        //     string spacing = (padLen >= 0 ? "".PadRight(padLen, LINE_SPACER) : "\n  ");
-        //     itemText += String.Format("{0}{1}{2}", item.Key, spacing, fmtd);
-        //     if (chars <= doubleColumn || itemIndex % 2 != 0) {
-        //         itemText += '\n';
-        //     } else if (chars > doubleColumn) {
-        //         itemText += "   ";
-        //     }
-        //     itemIndex++;
-        // }
-
-        // itemText = itemText;
-
-        return;
+        return n.ToString(fmt, System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    public override string ToString() {
-        string itemText = $"{pct}%";
-        foreach (var item in this.cargoItemCounts) {
-            var fmtd = Util.FormatNumber(item.Value);
-            itemText += $"{item.Key}:{fmtd},";
-            this.program.Echo($"{item.Key}:{fmtd},");
+    public static string TimeFormat(double ms, bool s = false) {
+        TimeSpan t = TimeSpan.FromMilliseconds(ms);
+        if (t.Hours != 0) {
+            return String.Format("{0:D}h{1:D}m", t.Hours, t.Minutes);
+        } else if (t.Minutes != 0) {
+            return String.Format("{0:D}m", t.Minutes);
+        } else {
+            return (s ? String.Format("{0:D}s", t.Seconds) : "< 1m");
         }
-
-        return itemText;
     }
 
-    public void Draw(IMyTextSurface surface) {
-        //todo
+    public static string ToItemName(MyProductionItem i) {
+        string id = i.BlueprintId.ToString();
+        if (id.Contains('/')) {
+            return id.Split('/')[1];
+        }
+        return id;
+    }
+
+    public static string PctString(float val) {
+        return String.Format("{0,3:0}%", 100 * val);
+    }
+
+    public static System.Text.RegularExpressions.Regex Regex(
+        string pattern,
+        System.Text.RegularExpressions.RegexOptions opts = System.Text.RegularExpressions.RegexOptions.None
+    ) {
+        return new System.Text.RegularExpressions.Regex(pattern, opts);
+    }
+
+    public static string Plural(int count, string ifOne, string otherwise) {
+        return count == 1 ? ifOne : otherwise;
     }
 }
-/* CARGO */
+/* UTIL */
+// /*
+//  * BLOCK_HEALTH
+//  */
+// class BlockHealth {
+//     public Program program;
+//     public System.Text.RegularExpressions.Regex ignoreHealth;
+//     public List<IMyTerminalBlock> blocks;
+
+//     pubic BlockHealth(Program program) {
+//         this.blocks = new List<IMyTerminalBlock>();
+//         this.program = program;
+//     }
+
+//     public float GetHealth(IMyTerminalBlock block) {
+//         IMySlimBlock slimblock = block.CubeGrid.GetCubeBlock(block.Position);
+//         float MaxIntegrity = slimblock.MaxIntegrity;
+//         float BuildIntegrity = slimblock.BuildIntegrity;
+//         float CurrentDamage = slimblock.CurrentDamage;
+
+//         return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
+//     }
+
+//     public string DoBlockHealth() {
+//         // System.Text.RegularExpressions.Regex ignoreHealth = null;
+//         // if (settings[CFG.HEALTH_IGNORE] != "") {
+//         //     string input = System.Text.RegularExpressions.Regex.Replace(settings[CFG.HEALTH_IGNORE], @"\s*,\s*", "|");
+//         //     ignoreHealth = Regex(input);
+//         // }
+//         // CFG.HEALTH_IGNORE, "Hydrogen Thruster, Suspension"
+
+//         this.blocks.Clear();
+//         GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.blocks, b => b.IsSameConstructAs(Me));
+//         string output = "";
+
+//         // int chars;
+//         // GetPanelWidthInChars(settings[CFG.BLOCK_HEALTH], out chars);
+
+//         foreach (var b in this.blocks) {
+//             if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
+//                 continue;
+//             }
+
+//             var health = this.GetHealth(b);
+//             if (health != 1f) {
+//                 if (CanWriteToSurface(settings[CFG.BLOCK_HEALTH])) {
+//                     output += b.CustomName + " [" + Util.PctString(GetHealth(b)) + "]\n";
+//                 }
+//                 b.ShowOnHUD = true;
+//             } else {
+//                 b.ShowOnHUD = false;
+//             }
+//         }
+
+//         if (output == "") {
+//             output = "Ship status: No damage detected\n";
+//         } else {
+//             output = "Ship status: Damage detected\n" + output;
+//         }
+
+//         return output + '\n';
+//     }
+// }
+// /* BLOCK_HEALTH */
 // /*
 //  * PRODUCTION
 //  */
@@ -549,60 +528,144 @@ public class CargoStatus {
 // }
 // /* PRODUCTION */
 /*
- * UTIL
+ * CARGO
  */
-public static class Util {
-    public static System.Text.RegularExpressions.Regex pnameSplitter =
-        Util.Regex(@"\s<(\d+)>$", System.Text.RegularExpressions.RegexOptions.Compiled);
+CargoStatus cargoStatus;
 
-    public static string FormatNumber(VRage.MyFixedPoint input) {
-        string fmt;
-        int n = Math.Max(0, (int)input);
-        if (n < 10000) {
-            fmt = "##";
-        } else if (n < 1000000) {
-            fmt = "###0,K";
-        } else {
-            fmt = "###0,,M";
+public class CargoStatus {
+    public Program program;
+    public List<IMyTerminalBlock> cargo;
+    public Dictionary<string, VRage.MyFixedPoint> cargoItemCounts;
+    public List<MyInventoryItem> inventoryItems;
+    public System.Text.RegularExpressions.Regex itemRegex;
+    public System.Text.RegularExpressions.Regex ingotRegex;
+    public System.Text.RegularExpressions.Regex oreRegex;
+
+    public string itemText;
+    public float pct;
+
+    public CargoStatus(Program program) {
+        this.program = program;
+        this.itemText = "";
+        this.pct = 0f;
+        this.cargo = new List<IMyTerminalBlock>();
+        this.cargoItemCounts = new Dictionary<string, VRage.MyFixedPoint>();
+        this.inventoryItems = new List<MyInventoryItem>();
+        this.itemRegex = Util.Regex(".*/");
+        this.ingotRegex = Util.Regex("Ingot/");
+        this.oreRegex = Util.Regex("Ore/(?!Ice)");
+        GetCargoBlocks();
+    }
+
+    public void Clear() {
+        this.itemText = "";
+        this.pct = 0f;
+        this.cargoItemCounts.Clear();
+        this.inventoryItems.Clear();
+    }
+
+    public void GetCargoBlocks() {
+        this.cargo.Clear();
+        this.program.GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.cargo, c =>
+            c.IsSameConstructAs(this.program.Me) &&
+            (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector)
+            // (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector || c is IMyShipWelder || c is IMyShipGrinder)
+        );
+    }
+
+    public void Refresh() {
+        this.Clear();
+
+        VRage.MyFixedPoint max = 0;
+        VRage.MyFixedPoint vol = 0;
+
+        foreach (var c in this.cargo) {
+            var inv = c.GetInventory(0);
+            vol += inv.CurrentVolume;
+            max += inv.MaxVolume;
+
+            this.inventoryItems.Clear();
+            inv.GetItems(this.inventoryItems);
+            for (var i = 0; i < this.inventoryItems.Count; i++) {
+                string fullName = this.inventoryItems[i].Type.ToString();
+                string itemName = this.itemRegex.Replace(fullName, "");
+                if (this.ingotRegex.IsMatch(fullName)) {
+                    itemName += " Ingot";
+                } else if (this.oreRegex.IsMatch(fullName)) {
+                    itemName += " Ore";
+                }
+
+                var itemQty = this.inventoryItems[i].Amount;
+                if (!this.cargoItemCounts.ContainsKey(itemName)) {
+                    this.cargoItemCounts.Add(itemName, itemQty);
+                } else {
+                    this.cargoItemCounts[itemName] = this.cargoItemCounts[itemName] + itemQty;
+                }
+            }
         }
-        return n.ToString(fmt, System.Globalization.CultureInfo.InvariantCulture);
-    }
 
-    public static string TimeFormat(double ms, bool s = false) {
-        TimeSpan t = TimeSpan.FromMilliseconds(ms);
-        if (t.Hours != 0) {
-            return String.Format("{0:D}h{1:D}m", t.Hours, t.Minutes);
-        } else if (t.Minutes != 0) {
-            return String.Format("{0:D}m", t.Minutes);
-        } else {
-            return (s ? String.Format("{0:D}s", t.Seconds) : "< 1m");
+        this.pct = 0f;
+        if (max != 0) {
+            this.pct = (float)vol / (float)max;
         }
+        // if (settings[CFG.CARGO_LIGHT] != "") {
+        //     IMyLightingBlock light = (IMyLightingBlock)GetBlockWithName(settings[CFG.CARGO_LIGHT]);
+
+        //     if (light != null && light is IMyLightingBlock) {
+        //         if (pct > 0.98f) {
+        //             light.Color = Color.Red;
+        //         } else if (pct > 0.90f) {
+        //             light.Color = Color.Yellow;
+        //         } else {
+        //             light.Color = Color.White;
+        //         }
+        //     }
+        // }
+
+        // string itemText = "";
+        // int chars;
+        // GetPanelWidthInChars(settings[CFG.CARGO], out chars);
+
+        // int itemIndex = 0;
+        // int doubleColumn = 60;
+        // foreach (var item in cargoItemCounts) {
+        //     var fmtd = Util.FormatNumber(item.Value);
+        //     int maxChars = chars;
+        //     if (chars > doubleColumn) {
+        //         maxChars = (chars - 4) / 2;
+        //     }
+        //     var padLen = (int)(maxChars - item.Key.ToString().Length - fmtd.Length);
+        //     string spacing = (padLen >= 0 ? "".PadRight(padLen, LINE_SPACER) : "\n  ");
+        //     itemText += String.Format("{0}{1}{2}", item.Key, spacing, fmtd);
+        //     if (chars <= doubleColumn || itemIndex % 2 != 0) {
+        //         itemText += '\n';
+        //     } else if (chars > doubleColumn) {
+        //         itemText += "   ";
+        //     }
+        //     itemIndex++;
+        // }
+
+        // itemText = itemText;
+
+        return;
     }
 
-    public static string ToItemName(MyProductionItem i) {
-        string id = i.BlueprintId.ToString();
-        if (id.Contains('/')) {
-            return id.Split('/')[1];
+    public override string ToString() {
+        string itemText = $"{pct}%";
+        foreach (var item in this.cargoItemCounts) {
+            var fmtd = Util.FormatNumber(item.Value);
+            itemText += $"{item.Key}:{fmtd},";
+            this.program.Echo($"{item.Key}:{fmtd},");
         }
-        return id;
+
+        return itemText;
     }
 
-    public static string PctString(float val) {
-        return String.Format("{0,3:0}%", 100 * val);
-    }
-
-    public static System.Text.RegularExpressions.Regex Regex(
-        string pattern,
-        System.Text.RegularExpressions.RegexOptions opts = System.Text.RegularExpressions.RegexOptions.None
-    ) {
-        return new System.Text.RegularExpressions.Regex(pattern, opts);
-    }
-
-    public static string Plural(int count, string ifOne, string otherwise) {
-        return count == 1 ? ifOne : otherwise;
+    public void Draw(IMyTextSurface surface) {
+        //todo
     }
 }
-/* UTIL */
+/* CARGO */
 /*
  * POWER
  */
@@ -720,66 +783,3 @@ public class PowerDetails {
     }
 }
 /* POWER */
-// /*
-//  * BLOCK_HEALTH
-//  */
-// class BlockHealth {
-//     public Program program;
-//     public System.Text.RegularExpressions.Regex ignoreHealth;
-//     public List<IMyTerminalBlock> blocks;
-
-//     pubic BlockHealth(Program program) {
-//         this.blocks = new List<IMyTerminalBlock>();
-//         this.program = program;
-//     }
-
-//     public float GetHealth(IMyTerminalBlock block) {
-//         IMySlimBlock slimblock = block.CubeGrid.GetCubeBlock(block.Position);
-//         float MaxIntegrity = slimblock.MaxIntegrity;
-//         float BuildIntegrity = slimblock.BuildIntegrity;
-//         float CurrentDamage = slimblock.CurrentDamage;
-
-//         return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
-//     }
-
-//     public string DoBlockHealth() {
-//         // System.Text.RegularExpressions.Regex ignoreHealth = null;
-//         // if (settings[CFG.HEALTH_IGNORE] != "") {
-//         //     string input = System.Text.RegularExpressions.Regex.Replace(settings[CFG.HEALTH_IGNORE], @"\s*,\s*", "|");
-//         //     ignoreHealth = Regex(input);
-//         // }
-//         // CFG.HEALTH_IGNORE, "Hydrogen Thruster, Suspension"
-
-//         this.blocks.Clear();
-//         GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.blocks, b => b.IsSameConstructAs(Me));
-//         string output = "";
-
-//         // int chars;
-//         // GetPanelWidthInChars(settings[CFG.BLOCK_HEALTH], out chars);
-
-//         foreach (var b in this.blocks) {
-//             if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
-//                 continue;
-//             }
-
-//             var health = this.GetHealth(b);
-//             if (health != 1f) {
-//                 if (CanWriteToSurface(settings[CFG.BLOCK_HEALTH])) {
-//                     output += b.CustomName + " [" + Util.PctString(GetHealth(b)) + "]\n";
-//                 }
-//                 b.ShowOnHUD = true;
-//             } else {
-//                 b.ShowOnHUD = false;
-//             }
-//         }
-
-//         if (output == "") {
-//             output = "Ship status: No damage detected\n";
-//         } else {
-//             output = "Ship status: Damage detected\n" + output;
-//         }
-
-//         return output + '\n';
-//     }
-// }
-// /* BLOCK_HEALTH */
