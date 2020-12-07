@@ -2,7 +2,7 @@
  * UTIL
  */
 public static class Util {
-    public static System.Text.RegularExpressions.Regex pnameSplitter =
+    public static System.Text.RegularExpressions.Regex surfaceExtractor =
         Util.Regex(@"\s<(\d+)>$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
     public static string FormatNumber(VRage.MyFixedPoint input) {

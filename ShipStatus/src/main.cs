@@ -1,56 +1,92 @@
 /*
-; User config - place in custom data
+; CustomData config:
+; the [global] section applies to the whole program, or sets defaults for shared
+; config (either using mode=merge or mode = replace)
 ;
-; for surface selection, use 'name <number>' eg: 'Cockpit <1>'
-[BLOCK_HEALTH]
-enabled=false
+; For surface selection, use 'name <number>' eg: 'Cockpit <1>' - by default, the
+; first surface is selected (0)
+
+[global]
+airlock=true
+healthIgnore=Hydrogen Thruster,Suspension
+
+[Interior light 13]
+cargoLight=true
+
+[Programmable block <0>]
 output=
-|Text panel
-|Text panel 2
-[POWER]
-enabled=true
-output=Control Seat <0>
-[PRODUCTION]
-enabled=false
-output=Text panel Production
-[CARGO]
-enabled=false
-output=Text panel Cargo
-[CARGO_CAP]
-enabled=false
-output=Control Seat <2>
-[CARGO_CAP_STYLE]
-enabled=false
-output=small
-[CARGO_LIGHT]
-enabled=false
-output=Spotlight 2
-[INPUT]
-enabled=false
-output=Corner LCD
-[POWER_BAR]
-enabled=false
-output=Control Seat <1>
-[JUMP_BAR]
-enabled=false
-output=Jump panel
-[AIRLOCK]
-enabled=false
-time_open=750
-door_exclude=Hangar
-[HEALTH_IGNORE]
-enabled=false
-blocks=
-|Hydrogen Thruster
-|Suspension
+|Jump drives: {power.jumpDrives}
+|{power.jumpBar}
+|Batteries: {power.batteries}
+|{power.batteryBar}
+|Solar: {power.solars}
+|Energy IO: {power.io}
+|{power.energyio}
+|Reactors: {power.reactors}
+|
+|Ship status: {health.status}
+|{health.blocks}
+|
+|{production.mode}
+|{production.blocks}
+|
+|Cargo: {cargo.stored} / {cargo.cap}
+|{cargo.bar}
+|{cago.items}
+healthIgnore=Wheel
+healthIgnoreMode=merge
+
+[Status panel]
+output=
+|health
+healthIgnore=
+healthIgnoreMode=replace
 */
 
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
-Dictionary<string, List<IMyTextSurface>> programOutputs = new Dictionary<string, List<IMyTextSurface>>();
+List<string> strings = new List<string>();
 MyIni ini = new MyIni();
-public string[] programKeys = { "AIRLOCK", "BLOCK_HEALTH", "CARGO", "CARGO_CAP", "CARGO_CAP_STYLE", "CARGO_LIGHT", "HEALTH_IGNORE", "INPUT", "JUMP_BAR", "POWER", "POWER_BAR", "PRODUCTION" };
+SurfaceManager surfaceManager;
+Template template = new Template();
+
+// Dictionary<string, List<IMyTextSurface>> programOutputs = new Dictionary<string, List<IMyTextSurface>>();
+// public string[] programKeys = { "AIRLOCK", "BLOCK_HEALTH", "CARGO", "CARGO_CAP", "CARGO_CAP_STYLE", "CARGO_LIGHT", "HEALTH_IGNORE", "INPUT", "JUMP_BAR", "POWER", "POWER_BAR", "PRODUCTION" };
+
+public class SurfaceManager: Graphics {
+    public Program program;
+    public Dictionary<string, string> panelTemplates;
+
+    // drawables dict<panelName, drawable>
+
+    public SurfaceManager(Program program) {
+        this.program = program;
+        this.panelTemplates = new Dictionary<string, string>();
+    }
+
+    // public MyIniValue GetIni(string surface, string key) {
+    //     return this.program.ini.Get(surface, key);
+    // }
+
+    // public void FormatOutput(string surfaceId) {
+    //     if (this.GetIni(surfaceId, "output") == null) {
+    //         return;
+    //     }
+
+    //     strings.Clear();
+    //     ini.Get(name, "output").GetLines(strings);
+    //     foreach (var line in strings) {
+    //         var propertyB = classB.GetType().GetProperty(y);
+    //         var propertyA = classA.GetType().GetProperty(x);
+    //     }
+    // }
+}
 
 public class Panel {
+    // surface
+    // config
+    // cargo
+    // health
+    // production
     public string name;
     public int surfaceId;
 
@@ -61,7 +97,7 @@ public class Panel {
 }
 
 public void ParsePanelConfig(string input, ref Panel panel) {
-    var matches = Util.pnameSplitter.Matches(input);
+    var matches = Util.surfaceExtractor.Matches(input);
     if (matches.Count > 0 && matches[0].Groups.Count > 1) {
         Int32.TryParse(matches[0].Groups[1].Value, out panel.surfaceId);
         var panelName = input.Replace(matches[0].Groups[0].Value, "");
@@ -78,56 +114,101 @@ public bool ParseCustomData() {
         return false;
     }
 
-    blocks.Clear();
-    GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks, b => b.IsSameConstructAs(Me));
-    Dictionary<string, IMyTextSurfaceProvider> blockHash = new Dictionary<string, IMyTextSurfaceProvider>();
+    surfaceManager = new SurfaceManager(this);
+    strings.Clear();
+    ini.GetSections(strings);
 
-    foreach (IMyTextSurfaceProvider block in blocks) {
-        blockHash.Add(((IMyTerminalBlock)block).CustomName, block);
+    if (ini.ContainsSection("global")) {
+        // airlock=true
+        // healthIgnore=Hydrogen Thruster,Suspension
     }
-    Panel panel = new Panel("meh");
 
-    foreach (string key in programKeys) {
-        var value = ini.Get(key, "enabled").ToBoolean();
-        if (ini.Get(key, "enabled").ToBoolean()) {
-            string outputs = ini.Get(key, "output").ToString();
-            if (outputs != "") {
-                List<IMyTextSurface> surfaces = new List<IMyTextSurface>();
+    foreach (string name in strings) {
+        if (name == "global") {
+            continue;
+        }
 
-                // split on newlines, fetch surfaces, find in blokcs and add to list
-                foreach (string outname in outputs.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries)) {
-                    ParsePanelConfig(outname, ref panel);
-                    if (blockHash.ContainsKey(panel.name)) {
-                        surfaces.Add(blockHash[panel.name].GetSurface(panel.surfaceId));
-                    }
-                }
+        var tpl = ini.Get(name, "output");
 
-                programOutputs.Add(key, surfaces);
-            }
+        if (!tpl.IsEmpty) {
+            Echo($"added output for {name}");
+            surfaceManager.panelTemplates.Add(name, tpl.ToString());
         }
     }
 
+    // blocks.Clear();
+    // GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks, b => b.IsSameConstructAs(Me));
+    // Dictionary<string, IMyTextSurfaceProvider> blockHash = new Dictionary<string, IMyTextSurfaceProvider>();
+
+    // foreach (IMyTextSurfaceProvider block in blocks) {
+    //     blockHash.Add(((IMyTerminalBlock)block).CustomName, block);
+    // }
+    // Panel panel = new Panel("meh");
+
+    // foreach (string key in programKeys) {
+    //     var value = ini.Get(key, "enabled").ToBoolean();
+    //     if (ini.Get(key, "enabled").ToBoolean()) {
+    //         string outputs = ini.Get(key, "output").ToString();
+    //         if (outputs != "") {
+    //             List<IMyTextSurface> surfaces = new List<IMyTextSurface>();
+
+    //             // split on newlines, fetch surfaces, find in blokcs and add to list
+    //             foreach (string outname in outputs.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries)) {
+    //                 ParsePanelConfig(outname, ref panel);
+    //                 if (blockHash.ContainsKey(panel.name)) {
+    //                     surfaces.Add(blockHash[panel.name].GetSurface(panel.surfaceId));
+    //                 }
+    //             }
+
+    //             programOutputs.Add(key, surfaces);
+    //         }
+    //     }
+    // }
+
     // var items = sx.Split(new[] { '\n', ',' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Split(new[] { '=' }));
+
+    // blocks.Clear();
+    // GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
+    // foreach (IMyTextSurfaceProvider block in blocks) {
+    //     if (is in config){}
+    //     for (int i = 0; i < block.SurfaceCount; i++) {
+    //         IMyTextSurface surface = block.GetSurface(i);
+    //         graphics.drawables.Add($"{((IMyTerminalBlock)block).CustomName} <{i}>", new DrawingSurface(surface, this));
+    //     }
+    // }
     return true;
 }
 
 public Program() {
     // cargo = new List<IMyTerminalBlock>();
     // items = new List<MyInventoryItem>();
-    // CargoStatus cargoStatus = new CargoStatus(this);
-    powerDetails = new PowerDetails(this);
-    cargoStatus = new CargoStatus(this);
     // Runtime.UpdateFrequency = UpdateFrequency.Update100;
-    // // Runtime.UpdateFrequency = UpdateFrequency.Update100 | UpdateFrequency.Update10;
+
     if (!ParseCustomData()) {
-        Runtime.UpdateFrequency = UpdateFrequency.None;
+        Runtime.UpdateFrequency &= UpdateFrequency.None;
         Echo("Failed to parse custom data");
         return;
+    }
+    // airlocks on 10
+    Runtime.UpdateFrequency = UpdateFrequency.Update100 | UpdateFrequency.Update10;
+
+    // CargoStatus cargoStatus = new CargoStatus(this);
+    template.program = this;
+    powerDetails = new PowerDetails(this);
+    cargoStatus = new CargoStatus(this, template);
+
+    blocks.Clear();
+    GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
+    foreach (IMyTextSurfaceProvider block in blocks) {
+        for (int i = 0; i < block.SurfaceCount; i++) {
+            IMyTextSurface surface = block.GetSurface(i);
+            surfaceManager.drawables.Add($"{((IMyTerminalBlock)block).CustomName} <{i}>", new DrawingSurface(surface, this));
+        }
     }
 }
 
 public void Main(string argument, UpdateType updateSource) {
-    Echo($"updateSource: {updateSource}");
+    // Echo($"updateSource: {updateSource}");
     if (/* should airlock */(updateSource & UpdateType.Update10) == UpdateType.Update10) {
         // if (!airlocks.Any()) {
         //     GetMappedAirlocks();
@@ -151,16 +232,23 @@ public void Main(string argument, UpdateType updateSource) {
 
     string power = powerDetails.ToString();
     string cargo = cargoStatus.ToString();
-    Echo(power);
-    Echo(cargo);
+    // Echo(power);
+    // Echo(cargo);
 
-    blocks.Clear();
-    GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
-    foreach (IMyTextSurfaceProvider block in blocks) {
-        for (int i = 0; i < block.SurfaceCount; i++) {
-            WriteTextToSurface(block.GetSurface(i), cargo);
+    foreach (string key in surfaceManager.drawables.Keys) {
+        if (!surfaceManager.panelTemplates.ContainsKey(key)) {
+            continue;
         }
+        DrawingSurface ds = surfaceManager.drawables[key];
+        template.Render(ref ds, surfaceManager.panelTemplates[key].Split('\n'));
     }
+    // blocks.Clear();
+    // GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
+    // foreach (IMyTextSurfaceProvider block in blocks) {
+    //     for (int i = 0; i < block.SurfaceCount; i++) {
+    //         WriteTextToSurface(block.GetSurface(i), cargo);
+    //     }
+    // }
         // ProgressBar(CFG.POWER, currentCharge / maxCharge) + "\n";
 
     // if (CanWriteToSurface(settings[CFG.BLOCK_HEALTH])) {
@@ -194,47 +282,5 @@ public void Main(string argument, UpdateType updateSource) {
     //     }
     //     WriteToLCD(settings[CFG.CARGO], cStats.itemText, true);
     // }
-}
-
-public void WriteTextToSurface(IMyTextSurface surface, string text /*Drawable drawable*/) {
-    if (surface.ContentType == ContentType.NONE) {
-        surface.ContentType = ContentType.SCRIPT;
-    }
-    surface.Script = "";
-    surface.Font = "Monospace";
-
-    RectangleF viewport = new RectangleF((surface.TextureSize - surface.SurfaceSize) / 2f, surface.SurfaceSize);
-
-    using (MySpriteDrawFrame frame = surface.DrawFrame()) {
-        Vector2 position = new Vector2(0, 0) + viewport.Position;
-        // CharInfo chars = CharsPerWidth(surface);
-
-        MySprite sprite;
-        sprite = new MySprite() {
-            Type = SpriteType.TEXT,
-            Data = text,
-            Position = position,
-            RotationOrScale = surface.FontSize,
-            Color = surface.FontColor,
-            Alignment = TextAlignment.LEFT,
-            FontId = surface.Font
-        };
-        frame.Add(sprite);
-        // foreach (var toDraw in drawable.lines) {
-        //     if (toDraw.Key == DrawableType.TEXT || toDraw.Key == DrawableType.SPLIT) {
-        //         string text = toDraw.Value[0];
-        //         if (toDraw.Key == DrawableType.SPLIT) {
-        //             //
-        //         }
-
-
-        //         //
-        //     } else if (toDraw.Key == DrawableType.BAR) {
-        //     } else if (toDraw.Key == DrawableType.SPLIT) {
-        //         //
-        //     }
-        //     frame.Add(sprite);
-        // }
-    }
 }
 /* MAIN */

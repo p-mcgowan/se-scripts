@@ -5,7 +5,11 @@ string[] templateStrings = new string[] {
     "This is a test {no.registered.method}",
     "This is another line, below is ",
     "a registered method returning Random",
-    "{test.random}"
+    "{test.random}",
+    "",
+    "does this still print",
+    "{text:colour=0,0,100; i'm blue, abadee abadaa}",
+    "???"
 };
 
 
@@ -16,7 +20,7 @@ class Test {
         this.random = new Random();
     }
 
-    public void Random(DrawingSurface ds, string text) {
+    public void Random(ref DrawingSurface ds, string text, string options = "") {
         ds.Text($"{this.random.Next(0, 100)}");
     }
 }

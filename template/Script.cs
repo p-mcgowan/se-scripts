@@ -5,7 +5,11 @@ string[] templateStrings = new string[] {
     "This is a test {no.registered.method}",
     "This is another line, below is ",
     "a registered method returning Random",
-    "{test.random}"
+    "{test.random}",
+    "",
+    "does this still print",
+    "{text:colour=0,0,100; i'm blue, abadee abadaa}",
+    "???"
 };
 
 
@@ -16,7 +20,7 @@ class Test {
         this.random = new Random();
     }
 
-    public void Random(DrawingSurface ds, string text) {
+    public void Random(ref DrawingSurface ds, string text, string options = "") {
         ds.Text($"{this.random.Next(0, 100)}");
     }
 }
@@ -346,28 +350,50 @@ public class Token {
     public string value = null;
 }
 
-public delegate void Del(DrawingSurface ds, string token);
+public delegate void Del(ref DrawingSurface ds, string token, string options = "");
 
 public class Template {
     public Program program;
     public Dictionary<string, Del> methods;
     public System.Text.RegularExpressions.Regex tokenizer;
+    public System.Text.RegularExpressions.Regex cmdSplitter;
     public System.Text.RegularExpressions.Match match;
     public Token token;
+    public char[] splitSpace;
 
     public Template(Program program) {
         this.tokenizer = Util.Regex(@"(\{[^\}]+\}|[^\{]+)", System.Text.RegularExpressions.RegexOptions.Compiled);
+        this.cmdSplitter = Util.Regex(@"(?<name>[^: ]+)(:(?<params>[^; ]+);? )(?<text>.*)", System.Text.RegularExpressions.RegexOptions.Compiled);
         this.token = new Token();
         this.methods = new Dictionary<string, Del>();
         this.program = program;
+        this.RegisterRenderAction("text", this.RenderText);
+        this.splitSpace = new[] { ' ' };
     }
 
     public void RegisterRenderAction(string key, Del callback) {
         this.methods[key] = callback;
     }
 
-    public void RenderText(DrawingSurface ds, string text) {
-        ds.Text(text);
+    public void RenderText(ref DrawingSurface ds, string text, string options = "") {
+        Color? colour = null;
+        if (options != "") {
+            Dictionary<string, string> keyValuePairs = options.Split(';')
+                .Select(value => value.Split('='))
+                .ToDictionary(pair => pair[0], pair => pair[1]);
+
+            if (keyValuePairs["colour"] != null) {
+                var cols = keyValuePairs["colour"].Split(',').Select(value => Int32.Parse(value)).ToArray();
+                colour = new Color(
+                    cols.ElementAtOrDefault(0),
+                    cols.ElementAtOrDefault(1),
+                    cols.ElementAtOrDefault(2),
+                    cols.Length > 3 ? cols[3] : 255
+                );
+            }
+        }
+        this.program.Echo($"c:{colour}");
+        ds.Text(text, colour: colour);
     }
 
     public bool GetToken(string line) {
@@ -405,8 +431,26 @@ public class Template {
             while (this.GetToken(line)) {
                 if (this.token.isText) {
                     ds.Text(this.token.value);
-                } else if (this.methods.ContainsKey(this.token.value)) {
-                    this.methods[this.token.value](ds, this.token.value);
+                    continue;
+                }
+
+                string name = this.token.value;
+                string opts = "";
+                string text = "";
+                System.Text.RegularExpressions.Match m = this.cmdSplitter.Match(this.token.value);
+                if (m.Success) {
+                    opts = m.Groups["params"].Value;
+                    text = m.Groups["text"].Value;
+                    name = m.Groups["name"].Value;
+                }
+                this.program.Echo($"name:{name},text:{text},opts:{opts}");
+
+                // string[] parts = this.token.value.Split(this.splitSpace, 2);
+                // string[] opts = this.token.value.Split(':');
+                // this.program.Echo(String.Format("p1: {0}, p2?: {1}", parts[0], parts.Length > 1 ? parts[1] : "naw"));
+
+                if (this.methods.ContainsKey(name)) {
+                    this.methods[name](ref ds, text, opts);
                 } else {
                     ds.Text($"{{{this.token.value}}}");
                 }

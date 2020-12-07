@@ -80,15 +80,19 @@ public class DrawingSurface {
         float scale = 1f,
         Vector2? position = null
     ) {
+        this.program.Echo("1");
         if (!this.drawing) {
             this.DrawStart();
         }
+        this.program.Echo("2");
         if (colour == null) {
             colour = this.surface.FontColor;
         }
+        this.program.Echo("3");
 
         Vector2 pos = (position ?? this.cursor) + this.viewport.Position;
 
+        this.program.Echo("4");
         this.frame.Add(new MySprite() {
             Type = SpriteType.TEXT,
             Data = text,
@@ -99,8 +103,10 @@ public class DrawingSurface {
             FontId = surface.Font
         });
 
+        this.program.Echo("5");
         this.cursor.X += this.charSizeInPx.X * text.Length + (float)Math.Ceiling((double)(text.Length / 2)) - 1f;
 
+        this.program.Echo("6");
         return this;
     }
 

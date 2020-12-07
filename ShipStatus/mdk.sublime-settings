@@ -11,7 +11,7 @@
 
   // files to include - uses glob pattern, accepts folders too (relative to manifest)
   // eg: files="src/**/*.cs,../rename/*,../../local/lidar/,./src/a"
-  "files": "*",
+  "files": "src,../graphics/src/graphics.cs,../template/src/template.cs",
 
   // set to true to include mdk's thumb, or set to a path to use another png file
   "thumb": true

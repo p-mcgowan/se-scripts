@@ -1,56 +1,92 @@
 /*
-; User config - place in custom data
+; CustomData config:
+; the [global] section applies to the whole program, or sets defaults for shared
+; config (either using mode=merge or mode = replace)
 ;
-; for surface selection, use 'name <number>' eg: 'Cockpit <1>'
-[BLOCK_HEALTH]
-enabled=false
+; For surface selection, use 'name <number>' eg: 'Cockpit <1>' - by default, the
+; first surface is selected (0)
+
+[global]
+airlock=true
+healthIgnore=Hydrogen Thruster,Suspension
+
+[Interior light 13]
+cargoLight=true
+
+[Programmable block <0>]
 output=
-|Text panel
-|Text panel 2
-[POWER]
-enabled=true
-output=Control Seat <0>
-[PRODUCTION]
-enabled=false
-output=Text panel Production
-[CARGO]
-enabled=false
-output=Text panel Cargo
-[CARGO_CAP]
-enabled=false
-output=Control Seat <2>
-[CARGO_CAP_STYLE]
-enabled=false
-output=small
-[CARGO_LIGHT]
-enabled=false
-output=Spotlight 2
-[INPUT]
-enabled=false
-output=Corner LCD
-[POWER_BAR]
-enabled=false
-output=Control Seat <1>
-[JUMP_BAR]
-enabled=false
-output=Jump panel
-[AIRLOCK]
-enabled=false
-time_open=750
-door_exclude=Hangar
-[HEALTH_IGNORE]
-enabled=false
-blocks=
-|Hydrogen Thruster
-|Suspension
+|Jump drives: {power.jumpDrives}
+|{power.jumpBar}
+|Batteries: {power.batteries}
+|{power.batteryBar}
+|Solar: {power.solars}
+|Energy IO: {power.io}
+|{power.energyio}
+|Reactors: {power.reactors}
+|
+|Ship status: {health.status}
+|{health.blocks}
+|
+|{production.mode}
+|{production.blocks}
+|
+|Cargo: {cargo.stored} / {cargo.cap}
+|{cargo.bar}
+|{cago.items}
+healthIgnore=Wheel
+healthIgnoreMode=merge
+
+[Status panel]
+output=
+|health
+healthIgnore=
+healthIgnoreMode=replace
 */
 
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
-Dictionary<string, List<IMyTextSurface>> programOutputs = new Dictionary<string, List<IMyTextSurface>>();
+List<string> strings = new List<string>();
 MyIni ini = new MyIni();
-public string[] programKeys = { "AIRLOCK", "BLOCK_HEALTH", "CARGO", "CARGO_CAP", "CARGO_CAP_STYLE", "CARGO_LIGHT", "HEALTH_IGNORE", "INPUT", "JUMP_BAR", "POWER", "POWER_BAR", "PRODUCTION" };
+SurfaceManager surfaceManager;
+Template template = new Template();
+
+// Dictionary<string, List<IMyTextSurface>> programOutputs = new Dictionary<string, List<IMyTextSurface>>();
+// public string[] programKeys = { "AIRLOCK", "BLOCK_HEALTH", "CARGO", "CARGO_CAP", "CARGO_CAP_STYLE", "CARGO_LIGHT", "HEALTH_IGNORE", "INPUT", "JUMP_BAR", "POWER", "POWER_BAR", "PRODUCTION" };
+
+public class SurfaceManager: Graphics {
+    public Program program;
+    public Dictionary<string, string> panelTemplates;
+
+    // drawables dict<panelName, drawable>
+
+    public SurfaceManager(Program program) {
+        this.program = program;
+        this.panelTemplates = new Dictionary<string, string>();
+    }
+
+    // public MyIniValue GetIni(string surface, string key) {
+    //     return this.program.ini.Get(surface, key);
+    // }
+
+    // public void FormatOutput(string surfaceId) {
+    //     if (this.GetIni(surfaceId, "output") == null) {
+    //         return;
+    //     }
+
+    //     strings.Clear();
+    //     ini.Get(name, "output").GetLines(strings);
+    //     foreach (var line in strings) {
+    //         var propertyB = classB.GetType().GetProperty(y);
+    //         var propertyA = classA.GetType().GetProperty(x);
+    //     }
+    // }
+}
 
 public class Panel {
+    // surface
+    // config
+    // cargo
+    // health
+    // production
     public string name;
     public int surfaceId;
 
@@ -61,7 +97,7 @@ public class Panel {
 }
 
 public void ParsePanelConfig(string input, ref Panel panel) {
-    var matches = Util.pnameSplitter.Matches(input);
+    var matches = Util.surfaceExtractor.Matches(input);
     if (matches.Count > 0 && matches[0].Groups.Count > 1) {
         Int32.TryParse(matches[0].Groups[1].Value, out panel.surfaceId);
         var panelName = input.Replace(matches[0].Groups[0].Value, "");
@@ -78,56 +114,101 @@ public bool ParseCustomData() {
         return false;
     }
 
-    blocks.Clear();
-    GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks, b => b.IsSameConstructAs(Me));
-    Dictionary<string, IMyTextSurfaceProvider> blockHash = new Dictionary<string, IMyTextSurfaceProvider>();
+    surfaceManager = new SurfaceManager(this);
+    strings.Clear();
+    ini.GetSections(strings);
 
-    foreach (IMyTextSurfaceProvider block in blocks) {
-        blockHash.Add(((IMyTerminalBlock)block).CustomName, block);
+    if (ini.ContainsSection("global")) {
+        // airlock=true
+        // healthIgnore=Hydrogen Thruster,Suspension
     }
-    Panel panel = new Panel("meh");
 
-    foreach (string key in programKeys) {
-        var value = ini.Get(key, "enabled").ToBoolean();
-        if (ini.Get(key, "enabled").ToBoolean()) {
-            string outputs = ini.Get(key, "output").ToString();
-            if (outputs != "") {
-                List<IMyTextSurface> surfaces = new List<IMyTextSurface>();
+    foreach (string name in strings) {
+        if (name == "global") {
+            continue;
+        }
 
-                // split on newlines, fetch surfaces, find in blokcs and add to list
-                foreach (string outname in outputs.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries)) {
-                    ParsePanelConfig(outname, ref panel);
-                    if (blockHash.ContainsKey(panel.name)) {
-                        surfaces.Add(blockHash[panel.name].GetSurface(panel.surfaceId));
-                    }
-                }
+        var tpl = ini.Get(name, "output");
 
-                programOutputs.Add(key, surfaces);
-            }
+        if (!tpl.IsEmpty) {
+            Echo($"added output for {name}");
+            surfaceManager.panelTemplates.Add(name, tpl.ToString());
         }
     }
 
+    // blocks.Clear();
+    // GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks, b => b.IsSameConstructAs(Me));
+    // Dictionary<string, IMyTextSurfaceProvider> blockHash = new Dictionary<string, IMyTextSurfaceProvider>();
+
+    // foreach (IMyTextSurfaceProvider block in blocks) {
+    //     blockHash.Add(((IMyTerminalBlock)block).CustomName, block);
+    // }
+    // Panel panel = new Panel("meh");
+
+    // foreach (string key in programKeys) {
+    //     var value = ini.Get(key, "enabled").ToBoolean();
+    //     if (ini.Get(key, "enabled").ToBoolean()) {
+    //         string outputs = ini.Get(key, "output").ToString();
+    //         if (outputs != "") {
+    //             List<IMyTextSurface> surfaces = new List<IMyTextSurface>();
+
+    //             // split on newlines, fetch surfaces, find in blokcs and add to list
+    //             foreach (string outname in outputs.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries)) {
+    //                 ParsePanelConfig(outname, ref panel);
+    //                 if (blockHash.ContainsKey(panel.name)) {
+    //                     surfaces.Add(blockHash[panel.name].GetSurface(panel.surfaceId));
+    //                 }
+    //             }
+
+    //             programOutputs.Add(key, surfaces);
+    //         }
+    //     }
+    // }
+
     // var items = sx.Split(new[] { '\n', ',' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Split(new[] { '=' }));
+
+    // blocks.Clear();
+    // GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
+    // foreach (IMyTextSurfaceProvider block in blocks) {
+    //     if (is in config){}
+    //     for (int i = 0; i < block.SurfaceCount; i++) {
+    //         IMyTextSurface surface = block.GetSurface(i);
+    //         graphics.drawables.Add($"{((IMyTerminalBlock)block).CustomName} <{i}>", new DrawingSurface(surface, this));
+    //     }
+    // }
     return true;
 }
 
 public Program() {
     // cargo = new List<IMyTerminalBlock>();
     // items = new List<MyInventoryItem>();
-    // CargoStatus cargoStatus = new CargoStatus(this);
-    powerDetails = new PowerDetails(this);
-    cargoStatus = new CargoStatus(this);
     // Runtime.UpdateFrequency = UpdateFrequency.Update100;
-    // // Runtime.UpdateFrequency = UpdateFrequency.Update100 | UpdateFrequency.Update10;
+
     if (!ParseCustomData()) {
-        Runtime.UpdateFrequency = UpdateFrequency.None;
+        Runtime.UpdateFrequency &= UpdateFrequency.None;
         Echo("Failed to parse custom data");
         return;
+    }
+    // airlocks on 10
+    Runtime.UpdateFrequency = UpdateFrequency.Update100 | UpdateFrequency.Update10;
+
+    // CargoStatus cargoStatus = new CargoStatus(this);
+    template.program = this;
+    powerDetails = new PowerDetails(this);
+    cargoStatus = new CargoStatus(this, template);
+
+    blocks.Clear();
+    GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
+    foreach (IMyTextSurfaceProvider block in blocks) {
+        for (int i = 0; i < block.SurfaceCount; i++) {
+            IMyTextSurface surface = block.GetSurface(i);
+            surfaceManager.drawables.Add($"{((IMyTerminalBlock)block).CustomName} <{i}>", new DrawingSurface(surface, this));
+        }
     }
 }
 
 public void Main(string argument, UpdateType updateSource) {
-    Echo($"updateSource: {updateSource}");
+    // Echo($"updateSource: {updateSource}");
     if (/* should airlock */(updateSource & UpdateType.Update10) == UpdateType.Update10) {
         // if (!airlocks.Any()) {
         //     GetMappedAirlocks();
@@ -151,16 +232,23 @@ public void Main(string argument, UpdateType updateSource) {
 
     string power = powerDetails.ToString();
     string cargo = cargoStatus.ToString();
-    Echo(power);
-    Echo(cargo);
+    // Echo(power);
+    // Echo(cargo);
 
-    blocks.Clear();
-    GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
-    foreach (IMyTextSurfaceProvider block in blocks) {
-        for (int i = 0; i < block.SurfaceCount; i++) {
-            WriteTextToSurface(block.GetSurface(i), cargo);
+    foreach (string key in surfaceManager.drawables.Keys) {
+        if (!surfaceManager.panelTemplates.ContainsKey(key)) {
+            continue;
         }
+        DrawingSurface ds = surfaceManager.drawables[key];
+        template.Render(ref ds, surfaceManager.panelTemplates[key].Split('\n'));
     }
+    // blocks.Clear();
+    // GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
+    // foreach (IMyTextSurfaceProvider block in blocks) {
+    //     for (int i = 0; i < block.SurfaceCount; i++) {
+    //         WriteTextToSurface(block.GetSurface(i), cargo);
+    //     }
+    // }
         // ProgressBar(CFG.POWER, currentCharge / maxCharge) + "\n";
 
     // if (CanWriteToSurface(settings[CFG.BLOCK_HEALTH])) {
@@ -195,167 +283,7 @@ public void Main(string argument, UpdateType updateSource) {
     //     WriteToLCD(settings[CFG.CARGO], cStats.itemText, true);
     // }
 }
-
-public void WriteTextToSurface(IMyTextSurface surface, string text /*Drawable drawable*/) {
-    if (surface.ContentType == ContentType.NONE) {
-        surface.ContentType = ContentType.SCRIPT;
-    }
-    surface.Script = "";
-    surface.Font = "Monospace";
-
-    RectangleF viewport = new RectangleF((surface.TextureSize - surface.SurfaceSize) / 2f, surface.SurfaceSize);
-
-    using (MySpriteDrawFrame frame = surface.DrawFrame()) {
-        Vector2 position = new Vector2(0, 0) + viewport.Position;
-        // CharInfo chars = CharsPerWidth(surface);
-
-        MySprite sprite;
-        sprite = new MySprite() {
-            Type = SpriteType.TEXT,
-            Data = text,
-            Position = position,
-            RotationOrScale = surface.FontSize,
-            Color = surface.FontColor,
-            Alignment = TextAlignment.LEFT,
-            FontId = surface.Font
-        };
-        frame.Add(sprite);
-        // foreach (var toDraw in drawable.lines) {
-        //     if (toDraw.Key == DrawableType.TEXT || toDraw.Key == DrawableType.SPLIT) {
-        //         string text = toDraw.Value[0];
-        //         if (toDraw.Key == DrawableType.SPLIT) {
-        //             //
-        //         }
-
-
-        //         //
-        //     } else if (toDraw.Key == DrawableType.BAR) {
-        //     } else if (toDraw.Key == DrawableType.SPLIT) {
-        //         //
-        //     }
-        //     frame.Add(sprite);
-        // }
-    }
-}
 /* MAIN */
-/*
- * UTIL
- */
-public static class Util {
-    public static System.Text.RegularExpressions.Regex pnameSplitter =
-        Util.Regex(@"\s<(\d+)>$", System.Text.RegularExpressions.RegexOptions.Compiled);
-
-    public static string FormatNumber(VRage.MyFixedPoint input) {
-        string fmt;
-        int n = Math.Max(0, (int)input);
-        if (n < 10000) {
-            fmt = "##";
-        } else if (n < 1000000) {
-            fmt = "###0,K";
-        } else {
-            fmt = "###0,,M";
-        }
-        return n.ToString(fmt, System.Globalization.CultureInfo.InvariantCulture);
-    }
-
-    public static string TimeFormat(double ms, bool s = false) {
-        TimeSpan t = TimeSpan.FromMilliseconds(ms);
-        if (t.Hours != 0) {
-            return String.Format("{0:D}h{1:D}m", t.Hours, t.Minutes);
-        } else if (t.Minutes != 0) {
-            return String.Format("{0:D}m", t.Minutes);
-        } else {
-            return (s ? String.Format("{0:D}s", t.Seconds) : "< 1m");
-        }
-    }
-
-    public static string ToItemName(MyProductionItem i) {
-        string id = i.BlueprintId.ToString();
-        if (id.Contains('/')) {
-            return id.Split('/')[1];
-        }
-        return id;
-    }
-
-    public static string PctString(float val) {
-        return String.Format("{0,3:0}%", 100 * val);
-    }
-
-    public static System.Text.RegularExpressions.Regex Regex(
-        string pattern,
-        System.Text.RegularExpressions.RegexOptions opts = System.Text.RegularExpressions.RegexOptions.None
-    ) {
-        return new System.Text.RegularExpressions.Regex(pattern, opts);
-    }
-
-    public static string Plural(int count, string ifOne, string otherwise) {
-        return count == 1 ? ifOne : otherwise;
-    }
-}
-/* UTIL */
-// /*
-//  * BLOCK_HEALTH
-//  */
-// class BlockHealth {
-//     public Program program;
-//     public System.Text.RegularExpressions.Regex ignoreHealth;
-//     public List<IMyTerminalBlock> blocks;
-
-//     pubic BlockHealth(Program program) {
-//         this.blocks = new List<IMyTerminalBlock>();
-//         this.program = program;
-//     }
-
-//     public float GetHealth(IMyTerminalBlock block) {
-//         IMySlimBlock slimblock = block.CubeGrid.GetCubeBlock(block.Position);
-//         float MaxIntegrity = slimblock.MaxIntegrity;
-//         float BuildIntegrity = slimblock.BuildIntegrity;
-//         float CurrentDamage = slimblock.CurrentDamage;
-
-//         return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
-//     }
-
-//     public string DoBlockHealth() {
-//         // System.Text.RegularExpressions.Regex ignoreHealth = null;
-//         // if (settings[CFG.HEALTH_IGNORE] != "") {
-//         //     string input = System.Text.RegularExpressions.Regex.Replace(settings[CFG.HEALTH_IGNORE], @"\s*,\s*", "|");
-//         //     ignoreHealth = Regex(input);
-//         // }
-//         // CFG.HEALTH_IGNORE, "Hydrogen Thruster, Suspension"
-
-//         this.blocks.Clear();
-//         GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.blocks, b => b.IsSameConstructAs(Me));
-//         string output = "";
-
-//         // int chars;
-//         // GetPanelWidthInChars(settings[CFG.BLOCK_HEALTH], out chars);
-
-//         foreach (var b in this.blocks) {
-//             if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
-//                 continue;
-//             }
-
-//             var health = this.GetHealth(b);
-//             if (health != 1f) {
-//                 if (CanWriteToSurface(settings[CFG.BLOCK_HEALTH])) {
-//                     output += b.CustomName + " [" + Util.PctString(GetHealth(b)) + "]\n";
-//                 }
-//                 b.ShowOnHUD = true;
-//             } else {
-//                 b.ShowOnHUD = false;
-//             }
-//         }
-
-//         if (output == "") {
-//             output = "Ship status: No damage detected\n";
-//         } else {
-//             output = "Ship status: Damage detected\n" + output;
-//         }
-
-//         return output + '\n';
-//     }
-// }
-// /* BLOCK_HEALTH */
 // /*
 //  * PRODUCTION
 //  */
@@ -540,11 +468,14 @@ public class CargoStatus {
     public System.Text.RegularExpressions.Regex itemRegex;
     public System.Text.RegularExpressions.Regex ingotRegex;
     public System.Text.RegularExpressions.Regex oreRegex;
+    public Template template;
+    public VRage.MyFixedPoint max;
+    public VRage.MyFixedPoint vol;
 
     public string itemText;
     public float pct;
 
-    public CargoStatus(Program program) {
+    public CargoStatus(Program program, Template template) {
         this.program = program;
         this.itemText = "";
         this.pct = 0f;
@@ -554,8 +485,40 @@ public class CargoStatus {
         this.itemRegex = Util.Regex(".*/");
         this.ingotRegex = Util.Regex("Ingot/");
         this.oreRegex = Util.Regex("Ore/(?!Ice)");
-        GetCargoBlocks();
+        this.template = template;
+        this.GetCargoBlocks();
+        this.RegisterTemplateVars();
     }
+
+    public void RegisterTemplateVars() {
+        this.template.RegisterRenderAction("cargo.stored",
+            (ref DrawingSurface ds, string text, string options) => ds.Text($"{Util.FormatNumber(1000 * this.vol)} L"));
+        this.template.RegisterRenderAction("cargo.cap",
+            (ref DrawingSurface ds, string text, string options) => ds.Text($"{Util.FormatNumber(1000 * this.max)} L"));
+        this.template.RegisterRenderAction("cargo.bar", this.RenderPct);
+        this.template.RegisterRenderAction("cago.items", this.RenderItems);
+    }
+
+    public void RenderPct(ref DrawingSurface ds, string text, string options = "") {
+        Color colour = Color.Green;
+        if (this.pct > 60) {
+            colour = Color.Yellow;
+        } else if (this.pct > 85) {
+            colour = Color.Red;
+        }
+        ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct));
+    }
+
+    public void RenderItems(ref DrawingSurface ds, string text, string options = "") {
+        foreach (var item in this.cargoItemCounts) {
+            var fmtd = Util.FormatNumber(item.Value);
+            ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(fmtd, textAlignment: TextAlignment.RIGHT).Newline();
+        }
+    }
+
+    // public Func<TResult> MethodAccess<TResult, TArg> (Func<TArg, TResult> func, TArg arg) {
+    //     return () => func(arg);
+    // }
 
     public void Clear() {
         this.itemText = "";
@@ -576,13 +539,13 @@ public class CargoStatus {
     public void Refresh() {
         this.Clear();
 
-        VRage.MyFixedPoint max = 0;
-        VRage.MyFixedPoint vol = 0;
+        this.max = 0;
+        this.vol = 0;
 
         foreach (var c in this.cargo) {
             var inv = c.GetInventory(0);
-            vol += inv.CurrentVolume;
-            max += inv.MaxVolume;
+            this.vol += inv.CurrentVolume;
+            this.max += inv.MaxVolume;
 
             this.inventoryItems.Clear();
             inv.GetItems(this.inventoryItems);
@@ -606,7 +569,7 @@ public class CargoStatus {
 
         this.pct = 0f;
         if (max != 0) {
-            this.pct = (float)vol / (float)max;
+            this.pct = (float)this.vol / (float)this.max;
         }
         // if (settings[CFG.CARGO_LIGHT] != "") {
         //     IMyLightingBlock light = (IMyLightingBlock)GetBlockWithName(settings[CFG.CARGO_LIGHT]);
@@ -666,6 +629,304 @@ public class CargoStatus {
     }
 }
 /* CARGO */
+/*
+ * GRAPHICS
+ */
+public class DrawingSurface {
+    public Program program;
+    public IMyTextSurface surface;
+    public RectangleF viewport;
+    public MySpriteDrawFrame frame;
+    public Vector2 cursor;
+    public StringBuilder sb;
+    public Vector2 charSizeInPx;
+    public bool drawing;
+    public Vector2 padding;
+    public float width;
+    public float height;
+    public int charsPerWidth;
+    public int charsPerHeight;
+
+    public DrawingSurface(IMyTextSurface surface, Program program) {
+        this.program = program;
+        this.surface = surface;
+        this.cursor = new Vector2(0f, 0f);
+        this.sb = new StringBuilder("j");
+        this.charSizeInPx = new Vector2(0f, 0f);
+        this.surface.ContentType = ContentType.SCRIPT;
+        this.drawing = false;
+        this.surface.Font = "Monospace";
+        this.viewport = new RectangleF(0f, 0f, 0f, 0f);
+
+        this.InitScreen();
+    }
+
+    public void InitScreen() {
+        this.cursor.X = 0f;
+        this.cursor.Y = 0f;
+        this.surface.Script = "";
+
+        this.padding = (surface.TextPadding / 100) * this.surface.SurfaceSize;
+        this.viewport.Position = (this.surface.TextureSize - this.surface.SurfaceSize) / 2f + this.padding;
+        this.viewport.Size = this.surface.SurfaceSize - (2 * this.padding);
+        this.width = this.viewport.Width;
+        this.height = this.viewport.Height;
+
+        this.charSizeInPx = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
+        this.charsPerWidth = (int)Math.Floor(this.surface.SurfaceSize.X / this.charSizeInPx.X);
+        this.charsPerHeight = (int)Math.Floor(this.surface.SurfaceSize.Y / this.charSizeInPx.Y);
+    }
+
+    public void DrawStart() {
+        this.InitScreen();
+        this.drawing = true;
+        this.frame = this.surface.DrawFrame();
+    }
+
+    public DrawingSurface Draw() {
+        this.drawing = false;
+        this.frame.Dispose();
+
+        return this;
+    }
+
+    public DrawingSurface SetCursor(float? x, float? y) {
+        this.cursor.X = x ?? this.cursor.X;
+        this.cursor.Y = y ?? this.cursor.Y;
+
+        return this;
+    }
+
+    public DrawingSurface Newline() {
+        this.cursor.Y += this.charSizeInPx.Y;
+        this.cursor.X = 0;
+
+        return this;
+    }
+
+    public DrawingSurface Text(
+        string text,
+        Color? colour = null,
+        TextAlignment textAlignment = TextAlignment.LEFT,
+        float scale = 1f,
+        Vector2? position = null
+    ) {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+        if (colour == null) {
+            colour = this.surface.FontColor;
+        }
+
+        Vector2 pos = (position ?? this.cursor) + this.viewport.Position;
+
+        this.frame.Add(new MySprite() {
+            Type = SpriteType.TEXT,
+            Data = text,
+            Position = pos,
+            RotationOrScale = this.surface.FontSize * scale,
+            Color = colour,
+            Alignment = textAlignment,
+            FontId = surface.Font
+        });
+
+        this.cursor.X += this.charSizeInPx.X * text.Length + (float)Math.Ceiling((double)(text.Length / 2)) - 1f;
+
+        return this;
+    }
+
+    public float ToRad(float deg) {
+        return deg * ((float)Math.PI / 180f);
+    }
+
+    public Color FloatPctToColor(float pct) {
+        if (pct > 0.75f) {
+            return Color.Darken(Color.Green, 0.2);
+        } else if (pct > 0.5f) {
+            return Color.Darken(Color.Yellow, 0.4);
+        } else if (pct > 0.25f) {
+            return Color.Darken(Color.Orange, 0.2);
+        }
+
+        return Color.Darken(Color.Red, 0.2);
+    }
+
+    public float Hypo(float a, float b) {
+        return (float)Math.Sqrt(Math.Pow(a, 2) + Math.Pow(b, 2));
+    }
+
+    public DrawingSurface MidBar(
+        float net,
+        float low,
+        float high,
+        float width = 0f,
+        float height = 0f,
+        float pad = 0.1f,
+        Color? bgColour = null
+    ) {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
+        width = (width == 0f) ? this.width : width;
+        height = (height == 0f) ? this.charSizeInPx.Y : height;
+        height -= 1f;
+
+        Vector2 pos = this.cursor + this.viewport.Position;
+        pos.Y += (height / 2) + 1f;
+
+        using (frame.Clip((int)pos.X, (int)(pos.Y - height / 2), (int)width, (int)height)) {
+            this.frame.Add(new MySprite {
+                Type = SpriteType.TEXTURE,
+                Alignment = TextAlignment.CENTER,
+                Data = "SquareSimple",
+                Position = pos + new Vector2(width / 2, 0),
+                Size = new Vector2((float)Math.Sqrt(Math.Pow(width, 2) / 2), width),
+                Color = bgColour ?? new Color(60, 60, 60),
+                RotationOrScale = this.ToRad(-45f),
+            });
+        }
+
+        pad = (float)Math.Round(pad * height);
+        pos.X += pad;
+        width -= 2 * pad;
+        height -= 2 * pad;
+
+        Color colour = Color.Green;
+        float pct = net / high;
+        if (net < 0) {
+            pct = net / low;
+            colour = Color.Red;
+        }
+        float sideWidth = (float)Math.Sqrt(2) * width * pct;
+        float leftClip = Math.Min((width / 2), (width / 2) + (width / 2) * pct);
+        float rightClip = Math.Max((width / 2), (width / 2) + (width / 2) * pct);
+
+        using (this.frame.Clip((int)(pos.X + leftClip), (int)(pos.Y - height / 2), (int)Math.Abs(rightClip - leftClip), (int)height)) {
+            this.frame.Add(new MySprite {
+                Type = SpriteType.TEXTURE,
+                Alignment = TextAlignment.CENTER,
+                Data = "SquareSimple",
+                Position = pos + new Vector2(width / 2, 0),
+                Size = new Vector2(Math.Abs(sideWidth) / 2, width),
+                Color = colour,
+                RotationOrScale = this.ToRad(-45f)
+            });
+        }
+
+        this.frame.Add(new MySprite {
+            Type = SpriteType.TEXTURE,
+            Alignment = TextAlignment.CENTER,
+            Data = "SquareSimple",
+            Position = pos + new Vector2((width / 2), -1f),
+            Size = new Vector2(2f, height + 2f),
+            Color = Color.White,
+            RotationOrScale = 0f
+        });
+
+        return this;
+    }
+
+    public DrawingSurface Bar(
+        float pct,
+        float width = 0f,
+        float height = 0f,
+        Color? fillColour = null,
+        Vector2? position = null,
+        string text = null,
+        Color? textColour = null,
+        Color? bgColour = null,
+        TextAlignment textAlignment = TextAlignment.LEFT,
+        float pad = 0.1f
+    ) {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
+        width = (width == 0f) ? this.width : width;
+        height = (height == 0f) ? this.charSizeInPx.Y : height;
+        height -= 1f;
+
+        Color fill = fillColour ?? this.FloatPctToColor(pct);
+        Vector2 pos = (position ?? this.cursor) + this.viewport.Position;
+        pos.Y += (height / 2) + 1f;
+
+        using (frame.Clip((int)pos.X, (int)(pos.Y - height / 2), (int)width, (int)height)) {
+            this.frame.Add(new MySprite {
+                Type = SpriteType.TEXTURE,
+                Alignment = TextAlignment.CENTER,
+                Data = "SquareSimple",
+                Position = pos + new Vector2(width / 2, 0),
+                Size = new Vector2((float)Math.Sqrt(Math.Pow(width, 2) / 2), width),
+                Color = bgColour ?? new Color(60, 60, 60),
+                RotationOrScale = this.ToRad(-45f),
+            });
+        }
+
+        pad = (float)Math.Round(pad * height);
+        pos.X += pad;
+        width -= 2 * pad;
+        height -= 2 * pad;
+
+        using (frame.Clip((int)pos.X, (int)(pos.Y - height / 2), (int)(width * pct), (int)height)) {
+            this.frame.Add(new MySprite {
+                Type = SpriteType.TEXTURE,
+                Alignment = TextAlignment.CENTER,
+                Data = "SquareSimple",
+                Position = pos + new Vector2((width * pct) / 2, 0),
+                Size = new Vector2((float)Math.Floor(Math.Sqrt(Math.Pow((width * pct), 2) / 2)), width),
+                Color = fill,
+                RotationOrScale = this.ToRad(-45f),
+            });
+        }
+
+        if (text != null && text != "") {
+            this.cursor.X += (width / 2);
+            this.Text(text, textColour ?? Color.Black, textAlignment: TextAlignment.CENTER, scale: 0.9f);
+        } else {
+            this.cursor.X += (width / 2);
+            this.cursor.Y += height;
+        }
+
+
+        return this;
+    }
+
+    public DrawingSurface TextCircle(Color colour, bool outline = false) {
+        return this.Circle(this.charSizeInPx.Y - 5f, colour, this.cursor + Vector2.Divide(this.charSizeInPx, 2f), outline: outline);
+    }
+
+    public DrawingSurface Circle(float size, Color colour, Vector2? position = null, bool outline = false) {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
+        Vector2 pos = (position ?? this.cursor) + this.viewport.Position;
+
+        this.frame.Add(new MySprite() {
+            Type = SpriteType.TEXTURE,
+            Alignment = TextAlignment.CENTER,
+            Data = outline ? "CircleHollow" : "Circle",
+            Position = pos,
+            Size = new Vector2(size, size),
+            Color = colour,
+            RotationOrScale = 0f,
+        });
+
+        this.cursor.X += size;
+
+        return this;
+    }
+}
+
+public class Graphics {
+    public Dictionary<string, DrawingSurface> drawables;
+
+    public Graphics() {
+        this.drawables = new Dictionary<string, DrawingSurface>();
+    }
+}
+/* GRAPHICS */
 /*
  * POWER
  */
@@ -783,3 +1044,236 @@ public class PowerDetails {
     }
 }
 /* POWER */
+/*
+ * UTIL
+ */
+public static class Util {
+    public static System.Text.RegularExpressions.Regex surfaceExtractor =
+        Util.Regex(@"\s<(\d+)>$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    public static string FormatNumber(VRage.MyFixedPoint input) {
+        string fmt;
+        int n = Math.Max(0, (int)input);
+        if (n < 10000) {
+            fmt = "##";
+        } else if (n < 1000000) {
+            fmt = "###0,K";
+        } else {
+            fmt = "###0,,M";
+        }
+        return n.ToString(fmt, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public static string TimeFormat(double ms, bool s = false) {
+        TimeSpan t = TimeSpan.FromMilliseconds(ms);
+        if (t.Hours != 0) {
+            return String.Format("{0:D}h{1:D}m", t.Hours, t.Minutes);
+        } else if (t.Minutes != 0) {
+            return String.Format("{0:D}m", t.Minutes);
+        } else {
+            return (s ? String.Format("{0:D}s", t.Seconds) : "< 1m");
+        }
+    }
+
+    public static string ToItemName(MyProductionItem i) {
+        string id = i.BlueprintId.ToString();
+        if (id.Contains('/')) {
+            return id.Split('/')[1];
+        }
+        return id;
+    }
+
+    public static string PctString(float val) {
+        return String.Format("{0,3:0}%", 100 * val);
+    }
+
+    public static System.Text.RegularExpressions.Regex Regex(
+        string pattern,
+        System.Text.RegularExpressions.RegexOptions opts = System.Text.RegularExpressions.RegexOptions.None
+    ) {
+        return new System.Text.RegularExpressions.Regex(pattern, opts);
+    }
+
+    public static string Plural(int count, string ifOne, string otherwise) {
+        return count == 1 ? ifOne : otherwise;
+    }
+}
+/* UTIL */
+public class Token {
+    public bool isText = true;
+    public string value = null;
+}
+
+public delegate void Del(ref DrawingSurface ds, string token, string options = "");
+
+public class Template {
+    public Program program;
+    public Dictionary<string, Del> methods;
+    public System.Text.RegularExpressions.Regex tokenizer;
+    public System.Text.RegularExpressions.Regex cmdSplitter;
+    public System.Text.RegularExpressions.Match match;
+    public Token token;
+    public char[] splitSpace;
+
+    public Template(Program program = null) {
+        this.tokenizer = Util.Regex(@"(\{[^\}]+\}|[^\{]+)", System.Text.RegularExpressions.RegexOptions.Compiled);
+        this.cmdSplitter = Util.Regex(@"(?<name>[^: ]+)(:(?<params>[^; ]+);? )(?<text>.*)", System.Text.RegularExpressions.RegexOptions.Compiled);
+        this.token = new Token();
+        this.methods = new Dictionary<string, Del>();
+        this.program = program;
+        this.RegisterRenderAction("text", this.RenderText);
+        this.splitSpace = new[] { ' ' };
+    }
+
+    public void RegisterRenderAction(string key, Del callback) {
+        this.methods[key] = callback;
+    }
+
+    public void RenderText(ref DrawingSurface ds, string text, string options = "") {
+        Color? colour = null;
+        if (options != "") {
+            Dictionary<string, string> keyValuePairs = options.Split(';')
+                .Select(value => value.Split('='))
+                .ToDictionary(pair => pair[0], pair => pair[1]);
+
+            if (keyValuePairs["colour"] != null) {
+                var cols = keyValuePairs["colour"].Split(',').Select(value => Int32.Parse(value)).ToArray();
+                colour = new Color(
+                    cols.ElementAtOrDefault(0),
+                    cols.ElementAtOrDefault(1),
+                    cols.ElementAtOrDefault(2),
+                    cols.Length > 3 ? cols[3] : 255
+                );
+            }
+        }
+        this.program.Echo($"c:{colour}");
+        ds.Text(text, colour: colour);
+    }
+
+    public bool GetToken(string line) {
+        if (this.match == null) {
+            this.match = this.tokenizer.Match(line);
+        } else {
+            this.match = this.match.NextMatch();
+        }
+
+        if (this.match.Success) {
+            try {
+                string _token = this.match.Groups[1].Value;
+                if (_token[0] == '{') {
+                    this.token.value = _token.Substring(1, _token.Length - 2);
+                    this.token.isText = false;
+                } else {
+                    this.token.value = _token;
+                    this.token.isText = true;
+                }
+            } catch (Exception e) {
+                this.program.Echo($"err parsing token {e}");
+                return false;
+            }
+
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    public void Render(ref DrawingSurface ds, string[] templateStrings) {
+        foreach (string line in templateStrings) {
+            this.match = null;
+
+            while (this.GetToken(line)) {
+                if (this.token.isText) {
+                    ds.Text(this.token.value);
+                    continue;
+                }
+
+                string name = this.token.value;
+                string opts = "";
+                string text = "";
+                System.Text.RegularExpressions.Match m = this.cmdSplitter.Match(this.token.value);
+                if (m.Success) {
+                    opts = m.Groups["params"].Value;
+                    text = m.Groups["text"].Value;
+                    name = m.Groups["name"].Value;
+                }
+                this.program.Echo($"name:{name},text:{text},opts:{opts}");
+
+                // string[] parts = this.token.value.Split(this.splitSpace, 2);
+                // string[] opts = this.token.value.Split(':');
+                // this.program.Echo(String.Format("p1: {0}, p2?: {1}", parts[0], parts.Length > 1 ? parts[1] : "naw"));
+
+                if (this.methods.ContainsKey(name)) {
+                    this.methods[name](ref ds, text, opts);
+                } else {
+                    ds.Text($"{{{this.token.value}}}");
+                }
+            }
+            ds.Newline();
+        }
+        ds.Draw();
+    }
+}
+// /*
+//  * BLOCK_HEALTH
+//  */
+// class BlockHealth {
+//     public Program program;
+//     public System.Text.RegularExpressions.Regex ignoreHealth;
+//     public List<IMyTerminalBlock> blocks;
+
+//     pubic BlockHealth(Program program) {
+//         this.blocks = new List<IMyTerminalBlock>();
+//         this.program = program;
+//     }
+
+//     public float GetHealth(IMyTerminalBlock block) {
+//         IMySlimBlock slimblock = block.CubeGrid.GetCubeBlock(block.Position);
+//         float MaxIntegrity = slimblock.MaxIntegrity;
+//         float BuildIntegrity = slimblock.BuildIntegrity;
+//         float CurrentDamage = slimblock.CurrentDamage;
+
+//         return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
+//     }
+
+//     public string DoBlockHealth() {
+//         // System.Text.RegularExpressions.Regex ignoreHealth = null;
+//         // if (settings[CFG.HEALTH_IGNORE] != "") {
+//         //     string input = System.Text.RegularExpressions.Regex.Replace(settings[CFG.HEALTH_IGNORE], @"\s*,\s*", "|");
+//         //     ignoreHealth = Regex(input);
+//         // }
+//         // CFG.HEALTH_IGNORE, "Hydrogen Thruster, Suspension"
+
+//         this.blocks.Clear();
+//         GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.blocks, b => b.IsSameConstructAs(Me));
+//         string output = "";
+
+//         // int chars;
+//         // GetPanelWidthInChars(settings[CFG.BLOCK_HEALTH], out chars);
+
+//         foreach (var b in this.blocks) {
+//             if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
+//                 continue;
+//             }
+
+//             var health = this.GetHealth(b);
+//             if (health != 1f) {
+//                 if (CanWriteToSurface(settings[CFG.BLOCK_HEALTH])) {
+//                     output += b.CustomName + " [" + Util.PctString(GetHealth(b)) + "]\n";
+//                 }
+//                 b.ShowOnHUD = true;
+//             } else {
+//                 b.ShowOnHUD = false;
+//             }
+//         }
+
+//         if (output == "") {
+//             output = "Ship status: No damage detected\n";
+//         } else {
+//             output = "Ship status: Damage detected\n" + output;
+//         }
+
+//         return output + '\n';
+//     }
+// }
+// /* BLOCK_HEALTH */

@@ -11,11 +11,14 @@ public class CargoStatus {
     public System.Text.RegularExpressions.Regex itemRegex;
     public System.Text.RegularExpressions.Regex ingotRegex;
     public System.Text.RegularExpressions.Regex oreRegex;
+    public Template template;
+    public VRage.MyFixedPoint max;
+    public VRage.MyFixedPoint vol;
 
     public string itemText;
     public float pct;
 
-    public CargoStatus(Program program) {
+    public CargoStatus(Program program, Template template) {
         this.program = program;
         this.itemText = "";
         this.pct = 0f;
@@ -25,8 +28,40 @@ public class CargoStatus {
         this.itemRegex = Util.Regex(".*/");
         this.ingotRegex = Util.Regex("Ingot/");
         this.oreRegex = Util.Regex("Ore/(?!Ice)");
-        GetCargoBlocks();
+        this.template = template;
+        this.GetCargoBlocks();
+        this.RegisterTemplateVars();
     }
+
+    public void RegisterTemplateVars() {
+        this.template.RegisterRenderAction("cargo.stored",
+            (ref DrawingSurface ds, string text, string options) => ds.Text($"{Util.FormatNumber(1000 * this.vol)} L"));
+        this.template.RegisterRenderAction("cargo.cap",
+            (ref DrawingSurface ds, string text, string options) => ds.Text($"{Util.FormatNumber(1000 * this.max)} L"));
+        this.template.RegisterRenderAction("cargo.bar", this.RenderPct);
+        this.template.RegisterRenderAction("cago.items", this.RenderItems);
+    }
+
+    public void RenderPct(ref DrawingSurface ds, string text, string options = "") {
+        Color colour = Color.Green;
+        if (this.pct > 60) {
+            colour = Color.Yellow;
+        } else if (this.pct > 85) {
+            colour = Color.Red;
+        }
+        ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct));
+    }
+
+    public void RenderItems(ref DrawingSurface ds, string text, string options = "") {
+        foreach (var item in this.cargoItemCounts) {
+            var fmtd = Util.FormatNumber(item.Value);
+            ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(fmtd, textAlignment: TextAlignment.RIGHT).Newline();
+        }
+    }
+
+    // public Func<TResult> MethodAccess<TResult, TArg> (Func<TArg, TResult> func, TArg arg) {
+    //     return () => func(arg);
+    // }
 
     public void Clear() {
         this.itemText = "";
@@ -47,13 +82,13 @@ public class CargoStatus {
     public void Refresh() {
         this.Clear();
 
-        VRage.MyFixedPoint max = 0;
-        VRage.MyFixedPoint vol = 0;
+        this.max = 0;
+        this.vol = 0;
 
         foreach (var c in this.cargo) {
             var inv = c.GetInventory(0);
-            vol += inv.CurrentVolume;
-            max += inv.MaxVolume;
+            this.vol += inv.CurrentVolume;
+            this.max += inv.MaxVolume;
 
             this.inventoryItems.Clear();
             inv.GetItems(this.inventoryItems);
@@ -77,7 +112,7 @@ public class CargoStatus {
 
         this.pct = 0f;
         if (max != 0) {
-            this.pct = (float)vol / (float)max;
+            this.pct = (float)this.vol / (float)this.max;
         }
         // if (settings[CFG.CARGO_LIGHT] != "") {
         //     IMyLightingBlock light = (IMyLightingBlock)GetBlockWithName(settings[CFG.CARGO_LIGHT]);
