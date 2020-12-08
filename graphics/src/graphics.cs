@@ -7,6 +7,7 @@ public class DrawingSurface {
     public RectangleF viewport;
     public MySpriteDrawFrame frame;
     public Vector2 cursor;
+    public Vector2 savedCursor;
     public StringBuilder sb;
     public Vector2 charSizeInPx;
     public bool drawing;
@@ -20,6 +21,7 @@ public class DrawingSurface {
         this.program = program;
         this.surface = surface;
         this.cursor = new Vector2(0f, 0f);
+        this.savedCursor = new Vector2(0f, 0f);
         this.sb = new StringBuilder("j");
         this.charSizeInPx = new Vector2(0f, 0f);
         this.surface.ContentType = ContentType.SCRIPT;
@@ -35,16 +37,15 @@ public class DrawingSurface {
         this.cursor.Y = 0f;
         this.surface.Script = "";
 
-        this.padding = (surface.TextPadding / 100) * this.surface.SurfaceSize;
+        this.padding = (this.surface.TextPadding / 100) * this.surface.SurfaceSize;
         this.viewport.Position = (this.surface.TextureSize - this.surface.SurfaceSize) / 2f + this.padding;
         this.viewport.Size = this.surface.SurfaceSize - (2 * this.padding);
         this.width = this.viewport.Width;
         this.height = this.viewport.Height;
 
-        this.charSizeInPx = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
-        this.charsPerWidth = (int)Math.Floor(this.surface.SurfaceSize.X / this.charSizeInPx.X);
-        this.charsPerHeight = (int)Math.Floor(this.surface.SurfaceSize.Y / this.charSizeInPx.Y);
+        this.Size();
     }
+
 
     public void DrawStart() {
         this.InitScreen();
@@ -59,6 +60,12 @@ public class DrawingSurface {
         return this;
     }
 
+    public DrawingSurface SaveCursor() {
+        this.savedCursor = this.cursor;
+
+        return this;
+    }
+
     public DrawingSurface SetCursor(float? x, float? y) {
         this.cursor.X = x ?? this.cursor.X;
         this.cursor.Y = y ?? this.cursor.Y;
@@ -66,9 +73,19 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface Newline() {
+    public DrawingSurface Newline(bool resetX = true) {
         this.cursor.Y += this.charSizeInPx.Y;
-        this.cursor.X = 0;
+        this.cursor.X = resetX ? 0 : this.savedCursor.X;
+
+        return this;
+    }
+
+    public DrawingSurface Size(float? size = null) {
+        this.surface.FontSize = size ?? this.surface.FontSize;
+
+        this.charSizeInPx = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
+        this.charsPerWidth = (int)Math.Floor(this.surface.SurfaceSize.X / this.charSizeInPx.X);
+        this.charsPerHeight = (int)Math.Floor(this.surface.SurfaceSize.Y / this.charSizeInPx.Y);
 
         return this;
     }
