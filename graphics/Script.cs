@@ -79,9 +79,10 @@ public class DrawingSurface {
     public int charsPerWidth;
     public int charsPerHeight;
     public string name;
+    public Color colourGrey = new Color(40, 40, 40);
 
     public static char[] commaSep = { ',' };
-    public static Dictionary<string, Color?> stringToColour = new Dictionary<string, Color?>() {
+    public static Dictionary<string, Color> stringToColour = new Dictionary<string, Color>() {
         { "black", Color.Black },
         { "blue", Color.Blue },
         { "brown", Color.Brown },
@@ -96,9 +97,13 @@ public class DrawingSurface {
         { "tan", Color.Tan },
         { "transparent", Color.Transparent },
         { "white", Color.White },
-        { "yellow", Color.Yellow }
+        { "yellow", Color.Yellow },
+        { "dimgreen", Color.Darken(Color.Green, 0.4) },
+        { "dimyellow", Color.Darken(Color.Yellow, 0.6) },
+        { "dimorange", Color.Darken(Color.Orange, 0.2) },
+        { "dimred", Color.Darken(Color.Red, 0.2) }
     };
-    public static Dictionary<string, TextAlignment?> stringToAlignment = new Dictionary<string, TextAlignment?>() {
+    public static Dictionary<string, TextAlignment> stringToAlignment = new Dictionary<string, TextAlignment>() {
         { "center", TextAlignment.CENTER },
         { "left", TextAlignment.LEFT },
         { "right", TextAlignment.RIGHT }
@@ -113,7 +118,7 @@ public class DrawingSurface {
         this.charSizeInPx = new Vector2(0f, 0f);
         this.surface.ContentType = ContentType.SCRIPT;
         this.drawing = false;
-        this.surface.Font = "Monospace";
+        // this.surface.Font = "Monospace";
         this.viewport = new RectangleF(0f, 0f, 0f, 0f);
         this.name = name;
 
@@ -135,14 +140,14 @@ public class DrawingSurface {
     }
 
     public Color? GetColourOpt(string colour) {
+        if (colour == "" || colour == null) {
+            return null;
+        }
         if (!colour.Contains(',')) {
-            return DrawingSurface.stringToColour[colour];
+            return DrawingSurface.stringToColour.Get("colour");
         }
 
         string[] numbersStr = colour.Split(DrawingSurface.commaSep);
-        foreach (var n in numbersStr) {
-            this.program.Echo($"n: {n}");
-        }
 
         if (numbersStr.Length < 2) {
             return null;
@@ -206,9 +211,12 @@ public class DrawingSurface {
     }
 
     public DrawingSurface Text(string text, Dictionary<string, string> options) {
+        if (options == null) {
+            return this.Text(text);
+        }
         Color? colour = this.GetColourOpt(options.Get("colour", null));
-        TextAlignment textAlignment = DrawingSurface.stringToAlignment[options.Get("align", "left")] ?? TextAlignment.LEFT;
-        float scale = Util.ParseFloat(options["scale"], 1f);
+        TextAlignment textAlignment = DrawingSurface.stringToAlignment.Get(options.Get("align", "left"));
+        float scale = Util.ParseFloat(options.Get("scale"), 1f);
 
         return this.Text(text, colour: colour, textAlignment: textAlignment, scale: scale);
     }
@@ -224,7 +232,7 @@ public class DrawingSurface {
             this.DrawStart();
         }
         if (colour == null) {
-            colour = this.surface.FontColor;
+            colour = this.surface.ScriptForegroundColor;
         }
 
         Vector2 pos = (position ?? this.cursor) + this.viewport.Position;
@@ -257,14 +265,14 @@ public class DrawingSurface {
 
     public Color FloatPctToColor(float pct) {
         if (pct > 0.75f) {
-            return Color.Darken(Color.Green, 0.2);
+            return DrawingSurface.stringToColour.Get("dimgreen");
         } else if (pct > 0.5f) {
-            return Color.Darken(Color.Yellow, 0.4);
+            return DrawingSurface.stringToColour.Get("dimyellow");
         } else if (pct > 0.25f) {
-            return Color.Darken(Color.Orange, 0.2);
+            return DrawingSurface.stringToColour.Get("dimorange");
         }
 
-        return Color.Darken(Color.Red, 0.2);
+        return DrawingSurface.stringToColour.Get("dimred");
     }
 
     public float Hypo(float a, float b) {
@@ -298,7 +306,7 @@ public class DrawingSurface {
                 Data = "SquareSimple",
                 Position = pos + new Vector2(width / 2, 0),
                 Size = new Vector2((float)Math.Sqrt(Math.Pow(width, 2) / 2), width),
-                Color = bgColour ?? new Color(60, 60, 60),
+                Color = bgColour ?? this.colourGrey,
                 RotationOrScale = this.ToRad(-45f),
             });
         }
@@ -343,15 +351,30 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface Bar(float pct, Dictionary<string, string> options) {
-        float width = Util.ParseFloat(options["width"], 0f);
-        float height = Util.ParseFloat(options["height"], 0f);
-        Color? fillColour = this.GetColourOpt(options["fillColour"]);
-        TextAlignment textAlignment = DrawingSurface.stringToAlignment[options["align"]] ?? TextAlignment.LEFT;
-        string text = options["text"];
-        Color? textColour = this.GetColourOpt(options["textColour"]);
-        Color? bgColour = this.GetColourOpt(options["bgColour"]);
-        float pad = Util.ParseFloat(options["pad"], 0.1f);
+    public DrawingSurface Bar(
+        Dictionary<string, string> options,
+        float width = 0f,
+        float height = 0f,
+        Color? fillColour = null,
+        string text = null,
+        Color? textColour = null,
+        Color? bgColour = null,
+        TextAlignment textAlignment = TextAlignment.LEFT,
+        float pad = 0.1f
+    ) {
+        if (options == null) {
+            return this.Bar(0f, text: "--/--");
+        }
+
+        float pct = Util.ParseFloat(options.Get("pct"));
+        width = Util.ParseFloat(options.Get("width"), width);
+        height = Util.ParseFloat(options.Get("height"), height);
+        fillColour = this.GetColourOpt(options.Get("fillColour")) ?? fillColour;
+        textAlignment = DrawingSurface.stringToAlignment.Get(options.Get("align", "null"), textAlignment);
+        text = options.Get("text") ?? text;
+        textColour = this.GetColourOpt(options.Get("textColour")) ?? textColour;
+        bgColour = this.GetColourOpt(options.Get("bgColour")) ?? bgColour;
+        pad = Util.ParseFloat(options.Get("pad"), pad);
 
         return this.Bar(
             pct,
@@ -397,7 +420,7 @@ public class DrawingSurface {
                 Data = "SquareSimple",
                 Position = pos + new Vector2(width / 2, 0),
                 Size = new Vector2((float)Math.Sqrt(Math.Pow(width, 2) / 2), width),
-                Color = bgColour ?? new Color(60, 60, 60),
+                Color = bgColour ?? this.colourGrey,
                 RotationOrScale = this.ToRad(-45f),
             });
         }
@@ -419,6 +442,9 @@ public class DrawingSurface {
             });
         }
 
+        if (text == null) {
+            text = Util.PctString(pct);
+        }
         if (text != null && text != "") {
             this.cursor.X += (width / 2);
             this.Text(text, textColour ?? Color.Black, textAlignment: TextAlignment.CENTER, scale: 0.9f);
@@ -432,8 +458,12 @@ public class DrawingSurface {
     }
 
     public DrawingSurface TextCircle(Dictionary<string, string> options) {
-        Color colour = this.GetColourOpt(options["colour"]) ?? this.surface.FontColor;
-        bool outline = Util.ParseBool(options["outline"]);
+        if (options == null) {
+            return this.TextCircle(this.surface.FontColor);
+        }
+
+        Color colour = this.GetColourOpt(options.Get("colour")) ?? this.surface.FontColor;
+        bool outline = Util.ParseBool(options.Get("outline"));
 
         return this.TextCircle(colour, outline);
     }
@@ -443,9 +473,13 @@ public class DrawingSurface {
     }
 
     public DrawingSurface Circle(Dictionary<string, string> options) {
-        float size = Util.ParseFloat(options["size"], this.charSizeInPx.Y);
-        Color colour = this.GetColourOpt(options["colour"]) ?? this.surface.FontColor;
-        bool outline = Util.ParseBool(options["outline"], false);
+        if (options == null) {
+            return this.Circle(this.charSizeInPx.Y, this.surface.FontColor);
+        }
+
+        float size = Util.ParseFloat(options.Get("size"), this.charSizeInPx.Y);
+        Color colour = this.GetColourOpt(options.Get("colour")) ?? this.surface.FontColor;
+        bool outline = Util.ParseBool(options.Get("outline"), false);
 
         return this.Circle(size: size, colour: colour, outline: outline);
     }
@@ -483,6 +517,9 @@ public static class Util {
     public static string FormatNumber(VRage.MyFixedPoint input) {
         string fmt;
         int n = Math.Max(0, (int)input);
+        if (n == 0) {
+            return "0";
+        }
         if (n < 10000) {
             fmt = "##";
         } else if (n < 1000000) {
