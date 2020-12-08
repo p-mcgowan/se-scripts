@@ -14,5 +14,7 @@
   "files": "src",
 
   // set to true to include mdk's thumb, or set to a path to use another png file
-  "thumb": true
+  "thumb": true,
+
+  "ext": "../util/util.cs"
 }

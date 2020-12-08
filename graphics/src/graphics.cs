@@ -16,18 +16,44 @@ public class DrawingSurface {
     public float height;
     public int charsPerWidth;
     public int charsPerHeight;
+    public string name;
 
-    public DrawingSurface(IMyTextSurface surface, Program program) {
+    public static char[] commaSep = { ',' };
+    public static Dictionary<string, Color?> stringToColour = new Dictionary<string, Color?>() {
+        { "black", Color.Black },
+        { "blue", Color.Blue },
+        { "brown", Color.Brown },
+        { "cyan", Color.Cyan },
+        { "dimgray", Color.DimGray },
+        { "gray", Color.Gray },
+        { "green", Color.Green },
+        { "orange", Color.Orange },
+        { "pink", Color.Pink },
+        { "purple", Color.Purple },
+        { "red", Color.Red },
+        { "tan", Color.Tan },
+        { "transparent", Color.Transparent },
+        { "white", Color.White },
+        { "yellow", Color.Yellow }
+    };
+    public static Dictionary<string, TextAlignment?> stringToAlignment = new Dictionary<string, TextAlignment?>() {
+        { "center", TextAlignment.CENTER },
+        { "left", TextAlignment.LEFT },
+        { "right", TextAlignment.RIGHT }
+    };
+
+    public DrawingSurface(IMyTextSurface surface, Program program, string name = "") {
         this.program = program;
         this.surface = surface;
         this.cursor = new Vector2(0f, 0f);
         this.savedCursor = new Vector2(0f, 0f);
-        this.sb = new StringBuilder("j");
+        this.sb = new StringBuilder(" ");
         this.charSizeInPx = new Vector2(0f, 0f);
         this.surface.ContentType = ContentType.SCRIPT;
         this.drawing = false;
         this.surface.Font = "Monospace";
         this.viewport = new RectangleF(0f, 0f, 0f, 0f);
+        this.name = name;
 
         this.InitScreen();
     }
@@ -46,6 +72,33 @@ public class DrawingSurface {
         this.Size();
     }
 
+    public Color? GetColourOpt(string colour) {
+        if (!colour.Contains(',')) {
+            return DrawingSurface.stringToColour[colour];
+        }
+
+        string[] numbersStr = colour.Split(DrawingSurface.commaSep);
+        foreach (var n in numbersStr) {
+            this.program.Echo($"n: {n}");
+        }
+
+        if (numbersStr.Length < 2) {
+            return null;
+        }
+
+        int r, g, b;
+        int a = 255;
+        if (
+            !int.TryParse(numbersStr[0], out r) ||
+            !int.TryParse(numbersStr[1], out g) ||
+            !int.TryParse(numbersStr[2], out b) ||
+            (numbersStr.Length > 3 && !int.TryParse(numbersStr[3], out a))
+        ) {
+            return null;
+        } else {
+            return new Color(r, g, b, a);
+        }
+    }
 
     public void DrawStart() {
         this.InitScreen();
@@ -90,6 +143,14 @@ public class DrawingSurface {
         return this;
     }
 
+    public DrawingSurface Text(string text, Dictionary<string, string> options) {
+        Color? colour = this.GetColourOpt(options.Get("colour", null));
+        TextAlignment textAlignment = DrawingSurface.stringToAlignment[options.Get("align", "left")] ?? TextAlignment.LEFT;
+        float scale = Util.ParseFloat(options["scale"], 1f);
+
+        return this.Text(text, colour: colour, textAlignment: textAlignment, scale: scale);
+    }
+
     public DrawingSurface Text(
         string text,
         Color? colour = null,
@@ -116,7 +177,14 @@ public class DrawingSurface {
             FontId = surface.Font
         });
 
-        this.cursor.X += this.charSizeInPx.X * text.Length + (float)Math.Ceiling((double)(text.Length / 2)) - 1f;
+        this.sb.Clear();
+        this.sb.Append(text);
+        Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
+        this.sb.Clear();
+        this.sb.Append(" ");
+
+
+        this.cursor.X += size.X;
 
         return this;
     }
@@ -213,6 +281,29 @@ public class DrawingSurface {
         return this;
     }
 
+    public DrawingSurface Bar(float pct, Dictionary<string, string> options) {
+        float width = Util.ParseFloat(options["width"], 0f);
+        float height = Util.ParseFloat(options["height"], 0f);
+        Color? fillColour = this.GetColourOpt(options["fillColour"]);
+        TextAlignment textAlignment = DrawingSurface.stringToAlignment[options["align"]] ?? TextAlignment.LEFT;
+        string text = options["text"];
+        Color? textColour = this.GetColourOpt(options["textColour"]);
+        Color? bgColour = this.GetColourOpt(options["bgColour"]);
+        float pad = Util.ParseFloat(options["pad"], 0.1f);
+
+        return this.Bar(
+            pct,
+            width: width,
+            height: height,
+            fillColour: fillColour,
+            textAlignment: textAlignment,
+            text: text,
+            textColour: textColour,
+            bgColour: bgColour,
+            pad: pad
+        );
+    }
+
     public DrawingSurface Bar(
         float pct,
         float width = 0f,
@@ -278,8 +369,23 @@ public class DrawingSurface {
         return this;
     }
 
+    public DrawingSurface TextCircle(Dictionary<string, string> options) {
+        Color colour = this.GetColourOpt(options["colour"]) ?? this.surface.FontColor;
+        bool outline = Util.ParseBool(options["outline"]);
+
+        return this.TextCircle(colour, outline);
+    }
+
     public DrawingSurface TextCircle(Color colour, bool outline = false) {
         return this.Circle(this.charSizeInPx.Y - 5f, colour, this.cursor + Vector2.Divide(this.charSizeInPx, 2f), outline: outline);
+    }
+
+    public DrawingSurface Circle(Dictionary<string, string> options) {
+        float size = Util.ParseFloat(options["size"], this.charSizeInPx.Y);
+        Color colour = this.GetColourOpt(options["colour"]) ?? this.surface.FontColor;
+        bool outline = Util.ParseBool(options["outline"], false);
+
+        return this.Circle(size: size, colour: colour, outline: outline);
     }
 
     public DrawingSurface Circle(float size, Color colour, Vector2? position = null, bool outline = false) {
@@ -302,14 +408,6 @@ public class DrawingSurface {
         this.cursor.X += size;
 
         return this;
-    }
-}
-
-public class Graphics {
-    public Dictionary<string, DrawingSurface> drawables;
-
-    public Graphics() {
-        this.drawables = new Dictionary<string, DrawingSurface>();
     }
 }
 /* GRAPHICS */
