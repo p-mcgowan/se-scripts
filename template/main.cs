@@ -37,7 +37,7 @@ public Program() {
         }
     }
 
-    template.RegisterRenderAction("test.random", Random);
+    template.Register("test.random", Random);
 }
 
 public void Main(string argument, UpdateType updateSource) {

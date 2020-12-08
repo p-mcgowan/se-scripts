@@ -16,15 +16,15 @@ public class Template {
         }
     }
 
-    public delegate void Del(DrawingSurface ds, string token, Dictionary<string, string> options);
-    public delegate string Callback();
+    public delegate void DsCallback(DrawingSurface ds, string token, Dictionary<string, string> options);
+    public delegate string TextCallback();
 
     public Program program;
     public System.Text.RegularExpressions.Regex tokenizer;
     public System.Text.RegularExpressions.Regex cmdSplitter;
     public System.Text.RegularExpressions.Match match;
     public Token token;
-    public Dictionary<string, Del> methods;
+    public Dictionary<string, DsCallback> methods;
     public Dictionary<string, List<Node>> renderNodes;
 
     public char[] splitSemi = new[] { ';' };
@@ -33,18 +33,26 @@ public class Template {
         this.tokenizer = Util.Regex(@"(\{[^\}]+\}|[^\{]+)", System.Text.RegularExpressions.RegexOptions.Compiled);
         this.cmdSplitter = Util.Regex(@"(?<name>[^:; ]+)(:(?<params>[^ ]+)?;?)? ?(?<text>.*)?", System.Text.RegularExpressions.RegexOptions.Compiled);
         this.token = new Token();
-        this.methods = new Dictionary<string, Del>();
+        this.methods = new Dictionary<string, DsCallback>();
         this.program = program;
         this.renderNodes = new Dictionary<string, List<Node>>();
-        this.RegisterRenderAction("text", this.RenderText);
+
+        this.Register("text", this.RenderText);
+        this.Register("textCircle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.TextCircle(options));
+        this.Register("circle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Circle(options));
+        this.Register("bar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Bar(options));
     }
 
-    public void RegisterRenderAction(string key, Del callback) {
+    public void Register(string key, DsCallback callback) {
         this.methods[key] = callback;
     }
 
-    public void RegisterRenderAction(string key, Callback callback) {
-        this.methods[key] = this.Text(callback);
+    public void Register(string key, TextCallback callback) {
+        this.methods[key] = (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Text(callback(), options);
+    }
+
+    public void RenderText(DrawingSurface ds, string text, Dictionary<string, string> options) {
+        ds.Text(text, options);
     }
 
     public void PreRender(string outputName, string templateStrings) {
@@ -67,9 +75,10 @@ public class Template {
                 if (m.Success) {
                     nodeList.Add(new Node(m.Groups["name"].Value, m.Groups["text"].Value, this.StringToDict(m.Groups["params"].Value)));
                 } else {
-                    nodeList.Add(new Node(this.token.value));
+                    nodeList.Add(new Node(this.token.value, options: this.StringToDict()));
                 }
             }
+            nodeList.Add(new Node("newline"));
         }
 
         this.renderNodes.Add(outputName, nodeList);
@@ -83,31 +92,27 @@ public class Template {
             return;
         }
 
-        Del callback = null;
+        DsCallback callback = null;
         foreach (Node node in nodeList) {
+            if (node.action == "newline") {
+                ds.Newline();
+                continue;
+            }
+
             if (this.methods.TryGetValue(node.action, out callback)) {
                 callback(ds, node.text, node.options);
             } else {
                 ds.Text($"{{{node.action}}}");
             }
             callback = null;
-            ds.Newline();
         }
 
         ds.Draw();
     }
 
-    public Del Text(Callback getStr) {
-        return (DrawingSurface ds, string text, Dictionary<string, string> options) => this.RenderText(ds, getStr(), options);
-    }
-
-    public void RenderText(DrawingSurface ds, string text, Dictionary<string, string> options) {
-        ds.Text(text, options);
-    }
-
-    public Dictionary<string, string> StringToDict(string options) {
+    public Dictionary<string, string> StringToDict(string options = "") {
         if (options == "") {
-            return null;
+            return new Dictionary<string, string>();
         }
 
         return options.Split(splitSemi, StringSplitOptions.RemoveEmptyEntries)
