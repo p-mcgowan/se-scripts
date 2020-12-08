@@ -1,63 +1,83 @@
-// /*
-//  * BLOCK_HEALTH
-//  */
-// class BlockHealth {
-//     public Program program;
-//     public System.Text.RegularExpressions.Regex ignoreHealth;
-//     public List<IMyTerminalBlock> blocks;
+/*
+ * BLOCK_HEALTH
+ */
+BlockHealth blockHealth;
 
-//     pubic BlockHealth(Program program) {
-//         this.blocks = new List<IMyTerminalBlock>();
-//         this.program = program;
-//     }
+class BlockHealth {
+    public Program program;
+    public Template template;
+    public System.Text.RegularExpressions.Regex ignoreHealth;
+    public List<IMyTerminalBlock> blocks;
+    public Dictionary<string, string> damaged;
+    public string status;
 
-//     public float GetHealth(IMyTerminalBlock block) {
-//         IMySlimBlock slimblock = block.CubeGrid.GetCubeBlock(block.Position);
-//         float MaxIntegrity = slimblock.MaxIntegrity;
-//         float BuildIntegrity = slimblock.BuildIntegrity;
-//         float CurrentDamage = slimblock.CurrentDamage;
+    public BlockHealth(Program program, Template template) {
+        this.program = program;
+        this.template = template;
+        this.blocks = new List<IMyTerminalBlock>();
+        this.damaged = new Dictionary<string, string>();
+        this.GetBlocks();
+        this.RegisterTemplateVars();
+    }
 
-//         return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
-//     }
+    public void RegisterTemplateVars() {
+        if (this.template == null) {
+            return;
+        }
 
-//     public string DoBlockHealth() {
-//         // System.Text.RegularExpressions.Regex ignoreHealth = null;
-//         // if (settings[CFG.HEALTH_IGNORE] != "") {
-//         //     string input = System.Text.RegularExpressions.Regex.Replace(settings[CFG.HEALTH_IGNORE], @"\s*,\s*", "|");
-//         //     ignoreHealth = Regex(input);
-//         // }
-//         // CFG.HEALTH_IGNORE, "Hydrogen Thruster, Suspension"
+        this.template.Register("health.status", () => this.status);
+        this.template.Register("health.blocks",
+            (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+                foreach (KeyValuePair<string, string> block in this.damaged) {
+                    ds.Text($"{block.Key} [{block.Value}]").Newline();
+                }
+            }
+        );
+    }
 
-//         this.blocks.Clear();
-//         GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.blocks, b => b.IsSameConstructAs(Me));
-//         string output = "";
+    public float GetHealth(IMyTerminalBlock block) {
+        IMySlimBlock slimblock = block.CubeGrid.GetCubeBlock(block.Position);
+        float MaxIntegrity = slimblock.MaxIntegrity;
+        float BuildIntegrity = slimblock.BuildIntegrity;
+        float CurrentDamage = slimblock.CurrentDamage;
 
-//         // int chars;
-//         // GetPanelWidthInChars(settings[CFG.BLOCK_HEALTH], out chars);
+        return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
+    }
 
-//         foreach (var b in this.blocks) {
-//             if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
-//                 continue;
-//             }
+    public void GetBlocks() {
+        this.blocks.Clear();
+        this.program.GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.blocks, b => b.IsSameConstructAs(this.program.Me));
+    }
 
-//             var health = this.GetHealth(b);
-//             if (health != 1f) {
-//                 if (CanWriteToSurface(settings[CFG.BLOCK_HEALTH])) {
-//                     output += b.CustomName + " [" + Util.PctString(GetHealth(b)) + "]\n";
-//                 }
-//                 b.ShowOnHUD = true;
-//             } else {
-//                 b.ShowOnHUD = false;
-//             }
-//         }
+    public void Refresh() {
+        this.damaged.Clear();
 
-//         if (output == "") {
-//             output = "Ship status: No damage detected\n";
-//         } else {
-//             output = "Ship status: Damage detected\n" + output;
-//         }
+        // System.Text.RegularExpressions.Regex ignoreHealth = null;
+        // if (settings[CFG.HEALTH_IGNORE] != "") {
+        //     string input = System.Text.RegularExpressions.Regex.Replace(settings[CFG.HEALTH_IGNORE], @"\s*,\s*", "|");
+        //     ignoreHealth = Regex(input);
+        // }
+        // CFG.HEALTH_IGNORE, "Hydrogen Thruster, Suspension"
 
-//         return output + '\n';
-//     }
-// }
-// /* BLOCK_HEALTH */
+
+        // int chars;
+        // GetPanelWidthInChars(settings[CFG.BLOCK_HEALTH], out chars);
+
+        foreach (var b in this.blocks) {
+            if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
+                continue;
+            }
+
+            var health = this.GetHealth(b);
+            if (health != 1f) {
+                this.damaged[b.CustomName] = Util.PctString(health);
+                b.ShowOnHUD = true;
+            } else {
+                b.ShowOnHUD = false;
+            }
+        }
+
+        this.status = $"{(this.damaged.Count == 0 ? "No damage" : "Damage")} detected";
+    }
+}
+/* BLOCK_HEALTH */

@@ -11,15 +11,17 @@ public class CargoStatus {
     public System.Text.RegularExpressions.Regex itemRegex;
     public System.Text.RegularExpressions.Regex ingotRegex;
     public System.Text.RegularExpressions.Regex oreRegex;
-    public Template template;
     public VRage.MyFixedPoint max;
     public VRage.MyFixedPoint vol;
+    public Template template;
+    public List<float> widths;
 
     public string itemText;
     public float pct;
 
-    public CargoStatus(Program program, Template template) {
+    public CargoStatus(Program program, Template template = null) {
         this.program = program;
+        this.template = template;
         this.itemText = "";
         this.pct = 0f;
         this.cargo = new List<IMyTerminalBlock>();
@@ -28,40 +30,63 @@ public class CargoStatus {
         this.itemRegex = Util.Regex(".*/");
         this.ingotRegex = Util.Regex("Ingot/");
         this.oreRegex = Util.Regex("Ore/(?!Ice)");
-        this.template = template;
+        this.widths = new List<float>() { 0, 0, 0, 0 };
         this.GetCargoBlocks();
         this.RegisterTemplateVars();
     }
 
     public void RegisterTemplateVars() {
-        this.template.RegisterRenderAction("cargo.stored",
-            (ref DrawingSurface ds, string text, string options) => ds.Text($"{Util.FormatNumber(1000 * this.vol)} L"));
-        this.template.RegisterRenderAction("cargo.cap",
-            (ref DrawingSurface ds, string text, string options) => ds.Text($"{Util.FormatNumber(1000 * this.max)} L"));
-        this.template.RegisterRenderAction("cargo.bar", this.RenderPct);
-        this.template.RegisterRenderAction("cago.items", this.RenderItems);
+        if (this.template == null) {
+            return;
+        }
+
+        this.template.Register("cargo.stored", () => $"{Util.FormatNumber(1000 * this.vol)} L");
+        this.template.Register("cargo.cap", () => $"{Util.FormatNumber(1000 * this.max)} L");
+        this.template.Register("cargo.bar", this.RenderPct);
+        this.template.Register("cargo.items", this.RenderItems);
     }
 
-    public void RenderPct(ref DrawingSurface ds, string text, string options = "") {
-        Color colour = Color.Green;
+    public void RenderPct(DrawingSurface ds, string text, Dictionary<string, string> options) {
+        Color colour = DrawingSurface.stringToColour.Get("dimgreen");
         if (this.pct > 60) {
-            colour = Color.Yellow;
+            colour = DrawingSurface.stringToColour.Get("dimyellow");
         } else if (this.pct > 85) {
-            colour = Color.Red;
+            colour = DrawingSurface.stringToColour.Get("dimred");
         }
         ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct));
     }
 
-    public void RenderItems(ref DrawingSurface ds, string text, string options = "") {
-        foreach (var item in this.cargoItemCounts) {
-            var fmtd = Util.FormatNumber(item.Value);
-            ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(fmtd, textAlignment: TextAlignment.RIGHT).Newline();
+    public void RenderItems(DrawingSurface ds, string text, Dictionary<string, string> options) {
+        if (ds.width / (ds.charSizeInPx.X + 1f) < 30) {
+            foreach (var item in this.cargoItemCounts) {
+                var fmtd = Util.FormatNumber(item.Value);
+                ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(fmtd, textAlignment: TextAlignment.RIGHT).Newline();
+            }
+        } else {
+            this.widths[0] = 0;
+            this.widths[1] = ds.width / 2 - ds.charSizeInPx.X;
+            this.widths[2] = ds.width / 2 + ds.charSizeInPx.X;
+            this.widths[3] = ds.width;
+
+            int i = 0;
+            foreach (var item in this.cargoItemCounts) {
+                var fmtd = Util.FormatNumber(item.Value);
+                ds
+                    .SetCursor(this.widths[(i++ % 4)], null)
+                    .Text($"{item.Key}")
+                    .SetCursor(this.widths[(i++ % 4)], null)
+                    .Text(fmtd, textAlignment: TextAlignment.RIGHT);
+
+                if ((i % 4) == 0) {
+                    ds.Newline();
+                }
+            }
         }
     }
 
-    // public Func<TResult> MethodAccess<TResult, TArg> (Func<TArg, TResult> func, TArg arg) {
-    //     return () => func(arg);
-    // }
+// public Func<TResult> MethodAccess<TResult, TArg> (Func<TArg, TResult> func, TArg arg) {
+//     return () => func(arg);
+// }
 
     public void Clear() {
         this.itemText = "";

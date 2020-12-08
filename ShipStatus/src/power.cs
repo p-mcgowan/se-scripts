@@ -2,8 +2,10 @@
  * POWER
  */
 PowerDetails powerDetails;
+
 public class PowerDetails {
     public Program program;
+    public Template template;
     public List<IMyPowerProducer> powerProducerBlocks;
     public List<IMyJumpDrive> jumpDriveBlocks;
     public List<MyInventoryItem> items;
@@ -24,46 +26,70 @@ public class PowerDetails {
     public float solarOutputMW;
     public float solarOutputMax;
 
-    public PowerDetails(Program _program) {
-        program = _program;
-        powerProducerBlocks = new List<IMyPowerProducer>();
-        jumpDriveBlocks = new List<IMyJumpDrive>();
-        items = new List<MyInventoryItem>();
-        jumpDrives = 0;
-        jumpMax = 0f;
-        jumpCurrent = 0f;
-        batteries = 0;
-        batteryMax = 0f;
-        batteryCurrent = 0f;
-        reactors = 0;
-        reactorOutputMW = 0f;
-        reactorUranium = 0;
-        solars = 0;
-        solarOutputMW = 0f;
-        solarOutputMax = 0f;
-        GetBlocks();
+    public PowerDetails(Program program, Template template = null) {
+        this.program = program;
+        this.template = template;
+        this.powerProducerBlocks = new List<IMyPowerProducer>();
+        this.jumpDriveBlocks = new List<IMyJumpDrive>();
+        this.items = new List<MyInventoryItem>();
+        this.jumpDrives = 0;
+        this.jumpMax = 0f;
+        this.jumpCurrent = 0f;
+        this.batteries = 0;
+        this.batteryMax = 0f;
+        this.batteryCurrent = 0f;
+        this.reactors = 0;
+        this.reactorOutputMW = 0f;
+        this.reactorUranium = 0;
+        this.solars = 0;
+        this.solarOutputMW = 0f;
+        this.solarOutputMax = 0f;
+        this.GetBlocks();
+        this.RegisterTemplateVars();
+    }
+
+    public void RegisterTemplateVars() {
+        if (this.template == null) {
+            return;
+        }
+        this.template.Register("power.jumpDrives", () => this.jumpDrives.ToString());
+        this.template.Register("power.jumpBar",
+            (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+                float pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
+                ds.Bar(pct, text: Util.PctString(pct));
+            });
+        this.template.Register("power.batteries", () => this.batteries.ToString());
+        this.template.Register("power.batteryBar",
+            (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+                float pct = this.GetPercent(this.batteryCurrent, this.batteryMax);
+                ds.Bar(pct, text: Util.PctString(pct));
+            });
+        this.template.Register("power.solars", () => this.solars.ToString());
+        this.template.Register("power.reactors", () => this.reactors.ToString());
+        this.template.Register("power.reactorMw", () => this.reactorOutputMW.ToString());
+        this.template.Register("power.reactorUr", () => $"{Util.FormatNumber(reactorUranium)} kg");
     }
 
     public void Clear() {
-        jumpDrives = 0;
-        jumpMax = 0f;
-        jumpCurrent = 0f;
-        batteries = 0;
-        batteryMax = 0f;
-        batteryCurrent = 0f;
-        reactors = 0;
-        reactorOutputMW = 0f;
-        reactorUranium = 0;
-        solars = 0;
-        solarOutputMW = 0f;
-        solarOutputMax = 0f;
+        this.jumpDrives = 0;
+        this.jumpMax = 0f;
+        this.jumpCurrent = 0f;
+        this.batteries = 0;
+        this.batteryMax = 0f;
+        this.batteryCurrent = 0f;
+        this.reactors = 0;
+        this.reactorOutputMW = 0f;
+        this.reactorUranium = 0;
+        this.solars = 0;
+        this.solarOutputMW = 0f;
+        this.solarOutputMax = 0f;
     }
 
     public void GetBlocks() {
-        powerProducerBlocks.Clear();
-        program.GridTerminalSystem.GetBlocksOfType<IMyPowerProducer>(powerProducerBlocks, b => b.IsSameConstructAs(program.Me));
-        jumpDriveBlocks.Clear();
-        program.GridTerminalSystem.GetBlocksOfType<IMyJumpDrive>(jumpDriveBlocks, b => b.IsSameConstructAs(program.Me));
+        this.powerProducerBlocks.Clear();
+        this.program.GridTerminalSystem.GetBlocksOfType<IMyPowerProducer>(this.powerProducerBlocks, b => b.IsSameConstructAs(this.program.Me));
+        this.jumpDriveBlocks.Clear();
+        this.program.GridTerminalSystem.GetBlocksOfType<IMyJumpDrive>(this.jumpDriveBlocks, b => b.IsSameConstructAs(this.program.Me));
     }
 
     public float GetPercent(float current, float max) {
@@ -76,42 +102,43 @@ public class PowerDetails {
     public void Refresh() {
         Clear();
 
-        foreach (IMyPowerProducer powerBlock in powerProducerBlocks) {
+        foreach (IMyPowerProducer powerBlock in this.powerProducerBlocks) {
             if (powerBlock is IMyBatteryBlock) {
-                batteries += 1;
-                batteryCurrent += ((IMyBatteryBlock)powerBlock).CurrentStoredPower;
-                batteryMax += ((IMyBatteryBlock)powerBlock).MaxStoredPower;
+                this.batteries += 1;
+                this.batteryCurrent += ((IMyBatteryBlock)powerBlock).CurrentStoredPower;
+                this.batteryMax += ((IMyBatteryBlock)powerBlock).MaxStoredPower;
             } else if (powerBlock is IMyReactor) {
-                reactors += 1;
-                reactorOutputMW += ((IMyReactor)powerBlock).CurrentOutput;
+                this.reactors += 1;
+                this.reactorOutputMW += ((IMyReactor)powerBlock).CurrentOutput;
 
-                items.Clear();
+                this.items.Clear();
                 var inv = ((IMyReactor)powerBlock).GetInventory(0);
-                inv.GetItems(items);
+                inv.GetItems(this.items);
                 for (var i = 0; i < items.Count; i++) {
-                    reactorUranium += items[i].Amount;
+                    this.reactorUranium += items[i].Amount;
                 }
             } else if (powerBlock is IMySolarPanel) {
-                solars += 1;
-                solarOutputMW += ((IMySolarPanel)powerBlock).CurrentOutput;
-                solarOutputMax += ((IMySolarPanel)powerBlock).MaxOutput;
+                this.solars += 1;
+                this.solarOutputMW += ((IMySolarPanel)powerBlock).CurrentOutput;
+                this.solarOutputMax += ((IMySolarPanel)powerBlock).MaxOutput;
             }
         }
 
         foreach (IMyJumpDrive jumpDrive in jumpDriveBlocks) {
-            jumpDrives += 1;
-            jumpCurrent += jumpDrive.CurrentStoredPower;
-            jumpMax += jumpDrive.MaxStoredPower;
+            this.jumpDrives += 1;
+            this.jumpCurrent += jumpDrive.CurrentStoredPower;
+            this.jumpMax += jumpDrive.MaxStoredPower;
         }
     }
 
     public override string ToString() {
-        return $"{jumpDrives} Jump drive{Util.Plural(jumpDrives, "", "s")}:\n" +
-            $"{jumpCurrent} / {jumpMax}\n" +
-            $"{batteries} Batter{Util.Plural(batteries, "y", "ies")}\n" +
-            $"{batteryCurrent} / {batteryMax}\n" +
-            $"{reactors} Reactor{Util.Plural(reactors, "", "s")}\n" +
-            $"{reactorOutputMW} MW, {Util.FormatNumber(reactorUranium)} Fuel";
+        return
+            $"{this.jumpDrives} Jump drive{Util.Plural(this.jumpDrives, "", "s")}:\n" +
+            $"{this.jumpCurrent} / {this.jumpMax}\n" +
+            $"{this.batteries} Batter{Util.Plural(this.batteries, "y", "ies")}\n" +
+            $"{this.batteryCurrent} / {this.batteryMax}\n" +
+            $"{this.reactors} Reactor{Util.Plural(this.reactors, "", "s")}\n" +
+            $"{this.reactorOutputMW} MW, {Util.FormatNumber(this.reactorUranium)} Fuel";
     }
 }
 /* POWER */
