@@ -8,6 +8,9 @@ public static class Util {
     public static string FormatNumber(VRage.MyFixedPoint input) {
         string fmt;
         int n = Math.Max(0, (int)input);
+        if (n == 0) {
+            return "0";
+        }
         if (n < 10000) {
             fmt = "##";
         } else if (n < 1000000) {
