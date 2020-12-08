@@ -1,49 +1,48 @@
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
-Graphics graphics = new Graphics();
+Dictionary<string, DrawingSurface> drawables = new Dictionary<string, DrawingSurface>();
 Template template;
-string[] templateStrings = new string[] {
-    "This is a test {no.registered.method}",
-    "This is another line, below is ",
-    "a registered method returning Random",
-    "{test.random}",
-    "",
-    "does this still print",
-    "{text:colour=0,0,100; i'm blue, abadee abadaa}",
-    "???"
-};
+string templateStrings =
+@"This is a test {no.registered.method}
+This is another line, below is
+a registered method returning Random
+{test.random:min=0;max=10}
+
+does this still print
+{text:colour=0,0,100; i'm blue, abadee abadaa}
+{text:colour=red; some like it red}
+???";
 
 
-class Test {
-    private Random random;
+Random random = new Random();
 
-    public Test() {
-        this.random = new Random();
-    }
-
-    public void Random(ref DrawingSurface ds, string text, string options = "") {
-        ds.Text($"{this.random.Next(0, 100)}");
-    }
+public void Random(DrawingSurface ds, string text, Dictionary<string, string> opts) {
+    int min = Util.ParseInt(opts.Get("min", "0"), 0);
+    int max = Util.ParseInt(opts.Get("max", "100"), 100);
+    ds.Text($"{this.random.Next(min, max)}");
 }
-Test test = new Test();
 
 public Program() {
+    template = new Template(this);
+    template.PreRender("the_same_text_string_for_everything", templateStrings);
     blocks.Clear();
     GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
     foreach (IMyTextSurfaceProvider block in blocks) {
         for (int i = 0; i < block.SurfaceCount; i++) {
             IMyTextSurface surface = block.GetSurface(i);
-            graphics.drawables.Add($"{((IMyTerminalBlock)block).CustomName} <{i}>", new DrawingSurface(surface, this));
+            string name = $"{((IMyTerminalBlock)block).CustomName} <{i}>";
+
+            drawables.Add(name, new DrawingSurface(surface, this, name));
+
+            // template.PreRender(name, block.CustomData);
         }
     }
-    template = new Template(this);
-    template.RegisterRenderAction("test.random", test.Random);
+
+    template.RegisterRenderAction("test.random", Random);
 }
 
 public void Main(string argument, UpdateType updateSource) {
-    foreach (string key in graphics.drawables.Keys) {
-        DrawingSurface ds = graphics.drawables[key];
-        ds.Text($"begin {key}").Newline();
-        template.Render(ref ds, templateStrings);
+    foreach (KeyValuePair<string, DrawingSurface> drawable in drawables) {
+        template.Render(drawable.Value, "the_same_text_string_for_everything");
     }
 }
 /* MAIN */
@@ -56,6 +55,7 @@ public class DrawingSurface {
     public RectangleF viewport;
     public MySpriteDrawFrame frame;
     public Vector2 cursor;
+    public Vector2 savedCursor;
     public StringBuilder sb;
     public Vector2 charSizeInPx;
     public bool drawing;
@@ -64,17 +64,44 @@ public class DrawingSurface {
     public float height;
     public int charsPerWidth;
     public int charsPerHeight;
+    public string name;
 
-    public DrawingSurface(IMyTextSurface surface, Program program) {
+    public static char[] commaSep = { ',' };
+    public static Dictionary<string, Color?> stringToColour = new Dictionary<string, Color?>() {
+        { "black", Color.Black },
+        { "blue", Color.Blue },
+        { "brown", Color.Brown },
+        { "cyan", Color.Cyan },
+        { "dimgray", Color.DimGray },
+        { "gray", Color.Gray },
+        { "green", Color.Green },
+        { "orange", Color.Orange },
+        { "pink", Color.Pink },
+        { "purple", Color.Purple },
+        { "red", Color.Red },
+        { "tan", Color.Tan },
+        { "transparent", Color.Transparent },
+        { "white", Color.White },
+        { "yellow", Color.Yellow }
+    };
+    public static Dictionary<string, TextAlignment?> stringToAlignment = new Dictionary<string, TextAlignment?>() {
+        { "center", TextAlignment.CENTER },
+        { "left", TextAlignment.LEFT },
+        { "right", TextAlignment.RIGHT }
+    };
+
+    public DrawingSurface(IMyTextSurface surface, Program program, string name = "") {
         this.program = program;
         this.surface = surface;
         this.cursor = new Vector2(0f, 0f);
-        this.sb = new StringBuilder("j");
+        this.savedCursor = new Vector2(0f, 0f);
+        this.sb = new StringBuilder(" ");
         this.charSizeInPx = new Vector2(0f, 0f);
         this.surface.ContentType = ContentType.SCRIPT;
         this.drawing = false;
         this.surface.Font = "Monospace";
         this.viewport = new RectangleF(0f, 0f, 0f, 0f);
+        this.name = name;
 
         this.InitScreen();
     }
@@ -84,15 +111,41 @@ public class DrawingSurface {
         this.cursor.Y = 0f;
         this.surface.Script = "";
 
-        this.padding = (surface.TextPadding / 100) * this.surface.SurfaceSize;
+        this.padding = (this.surface.TextPadding / 100) * this.surface.SurfaceSize;
         this.viewport.Position = (this.surface.TextureSize - this.surface.SurfaceSize) / 2f + this.padding;
         this.viewport.Size = this.surface.SurfaceSize - (2 * this.padding);
         this.width = this.viewport.Width;
         this.height = this.viewport.Height;
 
-        this.charSizeInPx = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
-        this.charsPerWidth = (int)Math.Floor(this.surface.SurfaceSize.X / this.charSizeInPx.X);
-        this.charsPerHeight = (int)Math.Floor(this.surface.SurfaceSize.Y / this.charSizeInPx.Y);
+        this.Size();
+    }
+
+    public Color? GetColourOpt(string colour) {
+        if (!colour.Contains(',')) {
+            return DrawingSurface.stringToColour[colour];
+        }
+
+        string[] numbersStr = colour.Split(DrawingSurface.commaSep);
+        foreach (var n in numbersStr) {
+            this.program.Echo($"n: {n}");
+        }
+
+        if (numbersStr.Length < 2) {
+            return null;
+        }
+
+        int r, g, b;
+        int a = 255;
+        if (
+            !int.TryParse(numbersStr[0], out r) ||
+            !int.TryParse(numbersStr[1], out g) ||
+            !int.TryParse(numbersStr[2], out b) ||
+            (numbersStr.Length > 3 && !int.TryParse(numbersStr[3], out a))
+        ) {
+            return null;
+        } else {
+            return new Color(r, g, b, a);
+        }
     }
 
     public void DrawStart() {
@@ -108,6 +161,12 @@ public class DrawingSurface {
         return this;
     }
 
+    public DrawingSurface SaveCursor() {
+        this.savedCursor = this.cursor;
+
+        return this;
+    }
+
     public DrawingSurface SetCursor(float? x, float? y) {
         this.cursor.X = x ?? this.cursor.X;
         this.cursor.Y = y ?? this.cursor.Y;
@@ -115,11 +174,29 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface Newline() {
+    public DrawingSurface Newline(bool resetX = true) {
         this.cursor.Y += this.charSizeInPx.Y;
-        this.cursor.X = 0;
+        this.cursor.X = resetX ? 0 : this.savedCursor.X;
 
         return this;
+    }
+
+    public DrawingSurface Size(float? size = null) {
+        this.surface.FontSize = size ?? this.surface.FontSize;
+
+        this.charSizeInPx = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
+        this.charsPerWidth = (int)Math.Floor(this.surface.SurfaceSize.X / this.charSizeInPx.X);
+        this.charsPerHeight = (int)Math.Floor(this.surface.SurfaceSize.Y / this.charSizeInPx.Y);
+
+        return this;
+    }
+
+    public DrawingSurface Text(string text, Dictionary<string, string> options) {
+        Color? colour = this.GetColourOpt(options.Get("colour", null));
+        TextAlignment textAlignment = DrawingSurface.stringToAlignment[options.Get("align", "left")] ?? TextAlignment.LEFT;
+        float scale = Util.ParseFloat(options["scale"], 1f);
+
+        return this.Text(text, colour: colour, textAlignment: textAlignment, scale: scale);
     }
 
     public DrawingSurface Text(
@@ -148,7 +225,14 @@ public class DrawingSurface {
             FontId = surface.Font
         });
 
-        this.cursor.X += this.charSizeInPx.X * text.Length + (float)Math.Ceiling((double)(text.Length / 2)) - 1f;
+        this.sb.Clear();
+        this.sb.Append(text);
+        Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
+        this.sb.Clear();
+        this.sb.Append(" ");
+
+
+        this.cursor.X += size.X;
 
         return this;
     }
@@ -245,6 +329,29 @@ public class DrawingSurface {
         return this;
     }
 
+    public DrawingSurface Bar(float pct, Dictionary<string, string> options) {
+        float width = Util.ParseFloat(options["width"], 0f);
+        float height = Util.ParseFloat(options["height"], 0f);
+        Color? fillColour = this.GetColourOpt(options["fillColour"]);
+        TextAlignment textAlignment = DrawingSurface.stringToAlignment[options["align"]] ?? TextAlignment.LEFT;
+        string text = options["text"];
+        Color? textColour = this.GetColourOpt(options["textColour"]);
+        Color? bgColour = this.GetColourOpt(options["bgColour"]);
+        float pad = Util.ParseFloat(options["pad"], 0.1f);
+
+        return this.Bar(
+            pct,
+            width: width,
+            height: height,
+            fillColour: fillColour,
+            textAlignment: textAlignment,
+            text: text,
+            textColour: textColour,
+            bgColour: bgColour,
+            pad: pad
+        );
+    }
+
     public DrawingSurface Bar(
         float pct,
         float width = 0f,
@@ -310,8 +417,23 @@ public class DrawingSurface {
         return this;
     }
 
+    public DrawingSurface TextCircle(Dictionary<string, string> options) {
+        Color colour = this.GetColourOpt(options["colour"]) ?? this.surface.FontColor;
+        bool outline = Util.ParseBool(options["outline"]);
+
+        return this.TextCircle(colour, outline);
+    }
+
     public DrawingSurface TextCircle(Color colour, bool outline = false) {
         return this.Circle(this.charSizeInPx.Y - 5f, colour, this.cursor + Vector2.Divide(this.charSizeInPx, 2f), outline: outline);
+    }
+
+    public DrawingSurface Circle(Dictionary<string, string> options) {
+        float size = Util.ParseFloat(options["size"], this.charSizeInPx.Y);
+        Color colour = this.GetColourOpt(options["colour"]) ?? this.surface.FontColor;
+        bool outline = Util.ParseBool(options["outline"], false);
+
+        return this.Circle(size: size, colour: colour, outline: outline);
     }
 
     public DrawingSurface Circle(float size, Color colour, Vector2? position = null, bool outline = false) {
@@ -337,63 +459,129 @@ public class DrawingSurface {
     }
 }
 
-public class Graphics {
-    public Dictionary<string, DrawingSurface> drawables;
-
-    public Graphics() {
-        this.drawables = new Dictionary<string, DrawingSurface>();
-    }
-}
+// public Dictionary<string, DrawingSurface> drawables = new Dictionary<string, DrawingSurface>();
 /* GRAPHICS */
-public class Token {
-    public bool isText = true;
-    public string value = null;
-}
-
-public delegate void Del(ref DrawingSurface ds, string token, string options = "");
-
 public class Template {
+    public class Token {
+        public bool isText = true;
+        public string value = null;
+    }
+
+    public class Node {
+        public string action;
+        public string text;
+        public Dictionary<string, string> options;
+
+        public Node(string action, string text = null, Dictionary<string, string> options = null) {
+            this.action = action;
+            this.text = text;
+            this.options = options;
+        }
+    }
+
+    public delegate void Del(DrawingSurface ds, string token, Dictionary<string, string> options);
+    public delegate string Callback();
+
     public Program program;
-    public Dictionary<string, Del> methods;
     public System.Text.RegularExpressions.Regex tokenizer;
     public System.Text.RegularExpressions.Regex cmdSplitter;
     public System.Text.RegularExpressions.Match match;
     public Token token;
-    public char[] splitSpace;
+    public Dictionary<string, Del> methods;
+    public Dictionary<string, List<Node>> renderNodes;
 
-    public Template(Program program) {
+    public char[] splitSemi = new[] { ';' };
+
+    public Template(Program program = null) {
         this.tokenizer = Util.Regex(@"(\{[^\}]+\}|[^\{]+)", System.Text.RegularExpressions.RegexOptions.Compiled);
-        this.cmdSplitter = Util.Regex(@"(?<name>[^: ]+)(:(?<params>[^; ]+);? )(?<text>.*)", System.Text.RegularExpressions.RegexOptions.Compiled);
+        this.cmdSplitter = Util.Regex(@"(?<name>[^:; ]+)(:(?<params>[^ ]+)?;?)? ?(?<text>.*)?", System.Text.RegularExpressions.RegexOptions.Compiled);
         this.token = new Token();
         this.methods = new Dictionary<string, Del>();
         this.program = program;
+        this.renderNodes = new Dictionary<string, List<Node>>();
         this.RegisterRenderAction("text", this.RenderText);
-        this.splitSpace = new[] { ' ' };
     }
 
     public void RegisterRenderAction(string key, Del callback) {
         this.methods[key] = callback;
     }
 
-    public void RenderText(ref DrawingSurface ds, string text, string options = "") {
-        Color? colour = null;
-        if (options != "") {
-            Dictionary<string, string> keyValuePairs = options.Split(';')
-                .Select(value => value.Split('='))
-                .ToDictionary(pair => pair[0], pair => pair[1]);
+    public void RegisterRenderAction(string key, Callback callback) {
+        this.methods[key] = this.Text(callback);
+    }
 
-            if (keyValuePairs["colour"] != null) {
-                var cols = keyValuePairs["colour"].Split(',').Select(value => Int32.Parse(value)).ToArray();
-                colour = new Color(
-                    cols.ElementAtOrDefault(0),
-                    cols.ElementAtOrDefault(1),
-                    cols.ElementAtOrDefault(2),
-                    cols.Length > 3 ? cols[3] : 255
-                );
+    public void PreRender(string outputName, string templateStrings) {
+        this.PreRender(outputName, templateStrings.Split('\n'));
+    }
+
+    public void PreRender(string outputName, string[] templateStrings) {
+        List<Node> nodeList = new List<Node>();
+
+        foreach (string line in templateStrings) {
+            this.match = null;
+
+            while (this.GetToken(line)) {
+                if (this.token.isText) {
+                    nodeList.Add(new Node("text", this.token.value));
+                    continue;
+                }
+
+                System.Text.RegularExpressions.Match m = this.cmdSplitter.Match(this.token.value);
+                if (m.Success) {
+                    nodeList.Add(new Node(m.Groups["name"].Value, m.Groups["text"].Value, this.StringToDict(m.Groups["params"].Value)));
+                } else {
+                    nodeList.Add(new Node(this.token.value));
+                }
             }
         }
-        this.program.Echo($"c:{colour}");
-        ds.Text(text, colour: colour);
+
+        this.renderNodes.Add(outputName, nodeList);
+    }
+
+    public void Render(DrawingSurface ds, string name = null) {
+        string dsName = name ?? ds.name;
+        List<Node> nodeList = null;
+        if (!this.renderNodes.TryGetValue(dsName, out nodeList)) {
+            ds.Text("No template found").Draw();
+            return;
+        }
+
+        Del callback = null;
+        foreach (Node node in nodeList) {
+            if (this.methods.TryGetValue(node.action, out callback)) {
+                callback(ds, node.text, node.options);
+            } else {
+                ds.Text($"{{{node.action}}}");
+            }
+            callback = null;
+            ds.Newline();
+        }
+
+        ds.Draw();
+    }
+
+    public Del Text(Callback getStr) {
+        return (DrawingSurface ds, string text, Dictionary<string, string> options) => this.RenderText(ds, getStr(), options);
+    }
+
+    public void RenderText(DrawingSurface ds, string text, Dictionary<string, string> options) {
+        ds.Text(text, options);
+    }
+
+    public Dictionary<string, string> StringToDict(string options) {
+        if (options == "") {
+            return null;
+        }
+
+        return options.Split(splitSemi, StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => value.Split('='))
+            .ToDictionary(pair => pair[0], pair => pair[1]);
+    }
+
+    public void Echo(string text) {
+        if (this.program != null) {
+            this.program.Echo(text);
+        }
     }
 
     public bool GetToken(string line) {
@@ -414,7 +602,7 @@ public class Template {
                     this.token.isText = true;
                 }
             } catch (Exception e) {
-                this.program.Echo($"err parsing token {e}");
+                this.Echo($"err parsing token {e}");
                 return false;
             }
 
@@ -422,42 +610,6 @@ public class Template {
         } else {
             return false;
         }
-    }
-
-    public void Render(ref DrawingSurface ds, string[] templateStrings) {
-        foreach (string line in templateStrings) {
-            this.match = null;
-
-            while (this.GetToken(line)) {
-                if (this.token.isText) {
-                    ds.Text(this.token.value);
-                    continue;
-                }
-
-                string name = this.token.value;
-                string opts = "";
-                string text = "";
-                System.Text.RegularExpressions.Match m = this.cmdSplitter.Match(this.token.value);
-                if (m.Success) {
-                    opts = m.Groups["params"].Value;
-                    text = m.Groups["text"].Value;
-                    name = m.Groups["name"].Value;
-                }
-                this.program.Echo($"name:{name},text:{text},opts:{opts}");
-
-                // string[] parts = this.token.value.Split(this.splitSpace, 2);
-                // string[] opts = this.token.value.Split(':');
-                // this.program.Echo(String.Format("p1: {0}, p2?: {1}", parts[0], parts.Length > 1 ? parts[1] : "naw"));
-
-                if (this.methods.ContainsKey(name)) {
-                    this.methods[name](ref ds, text, opts);
-                } else {
-                    ds.Text($"{{{this.token.value}}}");
-                }
-            }
-            ds.Newline();
-        }
-        ds.Draw();
     }
 }
 /*
@@ -513,5 +665,48 @@ public static class Util {
     public static string Plural(int count, string ifOne, string otherwise) {
         return count == 1 ? ifOne : otherwise;
     }
+
+    public static int ParseInt(string str, int defaultValue = 0) {
+        int output;
+        if (!int.TryParse(str, out output)) {
+            output = defaultValue;
+        }
+
+        return output;
+    }
+
+    public static float ParseFloat(string str, float defaultValue = 0f) {
+        float output;
+        if (!float.TryParse(str, out output)) {
+            output = defaultValue;
+        }
+
+        return output;
+    }
+
+    public static bool ParseBool(string str, bool defaultValue = false) {
+        bool output;
+        if (!bool.TryParse(str, out output)) {
+            output = defaultValue;
+        }
+
+        return output;
+    }
 }
+}
+
+public static class Dict {
+    public static TValue Get<TKey, TValue>(this Dictionary<TKey, TValue> dict, TKey key, TValue defaultValue = default(TValue)) {
+        TValue value;
+        return dict.TryGetValue(key, out value) ? value : defaultValue;
+    }
+
+    public static string Print<TKey, TValue>(this Dictionary<TKey, TValue> dict) {
+        StringBuilder sb = new StringBuilder("{ ");
+        foreach (KeyValuePair<TKey, TValue> keyValues in dict) {
+            sb.Append($"{keyValues.Key}: {keyValues.Value}, ");
+        }
+
+        return sb.Append("}").ToString();
+    }
 /* UTIL */
