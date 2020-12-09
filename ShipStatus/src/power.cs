@@ -17,6 +17,8 @@ public class PowerDetails {
     public int batteries;
     public float batteryMax;
     public float batteryCurrent;
+    public float batteryInput;
+    public float batteryOutput;
 
     public int reactors;
     public float reactorOutputMW;
@@ -26,24 +28,16 @@ public class PowerDetails {
     public float solarOutputMW;
     public float solarOutputMax;
 
+    // turbines
+    // hydro engines
+
     public PowerDetails(Program program, Template template = null) {
         this.program = program;
         this.template = template;
         this.powerProducerBlocks = new List<IMyPowerProducer>();
         this.jumpDriveBlocks = new List<IMyJumpDrive>();
         this.items = new List<MyInventoryItem>();
-        this.jumpDrives = 0;
-        this.jumpMax = 0f;
-        this.jumpCurrent = 0f;
-        this.batteries = 0;
-        this.batteryMax = 0f;
-        this.batteryCurrent = 0f;
-        this.reactors = 0;
-        this.reactorOutputMW = 0f;
-        this.reactorUranium = 0;
-        this.solars = 0;
-        this.solarOutputMW = 0f;
-        this.solarOutputMax = 0f;
+        this.Clear();
 
         if (this.program.config.Enabled("power")) {
             this.GetBlocks();
@@ -56,25 +50,38 @@ public class PowerDetails {
             return;
         }
         this.template.Register("power.jumpDrives", () => this.jumpDrives.ToString());
-        this.template.Register("power.jumpBar",
-            (DrawingSurface ds, string text, Dictionary<string, string> options) => {
-                float pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
-                options.Set("text", Util.PctString(pct));
-                options.Set("pct", pct.ToString());
-                ds.Bar(options);
-            });
+        this.template.Register("power.jumpBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+            if (this.jumpDrives == 0) {
+                return;
+            }
+            float pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
+            options.Set("text", Util.PctString(pct));
+            options.Set("pct", pct.ToString());
+            ds.Bar(options).Newline();
+        });
         this.template.Register("power.batteries", () => this.batteries.ToString());
-        this.template.Register("power.batteryBar",
-            (DrawingSurface ds, string text, Dictionary<string, string> options) => {
-                float pct = this.GetPercent(this.batteryCurrent, this.batteryMax);
-                options.Set("text", Util.PctString(pct));
-                options.Set("pct", pct.ToString());
-                ds.Bar(options);
-            });
+        this.template.Register("power.batteryBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+            if (this.batteries == 0) {
+                return;
+            }
+            float pct = this.GetPercent(this.batteryCurrent, this.batteryMax);
+            options.Set("text", Util.PctString(pct));
+            options.Set("pct", pct.ToString());
+            ds.Bar(options).Newline();
+        });
         this.template.Register("power.solars", () => this.solars.ToString());
         this.template.Register("power.reactors", () => this.reactors.ToString());
-        this.template.Register("power.reactorMw", () => this.reactorOutputMW.ToString());
+        this.template.Register("power.reactorMw", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+            ds.Text($"{this.reactorOutputMW}{text}");
+        });
         this.template.Register("power.reactorUr", () => $"{Util.FormatNumber(reactorUranium)} kg");
+        this.template.Register("power.io", () => this.PowerIo().ToString());
+        this.template.Register("power.ioBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+            options.Set("net", this.PowerIo().ToString());
+            options.Set("low", this.batteryCurrent.ToString());
+            options.Set("high", (this.batteryMax - this.batteryCurrent).ToString());
+            ds.MidBar(options).Newline();
+        });
     }
 
     public void Clear() {
@@ -84,6 +91,8 @@ public class PowerDetails {
         this.batteries = 0;
         this.batteryMax = 0f;
         this.batteryCurrent = 0f;
+        this.batteryOutput = 0f;
+        this.batteryInput = 0f;
         this.reactors = 0;
         this.reactorOutputMW = 0f;
         this.reactorUranium = 0;
@@ -106,6 +115,10 @@ public class PowerDetails {
         return current / max;
     }
 
+    public float PowerIo() {
+        return this.reactorOutputMW + this.solarOutputMW + this.batteryInput;
+    }
+
     public void Refresh() {
         Clear();
 
@@ -114,6 +127,8 @@ public class PowerDetails {
                 this.batteries += 1;
                 this.batteryCurrent += ((IMyBatteryBlock)powerBlock).CurrentStoredPower;
                 this.batteryMax += ((IMyBatteryBlock)powerBlock).MaxStoredPower;
+                this.batteryInput += ((IMyBatteryBlock)powerBlock).CurrentInput;
+                this.batteryOutput += ((IMyBatteryBlock)powerBlock).CurrentOutput;
             } else if (powerBlock is IMyReactor) {
                 this.reactors += 1;
                 this.reactorOutputMW += ((IMyReactor)powerBlock).CurrentOutput;

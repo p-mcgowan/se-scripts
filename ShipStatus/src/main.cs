@@ -25,10 +25,13 @@
 [LCD Panel]
 output=
 |Jump drives: {power.jumpDrives}
-|{power.jumpBar:bgColour=60,60,0}
+|{?power.jumpBar}
 |Batteries: {power.batteries}
-|{power.batteryBar:bgColour=60,60,0}
-|Reactors: {power.reactors} ({power.reactorMw} MW, {power.reactorUr} Ur)
+|{power.batteryBar}
+|Solar panels: {power.solars}
+|Energy IO: {power.io}
+|{?power.ioBar}
+|Reactors: {power.reactors} {power.reactorMw:: MW} {power.reactorUr:: Ur}
 |
 |Ship status: {health.status}
 |{health.blocks}
@@ -36,13 +39,8 @@ output=
 |{production.blocks}
 |
 |Cargo: {cargo.stored} / {cargo.cap}
-|{cargo.bar:bgColour=60,60,60}
+|{cargo.bar}
 |{cargo.items}
-
-[Status panel]
-output=
-|{health.status}
-|{health.blocks}
 */
 
 Dictionary<string, DrawingSurface> drawables = new Dictionary<string, DrawingSurface>();
@@ -162,11 +160,6 @@ public Program() {
         Echo("Failed to parse custom data");
         return;
     }
-    Echo($"airlock    : {config.Enabled("airlock")}");
-    Echo($"power      : {config.Enabled("power")}");
-    Echo($"cargo      : {config.Enabled("cargo")}");
-    Echo($"health     : {config.Enabled("health")}");
-    Echo($"production : {config.Enabled("production")}");
 
     powerDetails = new PowerDetails(this, template);
     cargoStatus = new CargoStatus(this, template);
