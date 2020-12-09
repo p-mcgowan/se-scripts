@@ -90,6 +90,10 @@ public static class Dict {
         return dict.TryGetValue(key, out value) ? value : defaultValue;
     }
 
+    public static TValue Set<TKey, TValue>(this Dictionary<TKey, TValue> dict, TKey key, TValue value) {
+        return dict[key] = dict.Get(key, value);
+    }
+
     public static string Print<TKey, TValue>(this Dictionary<TKey, TValue> dict) {
         StringBuilder sb = new StringBuilder("{ ");
         foreach (KeyValuePair<TKey, TValue> keyValues in dict) {
