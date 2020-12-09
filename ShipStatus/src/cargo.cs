@@ -31,8 +31,11 @@ public class CargoStatus {
         this.ingotRegex = Util.Regex("Ingot/");
         this.oreRegex = Util.Regex("Ore/(?!Ice)");
         this.widths = new List<float>() { 0, 0, 0, 0 };
-        this.GetCargoBlocks();
-        this.RegisterTemplateVars();
+
+        if (this.program.config.Enabled("cargo")) {
+            this.GetCargoBlocks();
+            this.RegisterTemplateVars();
+        }
     }
 
     public void RegisterTemplateVars() {
@@ -64,8 +67,8 @@ public class CargoStatus {
             }
         } else {
             this.widths[0] = 0;
-            this.widths[1] = ds.width / 2 - ds.charSizeInPx.X;
-            this.widths[2] = ds.width / 2 + ds.charSizeInPx.X;
+            this.widths[1] = ds.width / 2 - 1.5f * ds.charSizeInPx.X;
+            this.widths[2] = ds.width / 2 + 1.5f * ds.charSizeInPx.X;
             this.widths[3] = ds.width;
 
             int i = 0;

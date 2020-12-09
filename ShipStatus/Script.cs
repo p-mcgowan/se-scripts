@@ -1,63 +1,48 @@
 /*
 ; CustomData config:
 ; the [global] section applies to the whole program, or sets defaults for shared
-; config (either using mode=merge or mode = replace)
 ;
 ; For surface selection, use 'name <number>' eg: 'Cockpit <1>' - by default, the
 ; first surface is selected (0)
+;
+; The output section of the config is the template to render to the screen
 
 [global]
-airlock=true
-healthIgnore=Hydrogen Thruster,Suspension
-
-[Interior light 13]
-cargoLight=true
+;  global program settings (will overide settings detected in templates)
+;  eg if a template has {power.bar}, then power will be enabled unless false here
+;airlock=false
+;production=false
+;cargo=false
+;power=false
+;health=false
+;  airlock config (defaults are shown)
+;airlockOpenTime=750
+;airlockAllDoors=false
+;  health config (defaults are shown)
+;healthIgnore=
+;healthOnHud=false
 
 [LCD Panel]
 output=
 |Jump drives: {power.jumpDrives}
-|{power.jumpBar:bgColour=60,60,60}
+|{power.jumpBar:bgColour=60,60,0}
 |Batteries: {power.batteries}
-|{power.batteryBar:bgColour=60,60,60}
+|{power.batteryBar:bgColour=60,60,0}
 |Reactors: {power.reactors} ({power.reactorMw} MW, {power.reactorUr} Ur)
 |
 |Ship status: {health.status}
 |{health.blocks}
-|
-|{production.mode}
+|{production.status}
 |{production.blocks}
 |
 |Cargo: {cargo.stored} / {cargo.cap}
 |{cargo.bar:bgColour=60,60,60}
 |{cargo.items}
-healthIgnore=Wheel
-healthIgnoreMode=merge
-
-[Programmable block <0>]
-output=
-|Jump drives: {power.jumpDrives}
-|{power.jumpBar}
-|Batteries: {power.batteries}
-|{power.batteryBar}
-|Reactors: {power.reactors} ({power.reactorMw} MW, {power.reactorUr} Ur)
-|
-|Ship status: {health.status}
-|{health.blocks}
-|
-|{production.mode}
-|{production.blocks}
-|
-|Cargo: {cargo.stored} / {cargo.cap}
-|{cargo.bar}
-|{cargo.items}
-healthIgnore=Wheel
-healthIgnoreMode=merge
 
 [Status panel]
 output=
-|health
-healthIgnore=
-healthIgnoreMode=replace
+|{health.status}
+|{health.blocks}
 */
 
 Dictionary<string, DrawingSurface> drawables = new Dictionary<string, DrawingSurface>();
@@ -65,39 +50,26 @@ List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
 List<string> strings = new List<string>();
 MyIni ini = new MyIni();
 Template template;
-
-// Dictionary<string, List<IMyTextSurface>> programOutputs = new Dictionary<string, List<IMyTextSurface>>();
-// public string[] programKeys = { "AIRLOCK", "BLOCK_HEALTH", "CARGO", "CARGO_CAP", "CARGO_CAP_STYLE", "CARGO_LIGHT", "HEALTH_IGNORE", "INPUT", "JUMP_BAR", "POWER", "POWER_BAR", "PRODUCTION" };
-
-public class Panel {
-    // surface
-    // config
-    // cargo
-    // health
-    // production
-    public string name;
-    public int surfaceId;
-
-    public Panel(string _name, int _surfaceId = 0) {
-        name = _name;
-        surfaceId = _surfaceId;
-    }
-}
-
-public void ParsePanelConfig(string input, ref Panel panel) {
-    var matches = Util.surfaceExtractor.Matches(input);
-    if (matches.Count > 0 && matches[0].Groups.Count > 1) {
-        Int32.TryParse(matches[0].Groups[1].Value, out panel.surfaceId);
-        var panelName = input.Replace(matches[0].Groups[0].Value, "");
-        panel.name = panelName;
-    }
-
-    return;
-}
+Config config = new Config();
 
 public class Config {
-    // airlock=true
-    // healthIgnore=Hydrogen Thruster,Suspension
+    public Dictionary<string, string> settings;
+
+    public Config() {
+        this.settings = new Dictionary<string, string>();
+    }
+
+    public void Set(string name, string value) {
+        this.settings[name] = value;
+    }
+
+    public string Get(string name, string alt = null) {
+        return this.settings.Get(name, alt);
+    }
+
+    public bool Enabled(string name) {
+        return this.settings.Get(name) == "true";
+    }
 }
 
 public bool ParseCustomData() {
@@ -111,167 +83,213 @@ public bool ParseCustomData() {
     ini.GetSections(strings);
 
     if (ini.ContainsSection("global")) {
-        // airlock=true
-        // healthIgnore=Hydrogen Thruster,Suspension
+        string setting = "";
+        if (ini.Get("global", "airlock").TryGetString(out setting)) {
+            config.Set("airlock", setting);
+        }
+        if (ini.Get("global", "production").TryGetString(out setting)) {
+            config.Set("production", setting);
+        }
+        if (ini.Get("global", "cargo").TryGetString(out setting)) {
+            config.Set("cargo", setting);
+        }
+        if (ini.Get("global", "power").TryGetString(out setting)) {
+            config.Set("power", setting);
+        }
+        if (ini.Get("global", "health").TryGetString(out setting)) {
+            config.Set("health", setting);
+        }
+        if (ini.Get("global", "healthIgnore").TryGetString(out setting)) {
+            config.Set("healthIgnore", setting);
+        }
+        if (ini.Get("global", "airlockOpenTime").TryGetString(out setting)) {
+            config.Set("airlockOpenTime", setting);
+        }
+        if (ini.Get("global", "airlockAllDoors").TryGetString(out setting)) {
+            config.Set("airlockAllDoors", setting);
+        }
+        if (ini.Get("global", "healthOnHud").TryGetString(out setting)) {
+            config.Set("healthOnHud", setting);
+        }
     }
 
-    foreach (string name in strings) {
-        if (name == "global") {
+
+    foreach (string s in strings) {
+        if (s == "global") {
             continue;
         }
 
-        var tpl = ini.Get(name, "output");
+        var tpl = ini.Get(s, "output");
 
         if (!tpl.IsEmpty) {
-            Echo($"added output for {name}");
-            template.PreRender(name, tpl.ToString());
+            Echo($"added output for {s}");
+            Dictionary<string, bool> tokens = template.PreRender(s, tpl.ToString());
+            foreach (var kv in tokens) {
+                config.Set(kv.Key, config.Get(kv.Key, "true")); // don't override globals
+            }
         }
     }
 
-    // blocks.Clear();
-    // GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks, b => b.IsSameConstructAs(Me));
-    // Dictionary<string, IMyTextSurfaceProvider> blockHash = new Dictionary<string, IMyTextSurfaceProvider>();
-
-    // foreach (IMyTextSurfaceProvider block in blocks) {
-    //     blockHash.Add(((IMyTerminalBlock)block).CustomName, block);
-    // }
-    // Panel panel = new Panel("meh");
-
-    // foreach (string key in programKeys) {
-    //     var value = ini.Get(key, "enabled").ToBoolean();
-    //     if (ini.Get(key, "enabled").ToBoolean()) {
-    //         string outputs = ini.Get(key, "output").ToString();
-    //         if (outputs != "") {
-    //             List<IMyTextSurface> surfaces = new List<IMyTextSurface>();
-
-    //             // split on newlines, fetch surfaces, find in blokcs and add to list
-    //             foreach (string outname in outputs.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries)) {
-    //                 ParsePanelConfig(outname, ref panel);
-    //                 if (blockHash.ContainsKey(panel.name)) {
-    //                     surfaces.Add(blockHash[panel.name].GetSurface(panel.surfaceId));
-    //                 }
-    //             }
-
-    //             programOutputs.Add(key, surfaces);
-    //         }
-    //     }
-    // }
-
-    // var items = sx.Split(new[] { '\n', ',' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Split(new[] { '=' }));
-
-    // blocks.Clear();
-    // GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
-    // foreach (IMyTextSurfaceProvider block in blocks) {
-    //     if (is in config){}
-    //     for (int i = 0; i < block.SurfaceCount; i++) {
-    //         IMyTextSurface surface = block.GetSurface(i);
-    //         drawables.Add($"{((IMyTerminalBlock)block).CustomName} <{i}>", new DrawingSurface(surface, this));
-    //     }
-    // }
-    return true;
-}
-
-public Program() {
-    template = new Template(this);
-    powerDetails = new PowerDetails(this, template);
-    cargoStatus = new CargoStatus(this, template);
-    blockHealth = new BlockHealth(this, template);
-    productionDetails = new ProductionDetails(this, template);
-
-    if (!ParseCustomData()) {
-        Runtime.UpdateFrequency &= UpdateFrequency.None;
-        Echo("Failed to parse custom data");
-        return;
-    }
-    // airlocks on 10
-    Runtime.UpdateFrequency = UpdateFrequency.Update100 | UpdateFrequency.Update10;
-
+    string name;
+    string surfaceName;
+    IMyTextSurface surface;
     blocks.Clear();
     GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
     foreach (IMyTextSurfaceProvider block in blocks) {
         for (int i = 0; i < block.SurfaceCount; i++) {
-            string name = ((IMyTerminalBlock)block).CustomName;
-            string surfaceName = $"{name} <{i}>";
+            name = ((IMyTerminalBlock)block).CustomName;
+            surfaceName = $"{name} <{i}>";
             if (!strings.Contains(name) && !strings.Contains(surfaceName)) {
                 continue;
             }
 
-            IMyTextSurface surface = block.GetSurface(i);
+            surface = block.GetSurface(i);
             drawables.Add(surfaceName, new DrawingSurface(surface, this, $"{name} <{i}>"));
             if (i == 0 && block.SurfaceCount == 1) {
                 drawables.Add(name, new DrawingSurface(surface, this, name));
             }
         }
     }
+
+    return true;
+}
+
+public Program() {
+    template = new Template(this);
+
+    if (!ParseCustomData()) {
+        Runtime.UpdateFrequency &= UpdateFrequency.None;
+        Echo("Failed to parse custom data");
+        return;
+    }
+    Echo($"airlock    : {config.Enabled("airlock")}");
+    Echo($"power      : {config.Enabled("power")}");
+    Echo($"cargo      : {config.Enabled("cargo")}");
+    Echo($"health     : {config.Enabled("health")}");
+    Echo($"production : {config.Enabled("production")}");
+
+    powerDetails = new PowerDetails(this, template);
+    cargoStatus = new CargoStatus(this, template);
+    blockHealth = new BlockHealth(this, template);
+    productionDetails = new ProductionDetails(this, template);
+    airlock = new Airlock(this);
+
+    Runtime.UpdateFrequency = UpdateFrequency.Update100;
+    // airlocks on 10
+    if (config.Enabled("airlock")) {
+        Runtime.UpdateFrequency = UpdateFrequency.Update100 | UpdateFrequency.Update10;
+    }
 }
 
 public void Main(string argument, UpdateType updateSource) {
-    // Echo($"updateSource: {updateSource}");
-    if (/* should airlock */(updateSource & UpdateType.Update10) == UpdateType.Update10) {
-        // if (!airlocks.Any()) {
-        //     GetMappedAirlocks();
-        // }
-        // foreach (var al in airlocks) {
-        //     al.Value.Test();
-        // }
+    if (config.Enabled("airlock") && (updateSource & UpdateType.Update10) == UpdateType.Update10) {
+        airlock.CheckAirlocks();
 
-        return;
+        if ((updateSource & UpdateType.Update100) != UpdateType.Update100) {
+            return;
+        }
     }
 
-    /* if should do power */
-    powerDetails.Refresh();
-    /* if should do cargo */
-    cargoStatus.Refresh();
-    /* if should do health */
-    blockHealth.Refresh();
-    /* if should do production */
-    productionDetails.Refresh();
+    if (config.Enabled("power")) {
+        powerDetails.Refresh();
+    }
+    if (config.Enabled("cargo")) {
+        cargoStatus.Refresh();
+    }
+    if (config.Enabled("health")) {
+        blockHealth.Refresh();
+    }
+    if (config.Enabled("production")) {
+        productionDetails.Refresh();
+    }
 
     foreach (var kv in drawables) {
         template.Render(kv.Value);
     }
-    // blocks.Clear();
-    // GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
-    // foreach (IMyTextSurfaceProvider block in blocks) {
-    //     for (int i = 0; i < block.SurfaceCount; i++) {
-    //         WriteTextToSurface(block.GetSurface(i), cargo);
-    //     }
-    // }
-        // ProgressBar(CFG.POWER, currentCharge / maxCharge) + "\n";
-
-    // if (CanWriteToSurface(settings[CFG.BLOCK_HEALTH])) {
-    //     string blockHealth = DoBlockHealth();
-    //     WriteToLCD(settings[CFG.BLOCK_HEALTH], blockHealth, true);
-    // }
-
-    // if (CanWriteToSurface(settings[CFG.PRODUCTION])) {
-    //     WriteToLCD(settings[CFG.PRODUCTION], DoProductionDetails(this), true);
-    // }
-
-    // CargoStatus cStats = null;
-
-    // if (CanWriteToSurface(settings[CFG.CARGO_CAP])) {
-    //     cStats = DoCargoStatus();
-    //     if (settings[CFG.CARGO_CAP_STYLE] == "small") {
-    //         WriteToLCD(settings[CFG.CARGO_CAP], ProgressBar(CFG.CARGO_CAP, cStats.pct, false, 7), true);
-    //     } else {
-    //         WriteToLCD(settings[CFG.CARGO_CAP], "Cargo status: " + Util.PctString(cStats.pct) + '\n' + cStats.barCap, true);
-    //     }
-    // }
-
-    // if (CanWriteToSurface(settings[CFG.CARGO])) {
-    //     if (cStats == null) {
-    //         cStats = DoCargoStatus();
-    //     }
-
-    //     // dont write status if it's on another panel
-    //     if (!CanWriteToSurface(settings[CFG.CARGO_CAP])) {
-    //         WriteToLCD(settings[CFG.CARGO], "Cargo status: " + Util.PctString(cStats.pct) + '\n' + cStats.bar + '\n', true);
-    //     }
-    //     WriteToLCD(settings[CFG.CARGO], cStats.itemText, true);
-    // }
 }
 /* MAIN */
+/*
+ * BLOCK_HEALTH
+ */
+BlockHealth blockHealth;
+
+class BlockHealth {
+    public Program program;
+    public Template template;
+    public System.Text.RegularExpressions.Regex ignoreHealth;
+    public List<IMyTerminalBlock> blocks;
+    public Dictionary<string, string> damaged;
+    public string status;
+
+    public BlockHealth(Program program, Template template) {
+        this.program = program;
+        this.template = template;
+        this.blocks = new List<IMyTerminalBlock>();
+        this.damaged = new Dictionary<string, string>();
+
+
+        if (this.program.config.Enabled("health")) {
+            this.GetBlocks();
+            this.RegisterTemplateVars();
+
+            string ignore = this.program.config.Get("healthIgnore");
+            if (ignore != "" && ignore != null) {
+                this.ignoreHealth = Util.Regex(System.Text.RegularExpressions.Regex.Replace(ignore, @"\s*,\s*", "|"));
+            }
+        }
+    }
+
+    public void RegisterTemplateVars() {
+        if (this.template == null) {
+            return;
+        }
+
+        this.template.Register("health.status", () => this.status);
+        this.template.Register("health.blocks",
+            (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+                foreach (KeyValuePair<string, string> block in this.damaged) {
+                    ds.Text($"{block.Key} [{block.Value}]").Newline();
+                }
+            }
+        );
+    }
+
+    public float GetHealth(IMyTerminalBlock block) {
+        IMySlimBlock slimblock = block.CubeGrid.GetCubeBlock(block.Position);
+        float MaxIntegrity = slimblock.MaxIntegrity;
+        float BuildIntegrity = slimblock.BuildIntegrity;
+        float CurrentDamage = slimblock.CurrentDamage;
+
+        return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
+    }
+
+    public void GetBlocks() {
+        this.blocks.Clear();
+        this.program.GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.blocks, b => b.IsSameConstructAs(this.program.Me));
+    }
+
+    public void Refresh() {
+        this.damaged.Clear();
+        bool showOnHud = this.program.config.Enabled("healthOnHud");
+
+        foreach (var b in this.blocks) {
+            if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
+                continue;
+            }
+
+            var health = this.GetHealth(b);
+            if (health != 1f) {
+                this.damaged[b.CustomName] = Util.PctString(health);
+            }
+            if (showOnHud) {
+                b.ShowOnHUD = health != 1f;
+            }
+        }
+
+        this.status = $"{(this.damaged.Count == 0 ? "No damage" : "Damage")} detected";
+    }
+}
+/* BLOCK_HEALTH */
 /*
  * GRAPHICS
  */
@@ -574,7 +592,7 @@ public class DrawingSurface {
         TextAlignment textAlignment = TextAlignment.LEFT,
         float pad = 0.1f
     ) {
-        if (options == null) {
+        if (options == null || options.Get("pct", null) == null) {
             return this.Bar(0f, text: "--/--");
         }
 
@@ -719,6 +737,348 @@ public class DrawingSurface {
     }
 }
 /* GRAPHICS */
+public class Template {
+    public class Token {
+        public bool isText = true;
+        public string value = null;
+    }
+
+    public class Node {
+        public string action;
+        public string text;
+        public Dictionary<string, string> options;
+
+        public Node(string action, string text = null, Dictionary<string, string> options = null) {
+            this.action = action;
+            this.text = text;
+            this.options = options ?? new Dictionary<string, string>();
+        }
+    }
+
+    public delegate void DsCallback(DrawingSurface ds, string token, Dictionary<string, string> options);
+    public delegate string TextCallback();
+
+    public Program program;
+    public System.Text.RegularExpressions.Regex tokenizer;
+    public System.Text.RegularExpressions.Regex cmdSplitter;
+    public System.Text.RegularExpressions.Match match;
+    public Token token;
+    public Dictionary<string, DsCallback> methods;
+    public Dictionary<string, List<Node>> renderNodes;
+    public Dictionary<string, bool> templateVars;
+
+    public char[] splitSemi = new[] { ';' };
+    public char[] splitDot = new[] { '.' };
+
+    public Template(Program program = null) {
+        this.tokenizer = Util.Regex(@"(\{[^\}]+\}|[^\{]+)", System.Text.RegularExpressions.RegexOptions.Compiled);
+        this.cmdSplitter = Util.Regex(@"(?<name>[^:; ]+)(:(?<params>[^ ]+)?;?)? ?(?<text>.*)?", System.Text.RegularExpressions.RegexOptions.Compiled);
+        this.token = new Token();
+        this.methods = new Dictionary<string, DsCallback>();
+        this.program = program;
+        this.renderNodes = new Dictionary<string, List<Node>>();
+        this.templateVars = new Dictionary<string, bool>();
+
+        this.Register("text", this.RenderText);
+        this.Register("textCircle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.TextCircle(options));
+        this.Register("circle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Circle(options));
+        this.Register("bar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Bar(options));
+    }
+
+    public void Register(string key, DsCallback callback) {
+        this.methods[key] = callback;
+    }
+
+    public void Register(string key, TextCallback callback) {
+        this.methods[key] = (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Text(callback(), options);
+    }
+
+    public void RenderText(DrawingSurface ds, string text, Dictionary<string, string> options) {
+        ds.Text(text, options);
+    }
+
+    public Dictionary<string, bool> PreRender(string outputName, string templateStrings) {
+        return this.PreRender(outputName, templateStrings.Split('\n'));
+    }
+
+    public Dictionary<string, bool> PreRender(string outputName, string[] templateStrings) {
+        this.templateVars.Clear();
+        List<Node> nodeList = new List<Node>();
+
+        foreach (string line in templateStrings) {
+            this.match = null;
+
+            while (this.GetToken(line)) {
+                if (this.token.isText) {
+                    nodeList.Add(new Node("text", this.token.value));
+                    continue;
+                }
+
+                System.Text.RegularExpressions.Match m = this.cmdSplitter.Match(this.token.value);
+                if (m.Success) {
+                    this.AddTemplateTokens(m.Groups["name"].Value);
+                    nodeList.Add(new Node(m.Groups["name"].Value, m.Groups["text"].Value, this.StringToDict(m.Groups["params"].Value)));
+                } else {
+                    this.AddTemplateTokens(this.token.value);
+                    nodeList.Add(new Node(this.token.value));
+                }
+            }
+            nodeList.Add(new Node("newline"));
+        }
+
+        this.renderNodes.Add(outputName, nodeList);
+
+        return this.templateVars;
+    }
+
+    public void AddTemplateTokens(string name) {
+        string prefix = "";
+        foreach (string part in name.Split(splitDot, StringSplitOptions.RemoveEmptyEntries)) {
+            this.templateVars[$"{prefix}{part}"] = true;
+            prefix = $"{prefix}{part}.";
+        }
+    }
+
+    public void Render(DrawingSurface ds, string name = null) {
+        string dsName = name ?? ds.name;
+        List<Node> nodeList = null;
+        if (!this.renderNodes.TryGetValue(dsName, out nodeList)) {
+            ds.Text("No template found").Draw();
+            return;
+        }
+
+        DsCallback callback = null;
+        foreach (Node node in nodeList) {
+            if (node.action == "newline") {
+                ds.Newline();
+                continue;
+            }
+
+            if (this.methods.TryGetValue(node.action, out callback)) {
+                callback(ds, node.text, node.options);
+            } else {
+                ds.Text($"{{{node.action}}}");
+            }
+            callback = null;
+        }
+
+        ds.Draw();
+    }
+
+    public Dictionary<string, string> StringToDict(string options = "") {
+        if (options == "") {
+            return new Dictionary<string, string>();
+        }
+
+        return options.Split(splitSemi, StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => value.Split('='))
+            .ToDictionary(pair => pair[0], pair => pair[1]);
+    }
+
+    public void Echo(string text) {
+        if (this.program != null) {
+            this.program.Echo(text);
+        }
+    }
+
+    public bool GetToken(string line) {
+        if (this.match == null) {
+            this.match = this.tokenizer.Match(line);
+        } else {
+            this.match = this.match.NextMatch();
+        }
+
+        if (this.match.Success) {
+            try {
+                string _token = this.match.Groups[1].Value;
+                if (_token[0] == '{') {
+                    this.token.value = _token.Substring(1, _token.Length - 2);
+                    this.token.isText = false;
+                } else {
+                    this.token.value = _token;
+                    this.token.isText = true;
+                }
+            } catch (Exception e) {
+                this.Echo($"err parsing token {e}");
+                return false;
+            }
+
+            return true;
+        } else {
+            return false;
+        }
+    }
+}
+/*
+ * AIRLOCK
+ */
+Airlock airlock;
+
+public class Airlock {
+    public Program program;
+    public Dictionary<string, AirlockDoors> airlocks;
+    public List<IMyTerminalBlock> airlockBlocks;
+    public Dictionary<string, List<IMyFunctionalBlock>> locationToAirlockMap;
+    public System.Text.RegularExpressions.Regex include;
+    public System.Text.RegularExpressions.Regex exclude;
+
+    // The name to match (Default will match regular doors). The capture group "(.*)" is used when grouping airlock doors.
+    public string doorMatch = "Door(.*)";
+    // The exclusion tag (can be anything).
+    public string doorExclude = "Hangar";
+    // Duration before auto close (milliseconds)
+    public double timeOpen = 720f;
+
+    public Airlock(Program program) {
+        this.program = program;
+        this.airlocks = new Dictionary<string, AirlockDoors>();
+        this.airlockBlocks = new List<IMyTerminalBlock>();
+        this.locationToAirlockMap = new Dictionary<string, List<IMyFunctionalBlock>>();
+        this.include = Util.Regex(this.doorMatch, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        this.exclude = Util.Regex(this.doorExclude, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (this.program.config.Enabled("airlock")) {
+            this.GetMappedAirlocks();
+        }
+        this.timeOpen = Util.ParseFloat(this.program.config.Get("airlockOpenTime"), 750f);
+    }
+
+    public void CheckAirlocks() {
+        if (!this.program.config.Enabled("airlock")) {
+            return;
+        }
+        foreach (var al in this.airlocks) {
+            al.Value.Check();
+        }
+    }
+
+    public void GetMappedAirlocks() {
+        if (!this.program.config.Enabled("airlock")) {
+            return;
+        }
+        this.airlockBlocks.Clear();
+        this.program.GridTerminalSystem.GetBlocksOfType<IMyDoor>(this.airlockBlocks, door => door.IsSameConstructAs(this.program.Me));
+
+        // Parse into hash (identifier => List(door)), where name is "Door <identifier>"
+        this.locationToAirlockMap.Clear();
+
+        // Get all door blocks
+        foreach (var block in this.airlockBlocks) {
+            var match = this.include.Match(block.CustomName);
+            var ignore = this.exclude.Match(block.CustomName);
+            if (!match.Success || ignore.Success) {
+                continue;
+            }
+            var key = match.Groups[1].ToString();
+            if (!this.locationToAirlockMap.ContainsKey(key)) {
+                this.locationToAirlockMap.Add(key, new List<IMyFunctionalBlock>());
+            }
+            this.locationToAirlockMap[key].Add(block as IMyFunctionalBlock);
+        }
+
+        bool doAllDoors = this.program.config.Enabled("airlockAllDoors");
+        foreach (var keyval in this.locationToAirlockMap) {
+            if (!doAllDoors && keyval.Value.Count < 2) {
+                continue;
+            }
+            this.airlocks.Add(keyval.Key, new AirlockDoors(keyval.Value, this.program));
+        }
+    }
+}
+
+public class AirlockDoors {
+    public Program program;
+    private List<IMyFunctionalBlock> blocks;
+    private List<IMyFunctionalBlock> areClosed;
+    private List<IMyFunctionalBlock> areOpen;
+    private double openTimer;
+    public double timeOpen;
+
+    public AirlockDoors(List<IMyFunctionalBlock> doors, Program program, double timeOpen = 750f) {
+        this.program = program;
+        this.blocks = new List<IMyFunctionalBlock>(doors);
+        this.areClosed = new List<IMyFunctionalBlock>();
+        this.areOpen = new List<IMyFunctionalBlock>();
+        this.openTimer = timeOpen;
+        this.timeOpen = timeOpen;
+    }
+
+    private bool IsOpen(IMyFunctionalBlock door) {
+        return (door as IMyDoor).OpenRatio > 0;
+    }
+
+    private void Lock(List<IMyFunctionalBlock> doors = null) {
+        doors = doors ?? this.blocks;
+        foreach (var door in doors) {
+            (door as IMyDoor).Enabled = false;
+        }
+    }
+
+    private void Unlock(List<IMyFunctionalBlock> doors = null) {
+        doors = doors ?? this.blocks;
+        foreach (var door in doors) {
+            (door as IMyDoor).Enabled = true;
+        }
+    }
+
+    private void OpenClose(string action, IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
+        (door1 as IMyDoor).ApplyAction(action);
+        if (door2 != null) {
+            (door2 as IMyDoor).ApplyAction(action);
+        }
+    }
+
+    private void Open(IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
+        this.OpenClose("Open_On", door1, door2);
+    }
+
+    private void OpenAll() {
+        foreach (var door in this.blocks) {
+            this.OpenClose("Open_On", door);
+        }
+    }
+
+    private void Close(IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
+        this.OpenClose("Open_Off", door1, door2);
+    }
+
+    private void CloseAll() {
+        foreach (var door in this.blocks) {
+            this.OpenClose("Open_Off", door);
+        }
+    }
+
+    public bool Check() {
+        int openCount = 0;
+        this.areClosed.Clear();
+        this.areOpen.Clear();
+
+        foreach (var door in this.blocks) {
+            if (this.IsOpen(door)) {
+                openCount++;
+                this.areOpen.Add(door);
+            } else {
+                this.areClosed.Add(door);
+            }
+        }
+
+        if (areOpen.Count > 0) {
+            this.openTimer -= this.program.Runtime.TimeSinceLastRun.TotalMilliseconds;
+            if (this.openTimer < 0) {
+                this.CloseAll();
+            } else {
+                this.Lock(this.areClosed);
+                this.Unlock(this.areOpen);
+            }
+        } else {
+            this.Unlock();
+            this.openTimer = this.timeOpen;
+        }
+
+        return true;
+    }
+}
+/* AIRLOCK */
 /*
  * POWER
  */
@@ -765,8 +1125,11 @@ public class PowerDetails {
         this.solars = 0;
         this.solarOutputMW = 0f;
         this.solarOutputMax = 0f;
-        this.GetBlocks();
-        this.RegisterTemplateVars();
+
+        if (this.program.config.Enabled("power")) {
+            this.GetBlocks();
+            this.RegisterTemplateVars();
+        }
     }
 
     public void RegisterTemplateVars() {
@@ -777,13 +1140,17 @@ public class PowerDetails {
         this.template.Register("power.jumpBar",
             (DrawingSurface ds, string text, Dictionary<string, string> options) => {
                 float pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
-                ds.Bar(pct, text: Util.PctString(pct));
+                options.Set("text", Util.PctString(pct));
+                options.Set("pct", pct.ToString());
+                ds.Bar(options);
             });
         this.template.Register("power.batteries", () => this.batteries.ToString());
         this.template.Register("power.batteryBar",
             (DrawingSurface ds, string text, Dictionary<string, string> options) => {
                 float pct = this.GetPercent(this.batteryCurrent, this.batteryMax);
-                ds.Bar(pct, text: Util.PctString(pct));
+                options.Set("text", Util.PctString(pct));
+                options.Set("pct", pct.ToString());
+                ds.Bar(options);
             });
         this.template.Register("power.solars", () => this.solars.ToString());
         this.template.Register("power.reactors", () => this.reactors.ToString());
@@ -863,245 +1230,6 @@ public class PowerDetails {
     }
 }
 /* POWER */
-public class Template {
-    public class Token {
-        public bool isText = true;
-        public string value = null;
-    }
-
-    public class Node {
-        public string action;
-        public string text;
-        public Dictionary<string, string> options;
-
-        public Node(string action, string text = null, Dictionary<string, string> options = null) {
-            this.action = action;
-            this.text = text;
-            this.options = options;
-        }
-    }
-
-    public delegate void DsCallback(DrawingSurface ds, string token, Dictionary<string, string> options);
-    public delegate string TextCallback();
-
-    public Program program;
-    public System.Text.RegularExpressions.Regex tokenizer;
-    public System.Text.RegularExpressions.Regex cmdSplitter;
-    public System.Text.RegularExpressions.Match match;
-    public Token token;
-    public Dictionary<string, DsCallback> methods;
-    public Dictionary<string, List<Node>> renderNodes;
-
-    public char[] splitSemi = new[] { ';' };
-
-    public Template(Program program = null) {
-        this.tokenizer = Util.Regex(@"(\{[^\}]+\}|[^\{]+)", System.Text.RegularExpressions.RegexOptions.Compiled);
-        this.cmdSplitter = Util.Regex(@"(?<name>[^:; ]+)(:(?<params>[^ ]+)?;?)? ?(?<text>.*)?", System.Text.RegularExpressions.RegexOptions.Compiled);
-        this.token = new Token();
-        this.methods = new Dictionary<string, DsCallback>();
-        this.program = program;
-        this.renderNodes = new Dictionary<string, List<Node>>();
-
-        this.Register("text", this.RenderText);
-        this.Register("textCircle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.TextCircle(options));
-        this.Register("circle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Circle(options));
-        this.Register("bar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Bar(options));
-    }
-
-    public void Register(string key, DsCallback callback) {
-        this.methods[key] = callback;
-    }
-
-    public void Register(string key, TextCallback callback) {
-        this.methods[key] = (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Text(callback(), options);
-    }
-
-    public void RenderText(DrawingSurface ds, string text, Dictionary<string, string> options) {
-        ds.Text(text, options);
-    }
-
-    public void PreRender(string outputName, string templateStrings) {
-        this.PreRender(outputName, templateStrings.Split('\n'));
-    }
-
-    public void PreRender(string outputName, string[] templateStrings) {
-        List<Node> nodeList = new List<Node>();
-
-        foreach (string line in templateStrings) {
-            this.match = null;
-
-            while (this.GetToken(line)) {
-                if (this.token.isText) {
-                    nodeList.Add(new Node("text", this.token.value));
-                    continue;
-                }
-
-                System.Text.RegularExpressions.Match m = this.cmdSplitter.Match(this.token.value);
-                if (m.Success) {
-                    nodeList.Add(new Node(m.Groups["name"].Value, m.Groups["text"].Value, this.StringToDict(m.Groups["params"].Value)));
-                } else {
-                    nodeList.Add(new Node(this.token.value, options: this.StringToDict()));
-                }
-            }
-            nodeList.Add(new Node("newline"));
-        }
-
-        this.renderNodes.Add(outputName, nodeList);
-    }
-
-    public void Render(DrawingSurface ds, string name = null) {
-        string dsName = name ?? ds.name;
-        List<Node> nodeList = null;
-        if (!this.renderNodes.TryGetValue(dsName, out nodeList)) {
-            ds.Text("No template found").Draw();
-            return;
-        }
-
-        DsCallback callback = null;
-        foreach (Node node in nodeList) {
-            if (node.action == "newline") {
-                ds.Newline();
-                continue;
-            }
-
-            if (this.methods.TryGetValue(node.action, out callback)) {
-                callback(ds, node.text, node.options);
-            } else {
-                ds.Text($"{{{node.action}}}");
-            }
-            callback = null;
-        }
-
-        ds.Draw();
-    }
-
-    public Dictionary<string, string> StringToDict(string options = "") {
-        if (options == "") {
-            return new Dictionary<string, string>();
-        }
-
-        return options.Split(splitSemi, StringSplitOptions.RemoveEmptyEntries)
-            .Select(value => value.Split('='))
-            .ToDictionary(pair => pair[0], pair => pair[1]);
-    }
-
-    public void Echo(string text) {
-        if (this.program != null) {
-            this.program.Echo(text);
-        }
-    }
-
-    public bool GetToken(string line) {
-        if (this.match == null) {
-            this.match = this.tokenizer.Match(line);
-        } else {
-            this.match = this.match.NextMatch();
-        }
-
-        if (this.match.Success) {
-            try {
-                string _token = this.match.Groups[1].Value;
-                if (_token[0] == '{') {
-                    this.token.value = _token.Substring(1, _token.Length - 2);
-                    this.token.isText = false;
-                } else {
-                    this.token.value = _token;
-                    this.token.isText = true;
-                }
-            } catch (Exception e) {
-                this.Echo($"err parsing token {e}");
-                return false;
-            }
-
-            return true;
-        } else {
-            return false;
-        }
-    }
-}
-/*
- * BLOCK_HEALTH
- */
-BlockHealth blockHealth;
-
-class BlockHealth {
-    public Program program;
-    public Template template;
-    public System.Text.RegularExpressions.Regex ignoreHealth;
-    public List<IMyTerminalBlock> blocks;
-    public Dictionary<string, string> damaged;
-    public string status;
-
-    public BlockHealth(Program program, Template template) {
-        this.program = program;
-        this.template = template;
-        this.blocks = new List<IMyTerminalBlock>();
-        this.damaged = new Dictionary<string, string>();
-        this.GetBlocks();
-        this.RegisterTemplateVars();
-    }
-
-    public void RegisterTemplateVars() {
-        if (this.template == null) {
-            return;
-        }
-
-        this.template.Register("health.status", () => this.status);
-        this.template.Register("health.blocks",
-            (DrawingSurface ds, string text, Dictionary<string, string> options) => {
-                foreach (KeyValuePair<string, string> block in this.damaged) {
-                    ds.Text($"{block.Key} [{block.Value}]").Newline();
-                }
-            }
-        );
-    }
-
-    public float GetHealth(IMyTerminalBlock block) {
-        IMySlimBlock slimblock = block.CubeGrid.GetCubeBlock(block.Position);
-        float MaxIntegrity = slimblock.MaxIntegrity;
-        float BuildIntegrity = slimblock.BuildIntegrity;
-        float CurrentDamage = slimblock.CurrentDamage;
-
-        return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
-    }
-
-    public void GetBlocks() {
-        this.blocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.blocks, b => b.IsSameConstructAs(this.program.Me));
-    }
-
-    public void Refresh() {
-        this.damaged.Clear();
-
-        // System.Text.RegularExpressions.Regex ignoreHealth = null;
-        // if (settings[CFG.HEALTH_IGNORE] != "") {
-        //     string input = System.Text.RegularExpressions.Regex.Replace(settings[CFG.HEALTH_IGNORE], @"\s*,\s*", "|");
-        //     ignoreHealth = Regex(input);
-        // }
-        // CFG.HEALTH_IGNORE, "Hydrogen Thruster, Suspension"
-
-
-        // int chars;
-        // GetPanelWidthInChars(settings[CFG.BLOCK_HEALTH], out chars);
-
-        foreach (var b in this.blocks) {
-            if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
-                continue;
-            }
-
-            var health = this.GetHealth(b);
-            if (health != 1f) {
-                this.damaged[b.CustomName] = Util.PctString(health);
-                b.ShowOnHUD = true;
-            } else {
-                b.ShowOnHUD = false;
-            }
-        }
-
-        this.status = $"{(this.damaged.Count == 0 ? "No damage" : "Damage")} detected";
-    }
-}
-/* BLOCK_HEALTH */
 /*
  * CARGO
  */
@@ -1135,8 +1263,11 @@ public class CargoStatus {
         this.ingotRegex = Util.Regex("Ingot/");
         this.oreRegex = Util.Regex("Ore/(?!Ice)");
         this.widths = new List<float>() { 0, 0, 0, 0 };
-        this.GetCargoBlocks();
-        this.RegisterTemplateVars();
+
+        if (this.program.config.Enabled("cargo")) {
+            this.GetCargoBlocks();
+            this.RegisterTemplateVars();
+        }
     }
 
     public void RegisterTemplateVars() {
@@ -1168,8 +1299,8 @@ public class CargoStatus {
             }
         } else {
             this.widths[0] = 0;
-            this.widths[1] = ds.width / 2 - ds.charSizeInPx.X;
-            this.widths[2] = ds.width / 2 + ds.charSizeInPx.X;
+            this.widths[1] = ds.width / 2 - 1.5f * ds.charSizeInPx.X;
+            this.widths[2] = ds.width / 2 + 1.5f * ds.charSizeInPx.X;
             this.widths[3] = ds.width;
 
             int i = 0;
@@ -1341,11 +1472,17 @@ public class ProductionDetails {
         this.queueBuilder = new StringBuilder();
         this.splitNeline = new[] { '\n' };
 
-        this.GetProductionBlocks();
-        this.RegisterTemplateVars();
+        if (this.program.config.Enabled("power")) {
+            this.GetProductionBlocks();
+            this.RegisterTemplateVars();
+        }
     }
 
     public void RegisterTemplateVars() {
+        if (this.template == null) {
+            return;
+        }
+
         this.template.Register("production.status", () => this.status);
         this.template.Register("production.blocks",  (DrawingSurface ds, string text, Dictionary<string, string> options) => {
             foreach (KeyValuePair<ProductionBlock, string> blk in this.blockStatus) {
@@ -1618,6 +1755,10 @@ public static class Dict {
     public static TValue Get<TKey, TValue>(this Dictionary<TKey, TValue> dict, TKey key, TValue defaultValue = default(TValue)) {
         TValue value;
         return dict.TryGetValue(key, out value) ? value : defaultValue;
+    }
+
+    public static TValue Set<TKey, TValue>(this Dictionary<TKey, TValue> dict, TKey key, TValue value) {
+        return dict[key] = dict.Get(key, value);
     }
 
     public static string Print<TKey, TValue>(this Dictionary<TKey, TValue> dict) {

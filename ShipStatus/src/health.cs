@@ -16,8 +16,16 @@ class BlockHealth {
         this.template = template;
         this.blocks = new List<IMyTerminalBlock>();
         this.damaged = new Dictionary<string, string>();
-        this.GetBlocks();
-        this.RegisterTemplateVars();
+
+        if (this.program.config.Enabled("health")) {
+            this.GetBlocks();
+            this.RegisterTemplateVars();
+
+            string ignore = this.program.config.Get("healthIgnore");
+            if (ignore != "" && ignore != null) {
+                this.ignoreHealth = Util.Regex(System.Text.RegularExpressions.Regex.Replace(ignore, @"\s*,\s*", "|"));
+            }
+        }
     }
 
     public void RegisterTemplateVars() {
@@ -51,17 +59,7 @@ class BlockHealth {
 
     public void Refresh() {
         this.damaged.Clear();
-
-        // System.Text.RegularExpressions.Regex ignoreHealth = null;
-        // if (settings[CFG.HEALTH_IGNORE] != "") {
-        //     string input = System.Text.RegularExpressions.Regex.Replace(settings[CFG.HEALTH_IGNORE], @"\s*,\s*", "|");
-        //     ignoreHealth = Regex(input);
-        // }
-        // CFG.HEALTH_IGNORE, "Hydrogen Thruster, Suspension"
-
-
-        // int chars;
-        // GetPanelWidthInChars(settings[CFG.BLOCK_HEALTH], out chars);
+        bool showOnHud = this.program.config.Enabled("healthOnHud");
 
         foreach (var b in this.blocks) {
             if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
@@ -71,9 +69,9 @@ class BlockHealth {
             var health = this.GetHealth(b);
             if (health != 1f) {
                 this.damaged[b.CustomName] = Util.PctString(health);
-                b.ShowOnHUD = true;
-            } else {
-                b.ShowOnHUD = false;
+            }
+            if (showOnHud) {
+                b.ShowOnHUD = health != 1f;
             }
         }
 

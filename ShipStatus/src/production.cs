@@ -38,11 +38,17 @@ public class ProductionDetails {
         this.queueBuilder = new StringBuilder();
         this.splitNeline = new[] { '\n' };
 
-        this.GetProductionBlocks();
-        this.RegisterTemplateVars();
+        if (this.program.config.Enabled("power")) {
+            this.GetProductionBlocks();
+            this.RegisterTemplateVars();
+        }
     }
 
     public void RegisterTemplateVars() {
+        if (this.template == null) {
+            return;
+        }
+
         this.template.Register("production.status", () => this.status);
         this.template.Register("production.blocks",  (DrawingSurface ds, string text, Dictionary<string, string> options) => {
             foreach (KeyValuePair<ProductionBlock, string> blk in this.blockStatus) {

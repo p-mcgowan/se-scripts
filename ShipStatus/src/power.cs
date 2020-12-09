@@ -44,8 +44,11 @@ public class PowerDetails {
         this.solars = 0;
         this.solarOutputMW = 0f;
         this.solarOutputMax = 0f;
-        this.GetBlocks();
-        this.RegisterTemplateVars();
+
+        if (this.program.config.Enabled("power")) {
+            this.GetBlocks();
+            this.RegisterTemplateVars();
+        }
     }
 
     public void RegisterTemplateVars() {
@@ -56,13 +59,17 @@ public class PowerDetails {
         this.template.Register("power.jumpBar",
             (DrawingSurface ds, string text, Dictionary<string, string> options) => {
                 float pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
-                ds.Bar(pct, text: Util.PctString(pct));
+                options.Set("text", Util.PctString(pct));
+                options.Set("pct", pct.ToString());
+                ds.Bar(options);
             });
         this.template.Register("power.batteries", () => this.batteries.ToString());
         this.template.Register("power.batteryBar",
             (DrawingSurface ds, string text, Dictionary<string, string> options) => {
                 float pct = this.GetPercent(this.batteryCurrent, this.batteryMax);
-                ds.Bar(pct, text: Util.PctString(pct));
+                options.Set("text", Util.PctString(pct));
+                options.Set("pct", pct.ToString());
+                ds.Bar(options);
             });
         this.template.Register("power.solars", () => this.solars.ToString());
         this.template.Register("power.reactors", () => this.reactors.ToString());
