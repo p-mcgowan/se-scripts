@@ -362,7 +362,7 @@ public class DrawingSurface {
         TextAlignment textAlignment = TextAlignment.LEFT,
         float pad = 0.1f
     ) {
-        if (options == null) {
+        if (options == null || options.Get("pct", null) == null) {
             return this.Bar(0f, text: "--/--");
         }
 
