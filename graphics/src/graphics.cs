@@ -56,7 +56,6 @@ public class DrawingSurface {
         this.charSizeInPx = new Vector2(0f, 0f);
         this.surface.ContentType = ContentType.SCRIPT;
         this.drawing = false;
-        // this.surface.Font = "Monospace";
         this.viewport = new RectangleF(0f, 0f, 0f, 0f);
         this.name = name;
 
@@ -82,7 +81,7 @@ public class DrawingSurface {
             return null;
         }
         if (!colour.Contains(',')) {
-            return DrawingSurface.stringToColour.Get("colour");
+            return DrawingSurface.stringToColour.Get(colour);
         }
 
         string[] numbersStr = colour.Split(DrawingSurface.commaSep);
@@ -166,6 +165,10 @@ public class DrawingSurface {
         float scale = 1f,
         Vector2? position = null
     ) {
+        if (text == "" || text == null) {
+            return this;
+        }
+
         if (!this.drawing) {
             this.DrawStart();
         }
@@ -191,7 +194,6 @@ public class DrawingSurface {
         this.sb.Clear();
         this.sb.Append(" ");
 
-
         this.cursor.X += size.X;
 
         return this;
@@ -213,8 +215,16 @@ public class DrawingSurface {
         return DrawingSurface.stringToColour.Get("dimred");
     }
 
-    public float Hypo(float a, float b) {
-        return (float)Math.Sqrt(Math.Pow(a, 2) + Math.Pow(b, 2));
+    public DrawingSurface MidBar(Dictionary<string, string> options) {
+        float net = Util.ParseFloat(options.Get("net"), 0f);
+        float low = Util.ParseFloat(options.Get("low"), 1f);
+        float high = Util.ParseFloat(options.Get("high"), 1f);
+        float width = Util.ParseFloat(options.Get("width"), 0f);
+        float height = Util.ParseFloat(options.Get("height"), 0f);
+        float pad = Util.ParseFloat(options.Get("pad"), 0.1f);
+        Color? bgColour = this.GetColourOpt(options.Get("colour", null));
+
+        return this.MidBar(net: net, low: low, high: high, width: width, height: height, pad: pad, bgColour: bgColour);
     }
 
     public DrawingSurface MidBar(
@@ -230,7 +240,7 @@ public class DrawingSurface {
             this.DrawStart();
         }
 
-        width = (width == 0f) ? this.width : width;
+        width = (width == 0f) ? this.width - this.cursor.X : width;
         height = (height == 0f) ? this.charSizeInPx.Y : height;
         height -= 1f;
 
@@ -255,9 +265,9 @@ public class DrawingSurface {
         height -= 2 * pad;
 
         Color colour = Color.Green;
-        float pct = net / high;
+        float pct = net / (high == 0f ? 1f : high);
         if (net < 0) {
-            pct = net / low;
+            pct = net / (low == 0f ? 1f : low);
             colour = Color.Red;
         }
         float sideWidth = (float)Math.Sqrt(2) * width * pct;
@@ -343,7 +353,7 @@ public class DrawingSurface {
             this.DrawStart();
         }
 
-        width = (width == 0f) ? this.width : width;
+        width = (width == 0f) ? this.width - this.cursor.X : width;
         height = (height == 0f) ? this.charSizeInPx.Y : height;
         height -= 1f;
 
