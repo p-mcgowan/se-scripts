@@ -30,10 +30,11 @@ public class Template {
 
     public char[] splitSemi = new[] { ';' };
     public char[] splitDot = new[] { '.' };
+    public string[] splitLine = new[] { "\r\n", "\r", "\n" };
 
     public Template(Program program = null) {
         this.tokenizer = Util.Regex(@"(\{[^\}]+\}|[^\{]+)", System.Text.RegularExpressions.RegexOptions.Compiled);
-        this.cmdSplitter = Util.Regex(@"(?<name>[^:; ]+)(:(?<params>[^ ]+)?;?)? ?(?<text>.*)?", System.Text.RegularExpressions.RegexOptions.Compiled);
+        this.cmdSplitter = Util.Regex(@"(?<newline>\?)?(?<name>[^:]+)(:(?<params>[^:]*))?(:(?<text>.+))?", System.Text.RegularExpressions.RegexOptions.Compiled);
         this.token = new Token();
         this.methods = new Dictionary<string, DsCallback>();
         this.program = program;
@@ -44,6 +45,7 @@ public class Template {
         this.Register("textCircle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.TextCircle(options));
         this.Register("circle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Circle(options));
         this.Register("bar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Bar(options));
+        this.Register("midBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.MidBar(options));
     }
 
     public void Register(string key, DsCallback callback) {
@@ -59,14 +61,16 @@ public class Template {
     }
 
     public Dictionary<string, bool> PreRender(string outputName, string templateStrings) {
-        return this.PreRender(outputName, templateStrings.Split('\n'));
+        return this.PreRender(outputName, templateStrings.Split(splitLine, StringSplitOptions.None));
     }
 
     public Dictionary<string, bool> PreRender(string outputName, string[] templateStrings) {
         this.templateVars.Clear();
         List<Node> nodeList = new List<Node>();
 
+        bool autoNewline;
         foreach (string line in templateStrings) {
+            autoNewline = true;
             this.match = null;
 
             while (this.GetToken(line)) {
@@ -77,14 +81,23 @@ public class Template {
 
                 System.Text.RegularExpressions.Match m = this.cmdSplitter.Match(this.token.value);
                 if (m.Success) {
+                    var opts = this.StringToDict(m.Groups["params"].Value);
+                    if (m.Groups["newline"].Value != "") {
+                        opts.Set("noNewline", "true");
+                        autoNewline = false;
+                    }
+                    opts.Set("text", m.Groups["text"].Value);
                     this.AddTemplateTokens(m.Groups["name"].Value);
-                    nodeList.Add(new Node(m.Groups["name"].Value, m.Groups["text"].Value, this.StringToDict(m.Groups["params"].Value)));
+                    nodeList.Add(new Node(m.Groups["name"].Value, m.Groups["text"].Value, opts));
                 } else {
                     this.AddTemplateTokens(this.token.value);
                     nodeList.Add(new Node(this.token.value));
                 }
             }
-            nodeList.Add(new Node("newline"));
+
+            if (autoNewline) {
+                nodeList.Add(new Node("newline"));
+            }
         }
 
         this.renderNodes.Add(outputName, nodeList);

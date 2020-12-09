@@ -1,16 +1,31 @@
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
 Dictionary<string, DrawingSurface> drawables = new Dictionary<string, DrawingSurface>();
 Template template;
-string templateStrings =
+// random trailing spaces when loading from file...
+string templateStrings = System.Text.RegularExpressions.Regex.Replace(
 @"This is a test {no.registered.method}
 This is another line, below is
 a registered method returning Random
 {test.random:min=0;max=10}
 
+---------------------------------
+{?test.spacing}
+---------------------------------
+{text::this line has text}
+---------------------------------
+demo bar: {bar:bgColour=red;textColour=100,100,100;fillColour=blue;pct=0.63:asdf text}
+
+<
+{?test.cdtnl:c=dimyellow:this text will print when random succeeds}
+>
+
 does this still print
-{text:colour=0,0,100; i'm blue, abadee abadaa}
-{text:colour=red; some like it red}
-???";
+{text:colour=0,0,100:i'm blue, abadee abadaa}
+{text:colour=red:some like it red}
+???",
+@" ([\r\n]+)",
+"$1"
+);
 
 
 Random random = new Random();
@@ -19,6 +34,15 @@ public void Random(DrawingSurface ds, string text, Dictionary<string, string> op
     int min = Util.ParseInt(opts.Get("min", "0"), 0);
     int max = Util.ParseInt(opts.Get("max", "100"), 100);
     ds.Text($"{this.random.Next(min, max)}");
+}
+
+public void Spacing(DrawingSurface ds, string text, Dictionary<string, string> opts) { }
+
+public void ConditionalSpacing(DrawingSurface ds, string text, Dictionary<string, string> opts) {
+    if (this.random.Next(0, 10) > 5) {
+        Color? colour = ds.GetColourOpt(opts.Get("c"));
+        ds.Text(text, colour: colour).Newline();
+    }
 }
 
 public Program() {
@@ -33,11 +57,14 @@ public Program() {
 
             drawables.Add(name, new DrawingSurface(surface, this, name));
 
+            // We can skip adding templates for each screen since they are the same
             // template.PreRender(name, block.CustomData);
         }
     }
 
     template.Register("test.random", Random);
+    template.Register("test.spacing", Spacing);
+    template.Register("test.cdtnl", ConditionalSpacing);
 }
 
 public void Main(string argument, UpdateType updateSource) {
