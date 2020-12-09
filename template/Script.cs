@@ -348,7 +348,7 @@ public class DrawingSurface {
         TextAlignment textAlignment = TextAlignment.LEFT,
         float pad = 0.1f
     ) {
-        if (options == null) {
+        if (options == null || options.Get("pct", null) == null) {
             return this.Bar(0f, text: "--/--");
         }
 
@@ -507,7 +507,7 @@ public class Template {
         public Node(string action, string text = null, Dictionary<string, string> options = null) {
             this.action = action;
             this.text = text;
-            this.options = options;
+            this.options = options ?? new Dictionary<string, string>();
         }
     }
 
@@ -521,8 +521,10 @@ public class Template {
     public Token token;
     public Dictionary<string, DsCallback> methods;
     public Dictionary<string, List<Node>> renderNodes;
+    public Dictionary<string, bool> templateVars;
 
     public char[] splitSemi = new[] { ';' };
+    public char[] splitDot = new[] { '.' };
 
     public Template(Program program = null) {
         this.tokenizer = Util.Regex(@"(\{[^\}]+\}|[^\{]+)", System.Text.RegularExpressions.RegexOptions.Compiled);
@@ -531,6 +533,7 @@ public class Template {
         this.methods = new Dictionary<string, DsCallback>();
         this.program = program;
         this.renderNodes = new Dictionary<string, List<Node>>();
+        this.templateVars = new Dictionary<string, bool>();
 
         this.Register("text", this.RenderText);
         this.Register("textCircle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.TextCircle(options));
@@ -550,11 +553,12 @@ public class Template {
         ds.Text(text, options);
     }
 
-    public void PreRender(string outputName, string templateStrings) {
-        this.PreRender(outputName, templateStrings.Split('\n'));
+    public Dictionary<string, bool> PreRender(string outputName, string templateStrings) {
+        return this.PreRender(outputName, templateStrings.Split('\n'));
     }
 
-    public void PreRender(string outputName, string[] templateStrings) {
+    public Dictionary<string, bool> PreRender(string outputName, string[] templateStrings) {
+        this.templateVars.Clear();
         List<Node> nodeList = new List<Node>();
 
         foreach (string line in templateStrings) {
@@ -568,15 +572,27 @@ public class Template {
 
                 System.Text.RegularExpressions.Match m = this.cmdSplitter.Match(this.token.value);
                 if (m.Success) {
+                    this.AddTemplateTokens(m.Groups["name"].Value);
                     nodeList.Add(new Node(m.Groups["name"].Value, m.Groups["text"].Value, this.StringToDict(m.Groups["params"].Value)));
                 } else {
-                    nodeList.Add(new Node(this.token.value, options: this.StringToDict()));
+                    this.AddTemplateTokens(this.token.value);
+                    nodeList.Add(new Node(this.token.value));
                 }
             }
             nodeList.Add(new Node("newline"));
         }
 
         this.renderNodes.Add(outputName, nodeList);
+
+        return this.templateVars;
+    }
+
+    public void AddTemplateTokens(string name) {
+        string prefix = "";
+        foreach (string part in name.Split(splitDot, StringSplitOptions.RemoveEmptyEntries)) {
+            this.templateVars[$"{prefix}{part}"] = true;
+            prefix = $"{prefix}{part}.";
+        }
     }
 
     public void Render(DrawingSurface ds, string name = null) {
