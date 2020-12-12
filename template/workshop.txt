@@ -1,0 +1,97 @@
+[h1]Basic template engine for scripts[/h1]
+
+A basic templating engine which allows you to register callbacks, and replace templates with data on the fly
+
+see the [url=https://github.com/p-mcgowan/se-scripts/tree/master/template]template script on github[/url] for more info - will likely not maintain both readmes...
+
+[h1]Usage[/h1]
+The Main function shows a demo template, and how to register handlers.
+The engine has a few built in methods such as text, bar, circle, and a few others.
+
+The template variable pattern looks like:
+[code]
+{some-keyword-here}
+[/code]
+
+Which will call the method registered to the keyword "some-keyword-here". For example, [code]{text::This is my message}[/code] will write text to the screen
+
+The full variable pattern is as follows:
+[code]
+{?<name>:<options>:<text>}
+[/code]
+
+The leading "?" will disable the automatic newline the engine inserts (good for conditional spacing).
+<name> is the name of a registered method
+<options> is a list of key=value pairs separated by semicolons (;), which is passed to the callback in a dictionary
+<text> is any raw text to be rendered. Note that above we used [code]{text:: <- double colon here }[/code] to tell the engine that no options were provided
+
+Using the example below:
+
+[code]
+This is a test {no.registered.method}
+This is another line, below is
+a registered method returning Random
+{test.random:min=0;max=10}
+
+---------------------------------
+{?test.spacing}
+---------------------------------
+{text::this line has text}
+---------------------------------
+demo bar: {bar:bgColour=red;textColour=100,100,100;fillColour=blue;pct=0.63:asdf text}
+
+<
+{?test.cdtnl:c=dimyellow:this text will print when random succeeds}
+>
+
+{text:colour=0,0,100:i'm blue, abadee abadaa}
+{text:colour=red:some like it red}
+[/code]
+
+The template will render the image above (all in the Main demo method).
+
+[h1]Api listing[/h1]
+The template includes these built in methods:
+[code]
+text - basic text rendering
+arguments:
+  text: string of text
+  colour: <colour argument> (see below)
+  textAlignment: "center", "left", "right"
+  scale: a numeric scale factor
+
+textCircle - a small circle inline with text
+  colour: <colour argument>
+  outline: if true, will not fill the circle
+
+circle - a basic circle shape
+  size: numeric size in pixels
+  colour: <colour argument>
+  outline: if true, will not fill the circle
+
+bar - a percent bar
+  pct: percent value from 0 to 1 (eg 0.24)
+  width: width in pixels (default to width of screen or space left on line)
+  height: height in pixels (defaults to text height)
+  fillColour: <colour argument>
+  text: string of text
+  textColour: <colour argument>
+  bgColour: <colour argument>
+  textAlignment: "center", "left", "right"
+  pad: percentage padding (defaults to 0.1)
+
+midBar - a bar which accepts low, high, and a signed value, where negative will show red and positive will show green
+arguments:
+  net: plus or minus number
+  low: positive lowest value (will be used with net / low)
+  high: positive highest value (will be used with net / high)
+  width: width in pixels (default to width of screen or space left on line)
+  height: height in pixels (defaults to text height)
+  pad: percentage padding (defaults to 0.1)
+  bgColour: <colour argument>
+
+<colour argument>:  Either a string colour name, or RGB or RGBA values
+eg: "red", "255,0,0,200"
+supported colour names:
+black blue brown cyan dimgray gray green orange pink purple red tan transparent white yellow dimgreen dimyellow dimorange dimred
+[/code]
