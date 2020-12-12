@@ -13,23 +13,36 @@ public class Airlock {
 
     // The name to match (Default will match regular doors). The capture group "(.*)" is used when grouping airlock doors.
     public string doorMatch = "Door(.*)";
-    // The exclusion tag (can be anything).
-    public string doorExclude = "Hangar";
-    // Duration before auto close (milliseconds)
-    public double timeOpen = 720f;
+    public string doorExclude = "Hangar";  // The exclusion tag (can be anything).
+    public double timeOpen = 720f;  // Duration before auto close (milliseconds)
 
     public Airlock(Program program) {
         this.program = program;
         this.airlocks = new Dictionary<string, AirlockDoors>();
         this.airlockBlocks = new List<IMyTerminalBlock>();
         this.locationToAirlockMap = new Dictionary<string, List<IMyFunctionalBlock>>();
-        this.include = Util.Regex(this.doorMatch, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        this.exclude = Util.Regex(this.doorExclude, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        this.doorMatch = this.program.config.Get("airlockDoorMatch", "Door(.*)");
+        this.doorExclude = this.program.config.Get("airlockDoorExclude", "Hangar");
+        this.include = Util.Regex(this.doorMatch);
+        this.exclude = Util.Regex(this.doorExclude);
+        this.timeOpen = Util.ParseFloat(this.program.config.Get("airlockOpenTime"), 750f);
 
         if (this.program.config.Enabled("airlock")) {
-            this.GetMappedAirlocks();
+            this.GetBlocks();
         }
-        this.timeOpen = Util.ParseFloat(this.program.config.Get("airlockOpenTime"), 750f);
+    }
+
+    public void Clear() {
+        this.airlocks.Clear();
+        this.airlockBlocks.Clear();
+        this.locationToAirlockMap.Clear();
     }
 
     public void CheckAirlocks() {
@@ -41,15 +54,13 @@ public class Airlock {
         }
     }
 
-    public void GetMappedAirlocks() {
+    public void GetBlocks() {
         if (!this.program.config.Enabled("airlock")) {
             return;
         }
-        this.airlockBlocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyDoor>(this.airlockBlocks, door => door.IsSameConstructAs(this.program.Me));
+        this.Clear();
 
-        // Parse into hash (identifier => List(door)), where name is "Door <identifier>"
-        this.locationToAirlockMap.Clear();
+        this.program.GridTerminalSystem.GetBlocksOfType<IMyDoor>(this.airlockBlocks, door => door.IsSameConstructAs(this.program.Me));
 
         // Get all door blocks
         foreach (var block in this.airlockBlocks) {
@@ -143,6 +154,9 @@ public class AirlockDoors {
         this.areOpen.Clear();
 
         foreach (var door in this.blocks) {
+            if (door == null) {
+                continue;
+            }
             if (this.IsOpen(door)) {
                 openCount++;
                 this.areOpen.Add(door);
