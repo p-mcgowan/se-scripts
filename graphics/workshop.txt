@@ -1,0 +1,121 @@
+[h1]Sprite graphics helper[/h1]
+Add some helper methods to make drawing sprites easier using an intuitive API
+
+Mostly just helper code, but can be used on it's own.
+
+The readme [url=https://github.com/p-mcgowan/se-scripts/tree/master/graphics]here[/url] has more info, and will likely be updated more often.
+
+See the template engine
+[url=https://github.com/p-mcgowan/se-scripts/tree/master/template]template engine (github)[/url]
+[url=https://steamcommunity.com/sharedfiles/filedetails/?id=2314207999]template engine (workshop)[/url]
+and ship status scripts
+[url=https://github.com/p-mcgowan/se-scripts/tree/master/ShipStatus]ShipStatus (github)[/url]
+[url=https://steamcommunity.com/sharedfiles/filedetails/?id=2314209066]ShipStatus (workshop)[/url]
+for more in-depth info.
+
+[h1]Api[/h1]
+[code]
+Draw()
+  dispose the frame and render content - if this is not called, nothing will be drawn
+
+SaveCursor()
+  store the current cursor position (for reference later)
+
+SetCursor(float? x, float? y)
+  move the cursor to x, y
+
+Newline(bool resetX = true)
+  move the cursor down by the height of the current font size
+  if reset is false, will not set cursor X to 0 (to the left)
+
+Size(float? size = null)
+  change font size
+
+Text(
+  string text,
+  Color? colour = null,
+  TextAlignment textAlignment = TextAlignment.LEFT,
+  float scale = 1f,
+  Vector2? position = null
+)
+  write the string <text> to the screen. Optionally, coloured, alligned, scaled, or at a certain position
+
+MidBar(
+  float net,
+  float low,
+  float high,
+  float width = 0f,
+  float height = 0f,
+  float pad = 0.1f,
+  Color? bgColour = null
+)
+  using a signed <net> value, show a bar left or right of the midpoint, proportial to low and high
+
+Bar(
+  float pct,
+  float width = 0f,
+  float height = 0f,
+  Color? fillColour = null,
+  Vector2? position = null,
+  string text = null,
+  Color? textColour = null,
+  Color? bgColour = null,
+  TextAlignment textAlignment = TextAlignment.LEFT,
+  float pad = 0.1f
+)
+  draw a progress bar, filled to pct
+
+TextCircle(Color colour, bool outline = false)
+  draw a small circle inline with text
+
+Circle(float size, Color colour, Vector2? position = null, bool outline = false)
+  draw a circle of varying size
+[/code]
+
+[h1]Examples[/h1]
+The above image was generated using:
+[code]
+var surface = GridTerminalSystem.GetBlockWithName("LCD Panel").GetSurface(0);
+var ds = new DrawingSurface(surface, this, "LCD Panel <0>");
+
+float battCap = 1000f;
+float battStored = 100f;
+
+ds
+    .Text("Jump drives: 1 ").Newline()
+    .Bar(1f, text: "100%").Newline()
+    .Text("Batteries: 3   ").Newline()
+    .Bar(0.7f, text: "70%").Newline()
+    .Text($"Stored energy draining: {Decimal.Round((decimal)Math.Abs(-43f / battStored), 1)}% capacity / h").Newline()
+    .MidBar(-43f, battStored, battCap - battStored).Newline()
+    .Text($"Stored energy increasing: {Decimal.Round((decimal)(76f / (battCap - battStored)), 1)}% capacity / h").Newline()
+    .MidBar(76f, battStored, battCap - battStored).Newline()
+    .Text("Reactors: 3").Newline()
+    .Text("Output: 60 MW, Uranium: 50 kg").Newline()
+    .Newline()
+    .Text("Ship status: No damage detected").Newline()
+    .Newline()
+    .Text("Power saving mode < 1m (check in 1m)").Newline()
+    .TextCircle(Color.Green).Text("Assembler 1: Idle < 1m").Newline()
+    .TextCircle(Color.Green).Text("Assembler 2: Idle < 1m").Newline()
+    .TextCircle(Color.Red).Text("Assembler 3: Blocked < 1m").Newline()
+    .TextCircle(Color.Yellow).Text("Assembler 4: Working < 1m").Newline()
+    .TextCircle(Color.Green, true).Text("(station) Assembler 1: Idle < 1m").Newline()
+    .TextCircle(Color.Green, true).Text("(station) Assembler 2: Idle < 1m").Newline()
+    .TextCircle(Color.Red, true).Text("(station) Assembler 3: Blocked < 1m").Newline()
+    .TextCircle(Color.Yellow, true).Text("(station) Assembler 4: Working < 1m").Newline()
+    .Newline()
+    .Text("Cargo: 4000 kg / 10000 kg").Newline()
+    .Bar(0.4f, text: "40%", fillColour: Color.Green).Newline()
+    .Newline()
+    .Text("Iron Ingot").SetCursor(ds.width, null).Text("24K", textAlignment: TextAlignment.RIGHT).Newline()
+    .Text("Stone Ingot").SetCursor(ds.width, null).Text("7537", textAlignment: TextAlignment.RIGHT).Newline()
+    .Text("Nickel Ingot").SetCursor(ds.width, null).Text("1292", textAlignment: TextAlignment.RIGHT).Newline()
+    .Text("Silicon Ingot").SetCursor(ds.width, null).Text("2153", textAlignment: TextAlignment.RIGHT).Newline()
+    .Text("AutomaticRifleItem").SetCursor(ds.width, null).Text("1", textAlignment: TextAlignment.RIGHT).Newline()
+    .Text("WelderItem").SetCursor(ds.width, null).Text("1", textAlignment: TextAlignment.RIGHT).Newline()
+    .Text("HandDrillItem").SetCursor(ds.width, null).Text("1", textAlignment: TextAlignment.RIGHT).Newline()
+    .Text("AngleGrinderItem").SetCursor(ds.width, null).Text("1", textAlignment: TextAlignment.RIGHT).Newline()
+    .Text("Ice").SetCursor(ds.width, null).Text("1M", textAlignment: TextAlignment.RIGHT).Newline()
+    .Draw();
+[/code]
