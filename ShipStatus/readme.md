@@ -112,8 +112,8 @@ textCircle
 Feedback, suggestions, comments, criticisms, and bug reports are all welcome and encouraged! Open an issue if you want, I'll try to keep an eye on it.
 
 ### Links
-[steam workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=2314209066)
-[template engine (github)](https://github.com/p-mcgowan/se-scripts/tree/master/template)
-[template engine (workshop)](https://steamcommunity.com/sharedfiles/filedetails/?id=2314207999)
-[graphics (github)](https://github.com/p-mcgowan/se-scripts/tree/master/graphics)
-[graphics (workshop)](https://steamcommunity.com/sharedfiles/filedetails/?id=2314207214)
+[steam workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=2314209066)  
+[template engine (github)](https://github.com/p-mcgowan/se-scripts/tree/master/template)  
+[template engine (workshop)](https://steamcommunity.com/sharedfiles/filedetails/?id=2314207999)  
+[graphics (github)](https://github.com/p-mcgowan/se-scripts/tree/master/graphics)  
+[graphics (workshop)](https://steamcommunity.com/sharedfiles/filedetails/?id=2314207214)  

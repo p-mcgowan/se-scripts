@@ -169,8 +169,8 @@ public void Main() {
 Feedback, suggestions, comments, criticisms, and bug reports are all welcome and encouraged! Open an issue if you want, I'll try to keep an eye on it.
 
 ### Links
-[steam workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=2314207999)
-[graphics (github)](https://github.com/p-mcgowan/se-scripts/tree/master/graphics)
-[graphics (workshop)](https://steamcommunity.com/sharedfiles/filedetails/?id=2314207214)
-[ship status example (github)](https://github.com/p-mcgowan/se-scripts/tree/master/ShipStatus)
-[ship status example (workshop)](https://steamcommunity.com/sharedfiles/filedetails/?id=2314209066)
+[steam workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=2314207999)  
+[graphics (github)](https://github.com/p-mcgowan/se-scripts/tree/master/graphics)  
+[graphics (workshop)](https://steamcommunity.com/sharedfiles/filedetails/?id=2314207214)  
+[ship status example (github)](https://github.com/p-mcgowan/se-scripts/tree/master/ShipStatus)  
+[ship status example (workshop)](https://steamcommunity.com/sharedfiles/filedetails/?id=2314209066)  
