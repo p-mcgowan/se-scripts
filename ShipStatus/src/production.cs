@@ -10,7 +10,8 @@ public class ProductionDetails {
     public List<ProductionBlock> productionBlocks;
     public List<IMyProductionBlock> blocks;
     public Dictionary<ProductionBlock, string> blockStatus;
-    public Dictionary<string, Color> statusDot;
+    public Dictionary<string, string> statusDotColour;
+    public Dictionary<string, VRage.MyFixedPoint> queueItems;
     public double productionCheckFreqMs = 2 * 60 * 1000;
     public double productionOnWaitMs = 5 * 1000;
     public double productionOutTimeMs = 3 * 1000;
@@ -30,18 +31,36 @@ public class ProductionDetails {
         this.productionItems = new List<MyProductionItem>();
         this.productionBlocks = new List<ProductionBlock>();
         this.blockStatus = new Dictionary<ProductionBlock, string>();
-        this.statusDot = new Dictionary<string, Color>() {
-            { "Idle", DrawingSurface.stringToColour.Get("dimgreen") },
-            { "Working", DrawingSurface.stringToColour.Get("dimyellow") },
-            { "Blocked", DrawingSurface.stringToColour.Get("dimred") }
+        this.queueItems = new Dictionary<string, VRage.MyFixedPoint>();
+        this.statusDotColour = new Dictionary<string, string>() {
+            { "Idle", "dimgreen" },
+            { "Working", "dimyellow" },
+            { "Blocked", "dimred" }
         };
         this.queueBuilder = new StringBuilder();
         this.splitNeline = new[] { '\n' };
 
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
         if (this.program.config.Enabled("power")) {
-            this.GetProductionBlocks();
+            this.GetBlocks();
             this.RegisterTemplateVars();
         }
+    }
+
+    public void Clear() {
+        this.blocks.Clear();
+        this.productionItems.Clear();
+        this.productionBlocks.Clear();
+        this.blockStatus.Clear();
+        this.queueItems.Clear();
+        this.idleTime = 0;
+        this.timeDisabled = 0;
+        this.checking = false;
     }
 
     public void RegisterTemplateVars() {
@@ -54,7 +73,8 @@ public class ProductionDetails {
             foreach (KeyValuePair<ProductionBlock, string> blk in this.blockStatus) {
                 string status = blk.Key.Status();
                 string blockName = $"{blk.Key.block.CustomName}: {status} {(blk.Key.IsIdle() ? blk.Key.IdleTime() : "")}";
-                ds.TextCircle(this.statusDot.Get(status)).Text(blockName).Newline();
+                Color? colour = ds.GetColourOpt(this.statusDotColour.Get(status));
+                ds.TextCircle(colour, outline: false).Text(blockName).Newline();
 
                 foreach (string str in blk.Value.Split(this.splitNeline, StringSplitOptions.RemoveEmptyEntries)) {
                     ds.Text(str).Newline();
@@ -63,10 +83,10 @@ public class ProductionDetails {
         });
     }
 
-    public void GetProductionBlocks() {
+    public void GetBlocks() {
         this.blocks.Clear();
         this.program.GridTerminalSystem.GetBlocksOfType<IMyProductionBlock>(this.blocks, b =>
-            b.IsSameConstructAs(this.program.Me) &&
+            (this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me)) &&
             (b is IMyAssembler || b is IMyRefinery) &&
             !b.CustomName.Contains(this.productionIgnoreString)
         );
@@ -82,12 +102,18 @@ public class ProductionDetails {
             return;
         }
 
-        this.blockStatus.Clear();
+        string itemName;
         bool allIdle = true;
-        this.status = "";
         int assemblers = 0;
         int refineries = 0;
+
+        this.blockStatus.Clear();
+        this.status = "";
+
         foreach (var block in this.productionBlocks) {
+            if (block == null) {
+                continue;
+            }
             bool idle = block.IsIdle();
             if (block.block.DefinitionDisplayNameText.ToString() != "Survival kit") {
                 allIdle = allIdle && idle;
@@ -99,7 +125,29 @@ public class ProductionDetails {
                     refineries++;
                 }
             }
+
+            this.queueItems.Clear();
+
+            if (!block.IsIdle()) {
+                block.GetQueue(this.productionItems);
+                foreach (MyProductionItem i in this.productionItems) {
+                    itemName = Util.ToItemName(i);
+                    if (!this.queueItems.ContainsKey(itemName)) {
+                        this.queueItems.Add(itemName, i.Amount);
+                    } else {
+                        this.queueItems[itemName] = this.queueItems[itemName] + i.Amount;
+                    }
+                }
+            }
+
+            this.queueBuilder.Clear();
+            foreach (var kv in this.queueItems) {
+                this.queueBuilder.Append($"  {Util.FormatNumber(kv.Value)} x {kv.Key}\n");
+            }
+
+            this.blockStatus.Add(block, this.queueBuilder.ToString());
         }
+
         double timeNow = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
 
         if (allIdle) {
@@ -145,7 +193,7 @@ public class ProductionDetails {
                 this.status = "Production Enabled";
             }
 
-            // If any assemblers are on, make sure they are all on (master/slave)
+            // If any assemblers are on, make sure they are all on (in case working together)
             if (assemblers > 0) {
                 foreach (var block in this.productionBlocks.Where(b => b.block is IMyAssembler).ToList()) {
                     block.Enabled = true;
@@ -156,21 +204,6 @@ public class ProductionDetails {
             timeDisabled = 0;
             checking = false;
         }
-
-        foreach (var block in this.productionBlocks) {
-            this.queueBuilder.Clear();
-            // output += String.Format("{0}: {1} {2}\n", block.block.CustomName, block.Status(), (idle ? block.IdleTime() : ""));
-            if (!block.IsIdle()) {
-                block.GetQueue(this.productionItems);
-                foreach (MyProductionItem i in this.productionItems) {
-                    this.queueBuilder.Append($"  {Util.FormatNumber(i.Amount)} x {Util.ToItemName(i)}\n");
-                }
-            }
-
-            this.blockStatus.Add(block, this.queueBuilder.ToString());
-        }
-
-        return;
     }
 }
 
