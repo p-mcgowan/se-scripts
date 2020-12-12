@@ -1,4 +1,4 @@
-# Space Engineers Ship Status Script
+# Space Engineers Template Engine
 
 <img src="images/template.png">
 
