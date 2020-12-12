@@ -33,19 +33,32 @@ public class Template {
     public string[] splitLine = new[] { "\r\n", "\r", "\n" };
 
     public Template(Program program = null) {
+        this.program = program;
         this.tokenizer = Util.Regex(@"(\{[^\}]+\}|[^\{]+)", System.Text.RegularExpressions.RegexOptions.Compiled);
         this.cmdSplitter = Util.Regex(@"(?<newline>\?)?(?<name>[^:]+)(:(?<params>[^:]*))?(:(?<text>.+))?", System.Text.RegularExpressions.RegexOptions.Compiled);
         this.token = new Token();
         this.methods = new Dictionary<string, DsCallback>();
-        this.program = program;
         this.renderNodes = new Dictionary<string, List<Node>>();
         this.templateVars = new Dictionary<string, bool>();
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
 
         this.Register("text", this.RenderText);
         this.Register("textCircle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.TextCircle(options));
         this.Register("circle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Circle(options));
         this.Register("bar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Bar(options));
         this.Register("midBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.MidBar(options));
+        this.Register("multiBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.MultiBar(options));
+    }
+
+    public void Clear() {
+        this.methods.Clear();
+        this.renderNodes.Clear();
+        this.templateVars.Clear();
     }
 
     public void Register(string key, DsCallback callback) {
@@ -69,7 +82,8 @@ public class Template {
         List<Node> nodeList = new List<Node>();
 
         bool autoNewline;
-        foreach (string line in templateStrings) {
+        for (int i = 0; i < templateStrings.Length; ++i) {
+            string line = templateStrings[i].TrimEnd();
             autoNewline = true;
             this.match = null;
 
@@ -83,12 +97,15 @@ public class Template {
                 if (m.Success) {
                     var opts = this.StringToDict(m.Groups["params"].Value);
                     if (m.Groups["newline"].Value != "") {
-                        opts.Set("noNewline", "true");
+                        opts["noNewline"] = "true";
                         autoNewline = false;
                     }
-                    opts.Set("text", m.Groups["text"].Value);
+                    string text = (m.Groups["text"].Value == "" ? null : m.Groups["text"].Value);
+                    if (text != null) {
+                        opts["text"] = text;
+                    }
                     this.AddTemplateTokens(m.Groups["name"].Value);
-                    nodeList.Add(new Node(m.Groups["name"].Value, m.Groups["text"].Value, opts));
+                    nodeList.Add(new Node(m.Groups["name"].Value, text, opts));
                 } else {
                     this.AddTemplateTokens(this.token.value);
                     nodeList.Add(new Node(this.token.value));
@@ -100,7 +117,7 @@ public class Template {
             }
         }
 
-        this.renderNodes.Add(outputName, nodeList);
+        this.renderNodes[outputName] = nodeList;
 
         return this.templateVars;
     }
@@ -133,7 +150,6 @@ public class Template {
             } else {
                 ds.Text($"{{{node.action}}}");
             }
-            callback = null;
         }
 
         ds.Draw();
