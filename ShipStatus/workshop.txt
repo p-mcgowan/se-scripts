@@ -1,0 +1,105 @@
+[h1]Space Engineers Ship Status Script[/h1]
+
+A configurable ship status display which renders sprites to different surfaces using a very flexible templating engine.
+
+Makes use of the following to draw sprites:
+[url=https://github.com/p-mcgowan/se-scripts/tree/master/template]template engine (github)[/url]
+[url=https://steamcommunity.com/sharedfiles/filedetails/?id=2314207999]template engine (workshop)[/url]
+[url=https://github.com/p-mcgowan/se-scripts/tree/master/graphics]graphics (github)[/url]
+[url=https://steamcommunity.com/sharedfiles/filedetails/?id=2314207214]graphics (workshop)[/url]
+
+Reads from CustomData, parsing a template and a display target section. Easily allows for customization and extension to render awesome screens.
+
+The templates have some built-in functionality, but you can also build your own rendering methods.
+
+Images generated with ini format CustomData (see [url=https://github.com/malware-dev/MDK-SE/wiki/Handling-configuration-and-storage]Malware's MDK[/url]):
+
+[url=https://github.com/p-mcgowan/se-scripts/tree/master/ShipStatus]More info on Github[/url]
+
+[code]
+; CustomData config:
+; the [global] section applies to the whole program, or sets defaults for shared
+;
+; For surface selection, use 'name <number>' eg: 'Cockpit <1>' - by default, the
+; first surface is selected (0)
+;
+; The output section of the config is the template to render to the screen
+
+[global]
+;  global program settings (will overide settings detected in templates)
+;  With the exception of airlocks, you can leave these all false and they will
+;  only be enabled if a template contains a reference to them (eg if a template
+;  has {power.bar}, then power will be enabled unless false here)
+;airlock=true
+;production=false
+;cargo=false
+;power=false
+;health=false
+;  airlock config (defaults are shown)
+;airlockOpenTime=750
+;airlockAllDoors=false
+;airlockDoorMatch=Door(.*)
+;airlockDoorExclude=Hangar
+;  health config (defaults are shown)
+;healthIgnore=
+;healthOnHud=false
+
+[LCD Panel]
+output=
+|Jump drives: {power.jumpDrives}
+|{?power.jumpBar}
+|Batteries: {power.batteries}
+|{power.batteryBar}
+|Reactors: {power.reactors} {power.reactorMw:: MW} {power.reactorUr:: Ur}
+|Solar panels: {power.solars}
+|Wind turbines: {power.turbines}
+|H2 Engines: {power.engines}
+|Energy IO: {power.io}
+|{?power.ioBar}
+|
+|Ship status: {health.status}
+|{health.blocks}
+|{production.status}
+|{production.blocks}
+|
+|Cargo: {cargo.stored} / {cargo.cap}
+|{cargo.bar}
+|{cargo.items}
+[/code]
+
+[h1]Api listing[/h1]
+The template vars available by default are:
+[table]
+[tr][th]template var[/th][th]options[/th][th]description[/th][/tr]
+[tr][td]cargo.bar[/td][td]none[/td][td]A coloured fill bar which goes from green to red based on % full[/td][/tr]
+[tr][td]cargo.cap[/td][td]none[/td][td]The cargo volume capacity[/td][/tr]
+[tr][td]cargo.fullString[/td][td]none[/td][td]A nicely formatted `<current> / <max> L` volume string[/td][/tr]
+[tr][td]cargo.items[/td][td]none[/td][td]A list of all items in cargo. Will split into 2 columns if display is wide enough[/td][/tr]
+[tr][td]cargo.stored[/td][td]none[/td][td]Current cargo volume[/td][/tr]
+[tr][td]health.blocks[/td][td]none[/td][td]A list of all damaged blocks and their percent health[/td][/tr]
+[tr][td]health.status[/td][td]none[/td][td]A message saying whether damage is detected or not[/td][/tr]
+[tr][td]power.batteries[/td][td]none[/td][td]Count of batteries[/td][/tr]
+[tr][td]power.batteryBar[/td][td]none[/td][td]Coloured bar showing discharge / recharge rate and time remaining[/td][/tr]
+[tr][td]power.engines[/td][td]none[/td][td]Count of hydro engines[/td][/tr]
+[tr][td]power.io[/td][td]none[/td][td]Shows net input / output, total potential output, and % utilization[/td][/tr]
+[tr][td]power.ioBar[/td][td]none[/td][td]Bar showing contribution to total power by block. Reactors are blue, H2 engines red, betteries green, turbines yellow, solars cyan. If blocks are disabled, they are shown in a darker colour.[/td][/tr]
+[tr][td]power.jumpBar[/td][td]text: string, pct: float[/td][td]Jump drive charge status. Text and percent override the default bar contents.[/td][/tr]
+[tr][td]power.jumpDrives[/td][td]none[/td][td]Jump drive count.[/td][/tr]
+[tr][td]power.reactorMw[/td][td]text: string[/td][td]Reactor output in MW. Text will be appended to the count (eg {power.reactorMw:: kg Ur}).[/td][/tr]
+[tr][td]power.reactors[/td][td]none[/td][td]Reactor count[/td][/tr]
+[tr][td]power.reactorUr[/td][td]text: string[/td][td]Reactor uranium. Text will be appended to the count.[/td][/tr]
+[tr][td]power.solars[/td][td]none[/td][td]Solar panel count.[/td][/tr]
+[tr][td]power.turbines[/td][td]none[/td][td]Wind turbine count.[/td][/tr]
+[tr][td]production.blocks[/td][td]none[/td][td]List of assemblers and refineries, with a status icon and their queue (if any).[/td][/tr]
+[tr][td]production.status[/td][td]none[/td][td]Overall production status (power saving, enabled, halted). The production class will turn on / off production blocks if they idle for a long time, then check every 4 minutes to see if they need to start up again.[/td][/tr]
+[/table]
+
+You can also register any render method you want, and use any of the values in each of the status programs (Cargo, Production, etc..).
+
+Also available from the [url=https://github.com/p-mcgowan/se-scripts/tree/master/template]templating script[/url]):
+bar
+circle
+midBar
+multiBar
+text
+textCircle
