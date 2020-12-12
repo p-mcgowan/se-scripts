@@ -10,7 +10,7 @@
 [global]
 ;  global program settings (will overide settings detected in templates)
 ;  eg if a template has {power.bar}, then power will be enabled unless false here
-;airlock=false
+;airlock=true
 ;production=false
 ;cargo=false
 ;power=false
@@ -18,6 +18,8 @@
 ;  airlock config (defaults are shown)
 ;airlockOpenTime=750
 ;airlockAllDoors=false
+;airlockDoorMatch=Door(.*)
+;airlockDoorExclude=Hangar
 ;  health config (defaults are shown)
 ;healthIgnore=
 ;healthOnHud=false
@@ -28,10 +30,12 @@ output=
 |{?power.jumpBar}
 |Batteries: {power.batteries}
 |{power.batteryBar}
+|Reactors: {power.reactors} {power.reactorMw:: MW} {power.reactorUr:: Ur}
 |Solar panels: {power.solars}
+|Wind turbines: {power.turbines}
+|H2 Engines: {power.engines}
 |Energy IO: {power.io}
 |{?power.ioBar}
-|Reactors: {power.reactors} {power.reactorMw:: MW} {power.reactorUr:: Ur}
 |
 |Ship status: {health.status}
 |{health.blocks}
@@ -52,9 +56,15 @@ Config config = new Config();
 
 public class Config {
     public Dictionary<string, string> settings;
+    public string customData;
 
     public Config() {
         this.settings = new Dictionary<string, string>();
+    }
+
+    public void Clear() {
+        this.settings.Clear();
+        this.customData = null;
     }
 
     public void Set(string name, string value) {
@@ -77,6 +87,8 @@ public bool ParseCustomData() {
         return false;
     }
 
+    config.Clear();
+    config.customData = Me.CustomData;
     strings.Clear();
     ini.GetSections(strings);
 
@@ -106,11 +118,19 @@ public bool ParseCustomData() {
         if (ini.Get("global", "airlockAllDoors").TryGetString(out setting)) {
             config.Set("airlockAllDoors", setting);
         }
+        if (ini.Get("global", "airlockDoorMatch").TryGetString(out setting)) {
+            config.Set("airlockDoorMatch", setting);
+        }
+        if (ini.Get("global", "airlockDoorExclude").TryGetString(out setting)) {
+            config.Set("airlockDoorExclude", setting);
+        }
         if (ini.Get("global", "healthOnHud").TryGetString(out setting)) {
             config.Set("healthOnHud", setting);
         }
+        if (ini.Get("global", "getAllGrids").TryGetString(out setting)) {
+            config.Set("getAllGrids", setting);
+        }
     }
-
 
     foreach (string s in strings) {
         if (s == "global") {
@@ -122,6 +142,7 @@ public bool ParseCustomData() {
         if (!tpl.IsEmpty) {
             Echo($"added output for {s}");
             Dictionary<string, bool> tokens = template.PreRender(s, tpl.ToString());
+
             foreach (var kv in tokens) {
                 config.Set(kv.Key, config.Get(kv.Key, "true")); // don't override globals
             }
@@ -131,8 +152,11 @@ public bool ParseCustomData() {
     string name;
     string surfaceName;
     IMyTextSurface surface;
+    drawables.Clear();
+
     blocks.Clear();
     GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
+
     foreach (IMyTextSurfaceProvider block in blocks) {
         for (int i = 0; i < block.SurfaceCount; i++) {
             name = ((IMyTerminalBlock)block).CustomName;
@@ -152,35 +176,87 @@ public bool ParseCustomData() {
     return true;
 }
 
-public Program() {
-    template = new Template(this);
+public bool Configure() {
+    template.Reset();
 
     if (!ParseCustomData()) {
         Runtime.UpdateFrequency &= UpdateFrequency.None;
         Echo("Failed to parse custom data");
-        return;
+
+        return false;
     }
 
+    powerDetails.Reset();
+    cargoStatus.Reset();
+    blockHealth.Reset();
+    productionDetails.Reset();
+    airlock.Reset();
+
+    Runtime.UpdateFrequency = UpdateFrequency.Update100;
+    // airlocks on 10
+    if (config.Enabled("airlock")) {
+        Runtime.UpdateFrequency |= UpdateFrequency.Update10;
+    }
+
+    return true;
+}
+
+public Program() {
+    template = new Template(this);
     powerDetails = new PowerDetails(this, template);
     cargoStatus = new CargoStatus(this, template);
     blockHealth = new BlockHealth(this, template);
     productionDetails = new ProductionDetails(this, template);
     airlock = new Airlock(this);
 
-    Runtime.UpdateFrequency = UpdateFrequency.Update100;
-    // airlocks on 10
-    if (config.Enabled("airlock")) {
-        Runtime.UpdateFrequency = UpdateFrequency.Update100 | UpdateFrequency.Update10;
+    if (!Configure()) {
+        return;
     }
 }
 
+int i = 0;
+int update100sPerBlockCheck = 6;
+
+public bool RecheckFailed() {
+    if (++i % update100sPerBlockCheck == 0 && config.customData != Me.CustomData) {
+        return !Configure();
+    }
+
+    // TODO: fetch blocks once, pass it around
+    switch (i % update100sPerBlockCheck) {
+        case 1:
+            powerDetails.GetBlocks();
+            break;
+        case 2:
+            cargoStatus.GetBlocks();
+            break;
+        case 3:
+            blockHealth.GetBlocks();
+            break;
+        case 4:
+            productionDetails.GetBlocks();
+            break;
+        case 5:
+            airlock.GetBlocks();
+            break;
+        default:
+            break;
+    }
+
+    return false;
+}
+
 public void Main(string argument, UpdateType updateSource) {
-    if (config.Enabled("airlock") && (updateSource & UpdateType.Update10) == UpdateType.Update10) {
+    if ((updateSource & UpdateType.Update10) == UpdateType.Update10 && config.Enabled("airlock")) {
         airlock.CheckAirlocks();
 
         if ((updateSource & UpdateType.Update100) != UpdateType.Update100) {
             return;
         }
+    }
+
+    if (RecheckFailed()) {
+        return;
     }
 
     if (config.Enabled("power")) {
