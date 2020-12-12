@@ -1,24 +1,36 @@
 /*
  * UTIL
  */
+static readonly System.Globalization.NumberFormatInfo CustomFormat;
+
+static Program() {
+    CustomFormat = (System.Globalization.NumberFormatInfo)System.Globalization.CultureInfo.InvariantCulture.NumberFormat.Clone();
+    CustomFormat.NumberGroupSeparator = $"{(char)0xA0}";
+    CustomFormat.NumberGroupSizes = new [] {3};
+}
+
 public static class Util {
     public static System.Text.RegularExpressions.Regex surfaceExtractor =
         Util.Regex(@"\s<(\d+)>$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-    public static string FormatNumber(VRage.MyFixedPoint input) {
-        string fmt;
+    public static string GetFormatNumberStr(VRage.MyFixedPoint input) {
         int n = Math.Max(0, (int)input);
         if (n == 0) {
             return "0";
-        }
-        if (n < 10000) {
-            fmt = "##";
+        } else if (n < 10000) {
+            return "#,,#";
         } else if (n < 1000000) {
-            fmt = "###0,K";
-        } else {
-            fmt = "###0,,M";
+            return "###,,0,K";
         }
-        return n.ToString(fmt, System.Globalization.CultureInfo.InvariantCulture);
+
+        return string.Concat(Enumerable.Repeat("#", $"{n}".Length)) + "0,,#M";
+    }
+
+    public static string FormatNumber(VRage.MyFixedPoint input, string fmt = null) {
+        fmt = fmt ?? Util.GetFormatNumberStr(input);
+        int n = Math.Max(0, (int)input);
+
+        return n.ToString(fmt, CustomFormat);
     }
 
     public static string TimeFormat(double ms, bool s = false) {
@@ -41,7 +53,7 @@ public static class Util {
     }
 
     public static string PctString(float val) {
-        return String.Format("{0,3:0}%", 100 * val);
+        return (val * 100).ToString("#,0.00", CustomFormat) + " %";
     }
 
     public static System.Text.RegularExpressions.Regex Regex(
@@ -81,6 +93,10 @@ public static class Util {
 
         return output;
     }
+
+    public static IEnumerable<TValue> Truthy<TValue>(List<TValue> list) {
+        return list.Where(item => item != null);
+    }
 }
 }
 
@@ -90,7 +106,7 @@ public static class Dict {
         return dict.TryGetValue(key, out value) ? value : defaultValue;
     }
 
-    public static TValue Set<TKey, TValue>(this Dictionary<TKey, TValue> dict, TKey key, TValue value) {
+    public static TValue Default<TKey, TValue>(this Dictionary<TKey, TValue> dict, TKey key, TValue value) {
         return dict[key] = dict.Get(key, value);
     }
 
