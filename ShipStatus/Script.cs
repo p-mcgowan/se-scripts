@@ -486,7 +486,7 @@ public class PowerDetails {
                 this.batteryOutputMax += battery.MaxOutput;
                 this.batteryOutputMax += battery.MaxInput;
                 if (!battery.Enabled || battery.ChargeMode == ChargeMode.Recharge) {
-                    this.batteryOutputDisabled += battery.MaxOutput;
+                    this.batteryOutputDisabled += battChargeMax;
                 }
             } else if (powerBlock is IMyReactor) {
                 this.reactors++;
