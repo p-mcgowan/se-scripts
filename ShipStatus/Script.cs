@@ -10,7 +10,7 @@
 [global]
 ;  global program settings (will overide settings detected in templates)
 ;  eg if a template has {power.bar}, then power will be enabled unless false here
-;airlock=false
+;airlock=true
 ;production=false
 ;cargo=false
 ;power=false
@@ -18,6 +18,8 @@
 ;  airlock config (defaults are shown)
 ;airlockOpenTime=750
 ;airlockAllDoors=false
+;airlockDoorMatch=Door(.*)
+;airlockDoorExclude=Hangar
 ;  health config (defaults are shown)
 ;healthIgnore=
 ;healthOnHud=false
@@ -28,10 +30,12 @@ output=
 |{?power.jumpBar}
 |Batteries: {power.batteries}
 |{power.batteryBar}
+|Reactors: {power.reactors} {power.reactorMw:: MW} {power.reactorUr:: Ur}
 |Solar panels: {power.solars}
+|Wind turbines: {power.turbines}
+|H2 Engines: {power.engines}
 |Energy IO: {power.io}
 |{?power.ioBar}
-|Reactors: {power.reactors} {power.reactorMw:: MW} {power.reactorUr:: Ur}
 |
 |Ship status: {health.status}
 |{health.blocks}
@@ -41,11 +45,6 @@ output=
 |Cargo: {cargo.stored} / {cargo.cap}
 |{cargo.bar}
 |{cargo.items}
-
-[Status panel]
-output=
-|{health.status}
-|{health.blocks}
 */
 
 Dictionary<string, DrawingSurface> drawables = new Dictionary<string, DrawingSurface>();
@@ -57,9 +56,15 @@ Config config = new Config();
 
 public class Config {
     public Dictionary<string, string> settings;
+    public string customData;
 
     public Config() {
         this.settings = new Dictionary<string, string>();
+    }
+
+    public void Clear() {
+        this.settings.Clear();
+        this.customData = null;
     }
 
     public void Set(string name, string value) {
@@ -82,6 +87,8 @@ public bool ParseCustomData() {
         return false;
     }
 
+    config.Clear();
+    config.customData = Me.CustomData;
     strings.Clear();
     ini.GetSections(strings);
 
@@ -111,11 +118,19 @@ public bool ParseCustomData() {
         if (ini.Get("global", "airlockAllDoors").TryGetString(out setting)) {
             config.Set("airlockAllDoors", setting);
         }
+        if (ini.Get("global", "airlockDoorMatch").TryGetString(out setting)) {
+            config.Set("airlockDoorMatch", setting);
+        }
+        if (ini.Get("global", "airlockDoorExclude").TryGetString(out setting)) {
+            config.Set("airlockDoorExclude", setting);
+        }
         if (ini.Get("global", "healthOnHud").TryGetString(out setting)) {
             config.Set("healthOnHud", setting);
         }
+        if (ini.Get("global", "getAllGrids").TryGetString(out setting)) {
+            config.Set("getAllGrids", setting);
+        }
     }
-
 
     foreach (string s in strings) {
         if (s == "global") {
@@ -127,6 +142,7 @@ public bool ParseCustomData() {
         if (!tpl.IsEmpty) {
             Echo($"added output for {s}");
             Dictionary<string, bool> tokens = template.PreRender(s, tpl.ToString());
+
             foreach (var kv in tokens) {
                 config.Set(kv.Key, config.Get(kv.Key, "true")); // don't override globals
             }
@@ -136,8 +152,11 @@ public bool ParseCustomData() {
     string name;
     string surfaceName;
     IMyTextSurface surface;
+    drawables.Clear();
+
     blocks.Clear();
     GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
+
     foreach (IMyTextSurfaceProvider block in blocks) {
         for (int i = 0; i < block.SurfaceCount; i++) {
             name = ((IMyTerminalBlock)block).CustomName;
@@ -157,35 +176,87 @@ public bool ParseCustomData() {
     return true;
 }
 
-public Program() {
-    template = new Template(this);
+public bool Configure() {
+    template.Reset();
 
     if (!ParseCustomData()) {
         Runtime.UpdateFrequency &= UpdateFrequency.None;
         Echo("Failed to parse custom data");
-        return;
+
+        return false;
     }
 
+    powerDetails.Reset();
+    cargoStatus.Reset();
+    blockHealth.Reset();
+    productionDetails.Reset();
+    airlock.Reset();
+
+    Runtime.UpdateFrequency = UpdateFrequency.Update100;
+    // airlocks on 10
+    if (config.Enabled("airlock")) {
+        Runtime.UpdateFrequency |= UpdateFrequency.Update10;
+    }
+
+    return true;
+}
+
+public Program() {
+    template = new Template(this);
     powerDetails = new PowerDetails(this, template);
     cargoStatus = new CargoStatus(this, template);
     blockHealth = new BlockHealth(this, template);
     productionDetails = new ProductionDetails(this, template);
     airlock = new Airlock(this);
 
-    Runtime.UpdateFrequency = UpdateFrequency.Update100;
-    // airlocks on 10
-    if (config.Enabled("airlock")) {
-        Runtime.UpdateFrequency = UpdateFrequency.Update100 | UpdateFrequency.Update10;
+    if (!Configure()) {
+        return;
     }
 }
 
+int i = 0;
+int update100sPerBlockCheck = 6;
+
+public bool RecheckFailed() {
+    if (++i % update100sPerBlockCheck == 0 && config.customData != Me.CustomData) {
+        return !Configure();
+    }
+
+    // TODO: fetch blocks once, pass it around
+    switch (i % update100sPerBlockCheck) {
+        case 1:
+            powerDetails.GetBlocks();
+            break;
+        case 2:
+            cargoStatus.GetBlocks();
+            break;
+        case 3:
+            blockHealth.GetBlocks();
+            break;
+        case 4:
+            productionDetails.GetBlocks();
+            break;
+        case 5:
+            airlock.GetBlocks();
+            break;
+        default:
+            break;
+    }
+
+    return false;
+}
+
 public void Main(string argument, UpdateType updateSource) {
-    if (config.Enabled("airlock") && (updateSource & UpdateType.Update10) == UpdateType.Update10) {
+    if ((updateSource & UpdateType.Update10) == UpdateType.Update10 && config.Enabled("airlock")) {
         airlock.CheckAirlocks();
 
         if ((updateSource & UpdateType.Update100) != UpdateType.Update100) {
             return;
         }
+    }
+
+    if (RecheckFailed()) {
+        return;
     }
 
     if (config.Enabled("power")) {
@@ -207,32 +278,90 @@ public void Main(string argument, UpdateType updateSource) {
 }
 /* MAIN */
 /*
- * BLOCK_HEALTH
+ * POWER
  */
-BlockHealth blockHealth;
+PowerDetails powerDetails;
 
-class BlockHealth {
+public class PowerDetails {
     public Program program;
     public Template template;
-    public System.Text.RegularExpressions.Regex ignoreHealth;
-    public List<IMyTerminalBlock> blocks;
-    public Dictionary<string, string> damaged;
-    public string status;
+    public List<IMyPowerProducer> powerProducerBlocks;
+    public List<IMyJumpDrive> jumpDriveBlocks;
+    public List<MyInventoryItem> items;
+    public List<float> ioFloats;
+    public List<Color> ioColours;
 
-    public BlockHealth(Program program, Template template) {
+    public int jumpDrives;
+    public float jumpMax;
+    public float jumpCurrent;
+
+    public int batteries;
+    public float batteryMax;
+    public float batteryCurrent;
+    public float batteryInput;
+    public float batteryOutput;
+    public float batteryOutputDisabled;
+    public float batteryOutputMax;
+    public float batteryInputMax;
+
+    public int reactors;
+    public float reactorOutputMW;
+    public float reactorOutputMax;
+    public float reactorOutputDisabled;
+    public MyFixedPoint reactorUranium;
+
+    public int solars;
+    public float solarOutputMW;
+    public float solarOutputDisabled;
+    public float solarOutputMax;
+
+    public int turbines;
+    public float turbineOutputMW;
+    public float turbineOutputDisabled;
+    public float turbineOutputMax;
+
+    public int hEngines;
+    public float hEngineOutputMW;
+    public float hEngineOutputDisabled;
+    public float hEngineOutputMax;
+
+    public float battChargeMax = 12f;
+
+    public Color reactorColour = Color.Blue;
+    public Color hEnginesColour = DrawingSurface.stringToColour["dimred"];
+    public Color batteriesColour = DrawingSurface.stringToColour["dimgreen"];
+    public Color turbinesColour = DrawingSurface.stringToColour["dimyellow"];
+    public Color solarsColour = Color.Darken(Color.Cyan, 0.6);
+
+    public PowerDetails(Program program, Template template = null) {
         this.program = program;
         this.template = template;
-        this.blocks = new List<IMyTerminalBlock>();
-        this.damaged = new Dictionary<string, string>();
+        this.powerProducerBlocks = new List<IMyPowerProducer>();
+        this.jumpDriveBlocks = new List<IMyJumpDrive>();
+        this.items = new List<MyInventoryItem>();
+        this.ioFloats = new List<float>();
+        this.ioColours = new List<Color>() {
+            this.reactorColour,
+            new Color(this.reactorColour, 0.01f),
+            this.hEnginesColour,
+            new Color(this.hEnginesColour, 0.01f),
+            this.batteriesColour,
+            new Color(this.batteriesColour, 0.01f),
+            this.turbinesColour,
+            new Color(this.turbinesColour, 0.01f),
+            this.solarsColour,
+            new Color(this.solarsColour, 0.01f)
+        };
 
-        if (this.program.config.Enabled("health")) {
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        if (this.program.config.Enabled("power")) {
             this.GetBlocks();
             this.RegisterTemplateVars();
-
-            string ignore = this.program.config.Get("healthIgnore");
-            if (ignore != "" && ignore != null) {
-                this.ignoreHealth = Util.Regex(System.Text.RegularExpressions.Regex.Replace(ignore, @"\s*,\s*", "|"));
-            }
         }
     }
 
@@ -240,695 +369,227 @@ class BlockHealth {
         if (this.template == null) {
             return;
         }
-
-        this.template.Register("health.status", () => this.status);
-        this.template.Register("health.blocks",
-            (DrawingSurface ds, string text, Dictionary<string, string> options) => {
-                foreach (KeyValuePair<string, string> block in this.damaged) {
-                    ds.Text($"{block.Key} [{block.Value}]").Newline();
-                }
+        this.template.Register("power.jumpDrives", () => this.jumpDrives.ToString());
+        this.template.Register("power.jumpBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+            if (this.jumpDrives == 0) {
+                return;
             }
-        );
+            float pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
+            options["text"] = text ?? Util.PctString(pct);
+            options["pct"] = pct.ToString();
+            ds.Bar(options).Newline();
+        });
+        this.template.Register("power.batteries", () => this.batteries.ToString());
+        this.template.Register("power.batteryBar", this.BatteryBar);
+        this.template.Register("power.solars", () => this.solars.ToString());
+        this.template.Register("power.turbines", () => this.turbines.ToString());
+        this.template.Register("power.engines", () => this.hEngines.ToString());
+        this.template.Register("power.reactors", () => this.reactors.ToString());
+        this.template.Register("power.reactorMw", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+            ds.Text($"{this.reactorOutputMW}{text}");
+        });
+        this.template.Register("power.reactorUr", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+            ds.Text($"{Util.FormatNumber(this.reactorUranium)}{text}");
+        });
+        this.template.Register("power.io", () => {
+            float io = this.CurrentInput() - this.CurrentOutput();
+            float max = this.MaxOutput();
+
+            return String.Format("{0:0.00} / {1:0.00} MWh ({2})", io, max, Util.PctString(Math.Abs(io) / max));
+        });
+        this.template.Register("power.ioBar", this.IoBar);
     }
 
-    public float GetHealth(IMyTerminalBlock block) {
-        IMySlimBlock slimblock = block.CubeGrid.GetCubeBlock(block.Position);
-        float MaxIntegrity = slimblock.MaxIntegrity;
-        float BuildIntegrity = slimblock.BuildIntegrity;
-        float CurrentDamage = slimblock.CurrentDamage;
-
-        return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
+    public void Clear() {
+        this.jumpDrives = 0;
+        this.jumpMax = 0f;
+        this.jumpCurrent = 0f;
+        this.batteries = 0;
+        this.batteryMax = 0f;
+        this.batteryCurrent = 0f;
+        this.batteryInput = 0f;
+        this.batteryOutput = 0f;
+        this.batteryOutputDisabled = 0f;
+        this.batteryOutputMax = 0f;
+        this.batteryInputMax = 0f;
+        this.reactors = 0;
+        this.reactorOutputMW = 0f;
+        this.reactorOutputDisabled = 0f;
+        this.reactorOutputMax = 0f;
+        this.reactorUranium = 0;
+        this.solars = 0;
+        this.solarOutputMW = 0f;
+        this.solarOutputDisabled = 0f;
+        this.solarOutputMax = 0f;
+        this.turbines = 0;
+        this.turbineOutputMW = 0f;
+        this.turbineOutputDisabled = 0f;
+        this.turbineOutputMax = 0f;
+        this.hEngines = 0;
+        this.hEngineOutputMW = 0f;
+        this.hEngineOutputDisabled = 0f;
+        this.hEngineOutputMax = 0f;
     }
 
     public void GetBlocks() {
-        this.blocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.blocks, b => b.IsSameConstructAs(this.program.Me));
+        this.powerProducerBlocks.Clear();
+        this.program.GridTerminalSystem.GetBlocksOfType<IMyPowerProducer>(this.powerProducerBlocks, b =>
+            this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me));
+        this.jumpDriveBlocks.Clear();
+        this.program.GridTerminalSystem.GetBlocksOfType<IMyJumpDrive>(this.jumpDriveBlocks, b =>
+            this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me));
+    }
+
+    public float GetPercent(float current, float max) {
+        if (max == 0) {
+            return 0f;
+        }
+        return current / max;
+    }
+
+    public float MaxOutput() {
+        return this.hEngineOutputMax + this.reactorOutputMax + this.solarOutputMax + this.turbineOutputMax + (battChargeMax * this.batteries);
+    }
+
+    public float MaxInput() {
+        return (battChargeMax * this.batteries);
+    }
+
+    public float CurrentInput() {
+        return this.batteryInput;
+    }
+
+    public float CurrentOutput() {
+        return this.reactorOutputMW + this.solarOutputMW + this.turbineOutputMW + this.hEngineOutputMW + this.batteryOutput;
+    }
+
+    public float DisabledMaxOutput() {
+        return this.batteryOutputDisabled + this.reactorOutputDisabled + this.solarOutputDisabled + this.turbineOutputDisabled + this.hEngineOutputDisabled;
     }
 
     public void Refresh() {
-        this.damaged.Clear();
-        bool showOnHud = this.program.config.Enabled("healthOnHud");
+        this.Clear();
 
-        foreach (var b in this.blocks) {
-            if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
+        foreach (IMyPowerProducer powerBlock in this.powerProducerBlocks) {
+            if (powerBlock == null) {
                 continue;
             }
-
-            var health = this.GetHealth(b);
-            if (health != 1f) {
-                this.damaged[b.CustomName] = Util.PctString(health);
-            }
-            if (showOnHud) {
-                b.ShowOnHUD = health != 1f;
-            }
-        }
-
-        this.status = $"{(this.damaged.Count == 0 ? "No damage" : "Damage")} detected";
-    }
-}
-/* BLOCK_HEALTH */
-/*
- * GRAPHICS
- */
-public class DrawingSurface {
-    public Program program;
-    public IMyTextSurface surface;
-    public RectangleF viewport;
-    public MySpriteDrawFrame frame;
-    public Vector2 cursor;
-    public Vector2 savedCursor;
-    public StringBuilder sb;
-    public Vector2 charSizeInPx;
-    public bool drawing;
-    public Vector2 padding;
-    public float width;
-    public float height;
-    public int charsPerWidth;
-    public int charsPerHeight;
-    public string name;
-    public Color colourGrey = new Color(40, 40, 40);
-
-    public static char[] commaSep = { ',' };
-    public static Dictionary<string, Color> stringToColour = new Dictionary<string, Color>() {
-        { "black", Color.Black },
-        { "blue", Color.Blue },
-        { "brown", Color.Brown },
-        { "cyan", Color.Cyan },
-        { "dimgray", Color.DimGray },
-        { "gray", Color.Gray },
-        { "green", Color.Green },
-        { "orange", Color.Orange },
-        { "pink", Color.Pink },
-        { "purple", Color.Purple },
-        { "red", Color.Red },
-        { "tan", Color.Tan },
-        { "transparent", Color.Transparent },
-        { "white", Color.White },
-        { "yellow", Color.Yellow },
-        { "dimgreen", Color.Darken(Color.Green, 0.4) },
-        { "dimyellow", Color.Darken(Color.Yellow, 0.6) },
-        { "dimorange", Color.Darken(Color.Orange, 0.2) },
-        { "dimred", Color.Darken(Color.Red, 0.2) }
-    };
-    public static Dictionary<string, TextAlignment> stringToAlignment = new Dictionary<string, TextAlignment>() {
-        { "center", TextAlignment.CENTER },
-        { "left", TextAlignment.LEFT },
-        { "right", TextAlignment.RIGHT }
-    };
-
-    public DrawingSurface(IMyTextSurface surface, Program program, string name = "") {
-        this.program = program;
-        this.surface = surface;
-        this.cursor = new Vector2(0f, 0f);
-        this.savedCursor = new Vector2(0f, 0f);
-        this.sb = new StringBuilder(" ");
-        this.charSizeInPx = new Vector2(0f, 0f);
-        this.surface.ContentType = ContentType.SCRIPT;
-        this.drawing = false;
-        this.viewport = new RectangleF(0f, 0f, 0f, 0f);
-        this.name = name;
-
-        this.InitScreen();
-    }
-
-    public void InitScreen() {
-        this.cursor.X = 0f;
-        this.cursor.Y = 0f;
-        this.surface.Script = "";
-
-        this.padding = (this.surface.TextPadding / 100) * this.surface.SurfaceSize;
-        this.viewport.Position = (this.surface.TextureSize - this.surface.SurfaceSize) / 2f + this.padding;
-        this.viewport.Size = this.surface.SurfaceSize - (2 * this.padding);
-        this.width = this.viewport.Width;
-        this.height = this.viewport.Height;
-
-        this.Size();
-    }
-
-    public Color? GetColourOpt(string colour) {
-        if (colour == "" || colour == null) {
-            return null;
-        }
-        if (!colour.Contains(',')) {
-            return DrawingSurface.stringToColour.Get(colour);
-        }
-
-        string[] numbersStr = colour.Split(DrawingSurface.commaSep);
-
-        if (numbersStr.Length < 2) {
-            return null;
-        }
-
-        int r, g, b;
-        int a = 255;
-        if (
-            !int.TryParse(numbersStr[0], out r) ||
-            !int.TryParse(numbersStr[1], out g) ||
-            !int.TryParse(numbersStr[2], out b) ||
-            (numbersStr.Length > 3 && !int.TryParse(numbersStr[3], out a))
-        ) {
-            return null;
-        } else {
-            return new Color(r, g, b, a);
-        }
-    }
-
-    public void DrawStart() {
-        this.InitScreen();
-        this.drawing = true;
-        this.frame = this.surface.DrawFrame();
-    }
-
-    public DrawingSurface Draw() {
-        this.drawing = false;
-        this.frame.Dispose();
-
-        return this;
-    }
-
-    public DrawingSurface SaveCursor() {
-        this.savedCursor = this.cursor;
-
-        return this;
-    }
-
-    public DrawingSurface SetCursor(float? x, float? y) {
-        this.cursor.X = x ?? this.cursor.X;
-        this.cursor.Y = y ?? this.cursor.Y;
-
-        return this;
-    }
-
-    public DrawingSurface Newline(bool resetX = true) {
-        this.cursor.Y += this.charSizeInPx.Y;
-        this.cursor.X = resetX ? 0 : this.savedCursor.X;
-
-        return this;
-    }
-
-    public DrawingSurface Size(float? size = null) {
-        this.surface.FontSize = size ?? this.surface.FontSize;
-
-        this.charSizeInPx = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
-        this.charsPerWidth = (int)Math.Floor(this.surface.SurfaceSize.X / this.charSizeInPx.X);
-        this.charsPerHeight = (int)Math.Floor(this.surface.SurfaceSize.Y / this.charSizeInPx.Y);
-
-        return this;
-    }
-
-    public DrawingSurface Text(string text, Dictionary<string, string> options) {
-        if (options == null) {
-            return this.Text(text);
-        }
-        Color? colour = this.GetColourOpt(options.Get("colour", null));
-        TextAlignment textAlignment = DrawingSurface.stringToAlignment.Get(options.Get("align", "left"));
-        float scale = Util.ParseFloat(options.Get("scale"), 1f);
-
-        return this.Text(text, colour: colour, textAlignment: textAlignment, scale: scale);
-    }
-
-    public DrawingSurface Text(
-        string text,
-        Color? colour = null,
-        TextAlignment textAlignment = TextAlignment.LEFT,
-        float scale = 1f,
-        Vector2? position = null
-    ) {
-        if (text == "" || text == null) {
-            return this;
-        }
-
-        if (!this.drawing) {
-            this.DrawStart();
-        }
-        if (colour == null) {
-            colour = this.surface.ScriptForegroundColor;
-        }
-
-        Vector2 pos = (position ?? this.cursor) + this.viewport.Position;
-
-        this.frame.Add(new MySprite() {
-            Type = SpriteType.TEXT,
-            Data = text,
-            Position = pos,
-            RotationOrScale = this.surface.FontSize * scale,
-            Color = colour,
-            Alignment = textAlignment,
-            FontId = surface.Font
-        });
-
-        this.sb.Clear();
-        this.sb.Append(text);
-        Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
-        this.sb.Clear();
-        this.sb.Append(" ");
-
-        this.cursor.X += size.X;
-
-        return this;
-    }
-
-    public float ToRad(float deg) {
-        return deg * ((float)Math.PI / 180f);
-    }
-
-    public Color FloatPctToColor(float pct) {
-        if (pct > 0.75f) {
-            return DrawingSurface.stringToColour.Get("dimgreen");
-        } else if (pct > 0.5f) {
-            return DrawingSurface.stringToColour.Get("dimyellow");
-        } else if (pct > 0.25f) {
-            return DrawingSurface.stringToColour.Get("dimorange");
-        }
-
-        return DrawingSurface.stringToColour.Get("dimred");
-    }
-
-    public DrawingSurface MidBar(Dictionary<string, string> options) {
-        float net = Util.ParseFloat(options.Get("net"), 0f);
-        float low = Util.ParseFloat(options.Get("low"), 1f);
-        float high = Util.ParseFloat(options.Get("high"), 1f);
-        float width = Util.ParseFloat(options.Get("width"), 0f);
-        float height = Util.ParseFloat(options.Get("height"), 0f);
-        float pad = Util.ParseFloat(options.Get("pad"), 0.1f);
-        Color? bgColour = this.GetColourOpt(options.Get("colour", null));
-
-        return this.MidBar(net: net, low: low, high: high, width: width, height: height, pad: pad, bgColour: bgColour);
-    }
-
-    public DrawingSurface MidBar(
-        float net,
-        float low,
-        float high,
-        float width = 0f,
-        float height = 0f,
-        float pad = 0.1f,
-        Color? bgColour = null
-    ) {
-        if (!this.drawing) {
-            this.DrawStart();
-        }
-
-        width = (width == 0f) ? this.width - this.cursor.X : width;
-        height = (height == 0f) ? this.charSizeInPx.Y : height;
-        height -= 1f;
-
-        Vector2 pos = this.cursor + this.viewport.Position;
-        pos.Y += (height / 2) + 1f;
-
-        using (frame.Clip((int)pos.X, (int)(pos.Y - height / 2), (int)width, (int)height)) {
-            this.frame.Add(new MySprite {
-                Type = SpriteType.TEXTURE,
-                Alignment = TextAlignment.CENTER,
-                Data = "SquareSimple",
-                Position = pos + new Vector2(width / 2, 0),
-                Size = new Vector2((float)Math.Sqrt(Math.Pow(width, 2) / 2), width),
-                Color = bgColour ?? this.colourGrey,
-                RotationOrScale = this.ToRad(-45f),
-            });
-        }
-
-        pad = (float)Math.Round(pad * height);
-        pos.X += pad;
-        width -= 2 * pad;
-        height -= 2 * pad;
-
-        Color colour = Color.Green;
-        float pct = net / (high == 0f ? 1f : high);
-        if (net < 0) {
-            pct = net / (low == 0f ? 1f : low);
-            colour = Color.Red;
-        }
-        float sideWidth = (float)Math.Sqrt(2) * width * pct;
-        float leftClip = Math.Min((width / 2), (width / 2) + (width / 2) * pct);
-        float rightClip = Math.Max((width / 2), (width / 2) + (width / 2) * pct);
-
-        using (this.frame.Clip((int)(pos.X + leftClip), (int)(pos.Y - height / 2), (int)Math.Abs(rightClip - leftClip), (int)height)) {
-            this.frame.Add(new MySprite {
-                Type = SpriteType.TEXTURE,
-                Alignment = TextAlignment.CENTER,
-                Data = "SquareSimple",
-                Position = pos + new Vector2(width / 2, 0),
-                Size = new Vector2(Math.Abs(sideWidth) / 2, width),
-                Color = colour,
-                RotationOrScale = this.ToRad(-45f)
-            });
-        }
-
-        this.frame.Add(new MySprite {
-            Type = SpriteType.TEXTURE,
-            Alignment = TextAlignment.CENTER,
-            Data = "SquareSimple",
-            Position = pos + new Vector2((width / 2), -1f),
-            Size = new Vector2(2f, height + 2f),
-            Color = Color.White,
-            RotationOrScale = 0f
-        });
-
-        return this;
-    }
-
-    public DrawingSurface Bar(
-        Dictionary<string, string> options,
-        float width = 0f,
-        float height = 0f,
-        Color? fillColour = null,
-        string text = null,
-        Color? textColour = null,
-        Color? bgColour = null,
-        TextAlignment textAlignment = TextAlignment.LEFT,
-        float pad = 0.1f
-    ) {
-        if (options == null || options.Get("pct", null) == null) {
-            return this.Bar(0f, text: "--/--");
-        }
-
-        float pct = Util.ParseFloat(options.Get("pct"));
-        width = Util.ParseFloat(options.Get("width"), width);
-        height = Util.ParseFloat(options.Get("height"), height);
-        fillColour = this.GetColourOpt(options.Get("fillColour")) ?? fillColour;
-        textAlignment = DrawingSurface.stringToAlignment.Get(options.Get("align", "null"), textAlignment);
-        text = options.Get("text") ?? text;
-        textColour = this.GetColourOpt(options.Get("textColour")) ?? textColour;
-        bgColour = this.GetColourOpt(options.Get("bgColour")) ?? bgColour;
-        pad = Util.ParseFloat(options.Get("pad"), pad);
-
-        return this.Bar(
-            pct,
-            width: width,
-            height: height,
-            fillColour: fillColour,
-            textAlignment: textAlignment,
-            text: text,
-            textColour: textColour,
-            bgColour: bgColour,
-            pad: pad
-        );
-    }
-
-    public DrawingSurface Bar(
-        float pct,
-        float width = 0f,
-        float height = 0f,
-        Color? fillColour = null,
-        Vector2? position = null,
-        string text = null,
-        Color? textColour = null,
-        Color? bgColour = null,
-        TextAlignment textAlignment = TextAlignment.LEFT,
-        float pad = 0.1f
-    ) {
-        if (!this.drawing) {
-            this.DrawStart();
-        }
-
-        width = (width == 0f) ? this.width - this.cursor.X : width;
-        height = (height == 0f) ? this.charSizeInPx.Y : height;
-        height -= 1f;
-
-        Color fill = fillColour ?? this.FloatPctToColor(pct);
-        Vector2 pos = (position ?? this.cursor) + this.viewport.Position;
-        pos.Y += (height / 2) + 1f;
-
-        using (frame.Clip((int)pos.X, (int)(pos.Y - height / 2), (int)width, (int)height)) {
-            this.frame.Add(new MySprite {
-                Type = SpriteType.TEXTURE,
-                Alignment = TextAlignment.CENTER,
-                Data = "SquareSimple",
-                Position = pos + new Vector2(width / 2, 0),
-                Size = new Vector2((float)Math.Sqrt(Math.Pow(width, 2) / 2), width),
-                Color = bgColour ?? this.colourGrey,
-                RotationOrScale = this.ToRad(-45f),
-            });
-        }
-
-        pad = (float)Math.Round(pad * height);
-        pos.X += pad;
-        width -= 2 * pad;
-        height -= 2 * pad;
-
-        using (frame.Clip((int)pos.X, (int)(pos.Y - height / 2), (int)(width * pct), (int)height)) {
-            this.frame.Add(new MySprite {
-                Type = SpriteType.TEXTURE,
-                Alignment = TextAlignment.CENTER,
-                Data = "SquareSimple",
-                Position = pos + new Vector2((width * pct) / 2, 0),
-                Size = new Vector2((float)Math.Floor(Math.Sqrt(Math.Pow((width * pct), 2) / 2)), width),
-                Color = fill,
-                RotationOrScale = this.ToRad(-45f),
-            });
-        }
-
-        if (text == null) {
-            text = Util.PctString(pct);
-        }
-        if (text != null && text != "") {
-            this.cursor.X += (width / 2);
-            this.Text(text, textColour ?? Color.Black, textAlignment: TextAlignment.CENTER, scale: 0.9f);
-        } else {
-            this.cursor.X += (width / 2);
-            this.cursor.Y += height;
-        }
-
-
-        return this;
-    }
-
-    public DrawingSurface TextCircle(Dictionary<string, string> options) {
-        if (options == null) {
-            return this.TextCircle(this.surface.FontColor);
-        }
-
-        Color colour = this.GetColourOpt(options.Get("colour")) ?? this.surface.FontColor;
-        bool outline = Util.ParseBool(options.Get("outline"));
-
-        return this.TextCircle(colour, outline);
-    }
-
-    public DrawingSurface TextCircle(Color colour, bool outline = false) {
-        return this.Circle(this.charSizeInPx.Y - 5f, colour, this.cursor + Vector2.Divide(this.charSizeInPx, 2f), outline: outline);
-    }
-
-    public DrawingSurface Circle(Dictionary<string, string> options) {
-        if (options == null) {
-            return this.Circle(this.charSizeInPx.Y, this.surface.FontColor);
-        }
-
-        float size = Util.ParseFloat(options.Get("size"), this.charSizeInPx.Y);
-        Color colour = this.GetColourOpt(options.Get("colour")) ?? this.surface.FontColor;
-        bool outline = Util.ParseBool(options.Get("outline"), false);
-
-        return this.Circle(size: size, colour: colour, outline: outline);
-    }
-
-    public DrawingSurface Circle(float size, Color colour, Vector2? position = null, bool outline = false) {
-        if (!this.drawing) {
-            this.DrawStart();
-        }
-
-        Vector2 pos = (position ?? this.cursor) + this.viewport.Position;
-
-        this.frame.Add(new MySprite() {
-            Type = SpriteType.TEXTURE,
-            Alignment = TextAlignment.CENTER,
-            Data = outline ? "CircleHollow" : "Circle",
-            Position = pos,
-            Size = new Vector2(size, size),
-            Color = colour,
-            RotationOrScale = 0f,
-        });
-
-        this.cursor.X += size;
-
-        return this;
-    }
-}
-/* GRAPHICS */
-public class Template {
-    public class Token {
-        public bool isText = true;
-        public string value = null;
-    }
-
-    public class Node {
-        public string action;
-        public string text;
-        public Dictionary<string, string> options;
-
-        public Node(string action, string text = null, Dictionary<string, string> options = null) {
-            this.action = action;
-            this.text = text;
-            this.options = options ?? new Dictionary<string, string>();
-        }
-    }
-
-    public delegate void DsCallback(DrawingSurface ds, string token, Dictionary<string, string> options);
-    public delegate string TextCallback();
-
-    public Program program;
-    public System.Text.RegularExpressions.Regex tokenizer;
-    public System.Text.RegularExpressions.Regex cmdSplitter;
-    public System.Text.RegularExpressions.Match match;
-    public Token token;
-    public Dictionary<string, DsCallback> methods;
-    public Dictionary<string, List<Node>> renderNodes;
-    public Dictionary<string, bool> templateVars;
-
-    public char[] splitSemi = new[] { ';' };
-    public char[] splitDot = new[] { '.' };
-    public string[] splitLine = new[] { "\r\n", "\r", "\n" };
-
-    public Template(Program program = null) {
-        this.tokenizer = Util.Regex(@"(\{[^\}]+\}|[^\{]+)", System.Text.RegularExpressions.RegexOptions.Compiled);
-        this.cmdSplitter = Util.Regex(@"(?<newline>\?)?(?<name>[^:]+)(:(?<params>[^:]*))?(:(?<text>.+))?", System.Text.RegularExpressions.RegexOptions.Compiled);
-        this.token = new Token();
-        this.methods = new Dictionary<string, DsCallback>();
-        this.program = program;
-        this.renderNodes = new Dictionary<string, List<Node>>();
-        this.templateVars = new Dictionary<string, bool>();
-
-        this.Register("text", this.RenderText);
-        this.Register("textCircle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.TextCircle(options));
-        this.Register("circle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Circle(options));
-        this.Register("bar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Bar(options));
-        this.Register("midBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.MidBar(options));
-    }
-
-    public void Register(string key, DsCallback callback) {
-        this.methods[key] = callback;
-    }
-
-    public void Register(string key, TextCallback callback) {
-        this.methods[key] = (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Text(callback(), options);
-    }
-
-    public void RenderText(DrawingSurface ds, string text, Dictionary<string, string> options) {
-        ds.Text(text, options);
-    }
-
-    public Dictionary<string, bool> PreRender(string outputName, string templateStrings) {
-        return this.PreRender(outputName, templateStrings.Split(splitLine, StringSplitOptions.None));
-    }
-
-    public Dictionary<string, bool> PreRender(string outputName, string[] templateStrings) {
-        this.templateVars.Clear();
-        List<Node> nodeList = new List<Node>();
-
-        bool autoNewline;
-        foreach (string line in templateStrings) {
-            autoNewline = true;
-            this.match = null;
-
-            while (this.GetToken(line)) {
-                if (this.token.isText) {
-                    nodeList.Add(new Node("text", this.token.value));
-                    continue;
+            string typeString = powerBlock.BlockDefinition.TypeIdString;
+            var battery = powerBlock as IMyBatteryBlock;
+
+            if (battery != null) {
+                this.batteries++;
+                this.batteryCurrent += battery.CurrentStoredPower;
+                this.batteryMax += battery.MaxStoredPower;
+                this.batteryInput += battery.CurrentInput;
+                this.batteryOutput += battery.CurrentOutput;
+                this.batteryOutputMax += battery.MaxOutput;
+                this.batteryOutputMax += battery.MaxInput;
+                if (!battery.Enabled || battery.ChargeMode == ChargeMode.Recharge) {
+                    this.batteryOutputDisabled += battery.MaxOutput;
+                }
+            } else if (powerBlock is IMyReactor) {
+                this.reactors++;
+                this.reactorOutputMW += powerBlock.CurrentOutput;
+                this.reactorOutputMax += powerBlock.MaxOutput;
+
+                if (!powerBlock.Enabled) {
+                    this.reactorOutputDisabled += powerBlock.MaxOutput;
                 }
 
-                System.Text.RegularExpressions.Match m = this.cmdSplitter.Match(this.token.value);
-                if (m.Success) {
-                    var opts = this.StringToDict(m.Groups["params"].Value);
-                    if (m.Groups["newline"].Value != "") {
-                        opts.Set("noNewline", "true");
-                        autoNewline = false;
-                    }
-                    opts.Set("text", m.Groups["text"].Value);
-                    this.AddTemplateTokens(m.Groups["name"].Value);
-                    nodeList.Add(new Node(m.Groups["name"].Value, m.Groups["text"].Value, opts));
-                } else {
-                    this.AddTemplateTokens(this.token.value);
-                    nodeList.Add(new Node(this.token.value));
+                this.items.Clear();
+                var inv = powerBlock.GetInventory(0);
+                inv.GetItems(this.items);
+                for (var i = 0; i < items.Count; i++) {
+                    this.reactorUranium += items[i].Amount;
+                }
+            } else if (powerBlock is IMySolarPanel) {
+                this.solars++;
+                this.solarOutputMW += powerBlock.CurrentOutput;
+                this.solarOutputMax += powerBlock.MaxOutput;
+                if (!powerBlock.Enabled) {
+                    this.solarOutputDisabled += powerBlock.MaxOutput;
+                }
+            } else if (typeString == "MyObjectBuilder_HydrogenEngine") {
+                this.hEngines++;
+                this.hEngineOutputMW += powerBlock.CurrentOutput;
+                this.hEngineOutputMax += powerBlock.MaxOutput;
+                if (!powerBlock.Enabled) {
+                    this.hEngineOutputDisabled += powerBlock.MaxOutput;
+                }
+            } else if (typeString == "MyObjectBuilder_WindTurbine") {
+                this.turbines++;
+                this.turbineOutputMW += powerBlock.CurrentOutput;
+                this.turbineOutputMax += powerBlock.MaxOutput;
+                if (!powerBlock.Enabled) {
+                    this.turbineOutputDisabled += powerBlock.MaxOutput;
                 }
             }
+        }
 
-            if (autoNewline) {
-                nodeList.Add(new Node("newline"));
+        foreach (IMyJumpDrive jumpDrive in jumpDriveBlocks) {
+            if (jumpDrive == null) {
+                continue;
             }
-        }
-
-        this.renderNodes.Add(outputName, nodeList);
-
-        return this.templateVars;
-    }
-
-    public void AddTemplateTokens(string name) {
-        string prefix = "";
-        foreach (string part in name.Split(splitDot, StringSplitOptions.RemoveEmptyEntries)) {
-            this.templateVars[$"{prefix}{part}"] = true;
-            prefix = $"{prefix}{part}.";
+            this.jumpDrives += 1;
+            this.jumpCurrent += jumpDrive.CurrentStoredPower;
+            this.jumpMax += jumpDrive.MaxStoredPower;
         }
     }
 
-    public void Render(DrawingSurface ds, string name = null) {
-        string dsName = name ?? ds.name;
-        List<Node> nodeList = null;
-        if (!this.renderNodes.TryGetValue(dsName, out nodeList)) {
-            ds.Text("No template found").Draw();
+    public void BatteryBar(DrawingSurface ds, string text, Dictionary<string, string> options) {
+        if (this.batteries == 0) {
             return;
         }
+        float io = this.batteryInput - this.batteryOutput;
 
-        DsCallback callback = null;
-        foreach (Node node in nodeList) {
-            if (node.action == "newline") {
-                ds.Newline();
-                continue;
-            }
-
-            if (this.methods.TryGetValue(node.action, out callback)) {
-                callback(ds, node.text, node.options);
-            } else {
-                ds.Text($"{{{node.action}}}");
-            }
-            callback = null;
+        float net = this.batteryCurrent;
+        float remainingMins = io == 0f ? 0 : (this.batteryMax - this.batteryCurrent) * 60 / Math.Abs(io);
+        string pct = Util.PctString(this.batteryCurrent / this.batteryMax);
+        if (this.batteryCurrent / this.batteryMax >= 0.9999f) {
+            pct = "100 %";
+            io = 0;
+            remainingMins = 0;
         }
+        string msg = $"{pct}";
+        if (io < 0) {
+            net = (this.batteryCurrent - this.batteryMax);
+            remainingMins = this.batteryCurrent * 60 / Math.Abs(io);
+            msg = $"{pct}";
+        }
+        double minsLeft = Math.Round(remainingMins);
+        text = text ?? $"{msg} ({(minsLeft <= 60 ? $"{minsLeft} min" : String.Format("{0:0.00} hours", minsLeft / 60))})";
 
-        ds.Draw();
+        float high = this.batteryMax;
+        float low = high;
+
+        options["net"] = net.ToString();
+        options["low"] = low.ToString();
+        options["high"] = high.ToString();
+        options["text"] = text;
+
+        ds.MidBar(options).Newline();
     }
 
-    public Dictionary<string, string> StringToDict(string options = "") {
-        if (options == "") {
-            return new Dictionary<string, string>();
-        }
+    public void IoBar(DrawingSurface ds, string text, Dictionary<string, string> options) {
+        float max = this.CurrentOutput() + this.DisabledMaxOutput();
 
-        return options.Split(splitSemi, StringSplitOptions.RemoveEmptyEntries)
-            .Select(value => value.Split('='))
-            .ToDictionary(pair => pair[0], pair => pair[1]);
-    }
+        this.ioFloats.Clear();
+        this.ioFloats.Add(this.reactorOutputMW / max);
+        this.ioFloats.Add(this.reactorOutputDisabled / max);
+        this.ioFloats.Add(this.hEngineOutputMW / max);
+        this.ioFloats.Add(this.hEngineOutputDisabled / max);
+        this.ioFloats.Add(this.batteryOutput / max);
+        this.ioFloats.Add(this.batteryOutputDisabled / max);
+        this.ioFloats.Add(this.turbineOutputMW / max);
+        this.ioFloats.Add(this.turbineOutputDisabled / max);
+        this.ioFloats.Add(this.solarOutputMW / max);
+        this.ioFloats.Add(this.solarOutputDisabled / max);
 
-    public void Echo(string text) {
-        if (this.program != null) {
-            this.program.Echo(text);
-        }
-    }
-
-    public bool GetToken(string line) {
-        if (this.match == null) {
-            this.match = this.tokenizer.Match(line);
-        } else {
-            this.match = this.match.NextMatch();
-        }
-
-        if (this.match.Success) {
-            try {
-                string _token = this.match.Groups[1].Value;
-                if (_token[0] == '{') {
-                    this.token.value = _token.Substring(1, _token.Length - 2);
-                    this.token.isText = false;
-                } else {
-                    this.token.value = _token;
-                    this.token.isText = true;
-                }
-            } catch (Exception e) {
-                this.Echo($"err parsing token {e}");
-                return false;
-            }
-
-            return true;
-        } else {
-            return false;
-        }
+        ds.MultiBar(this.ioFloats, this.ioColours, text: text, textAlignment: TextAlignment.LEFT).Newline();
     }
 }
+/* POWER */
 /*
  * AIRLOCK
  */
@@ -944,23 +605,36 @@ public class Airlock {
 
     // The name to match (Default will match regular doors). The capture group "(.*)" is used when grouping airlock doors.
     public string doorMatch = "Door(.*)";
-    // The exclusion tag (can be anything).
-    public string doorExclude = "Hangar";
-    // Duration before auto close (milliseconds)
-    public double timeOpen = 720f;
+    public string doorExclude = "Hangar";  // The exclusion tag (can be anything).
+    public double timeOpen = 720f;  // Duration before auto close (milliseconds)
 
     public Airlock(Program program) {
         this.program = program;
         this.airlocks = new Dictionary<string, AirlockDoors>();
         this.airlockBlocks = new List<IMyTerminalBlock>();
         this.locationToAirlockMap = new Dictionary<string, List<IMyFunctionalBlock>>();
-        this.include = Util.Regex(this.doorMatch, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        this.exclude = Util.Regex(this.doorExclude, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        this.doorMatch = this.program.config.Get("airlockDoorMatch", "Door(.*)");
+        this.doorExclude = this.program.config.Get("airlockDoorExclude", "Hangar");
+        this.include = Util.Regex(this.doorMatch);
+        this.exclude = Util.Regex(this.doorExclude);
+        this.timeOpen = Util.ParseFloat(this.program.config.Get("airlockOpenTime"), 750f);
 
         if (this.program.config.Enabled("airlock")) {
-            this.GetMappedAirlocks();
+            this.GetBlocks();
         }
-        this.timeOpen = Util.ParseFloat(this.program.config.Get("airlockOpenTime"), 750f);
+    }
+
+    public void Clear() {
+        this.airlocks.Clear();
+        this.airlockBlocks.Clear();
+        this.locationToAirlockMap.Clear();
     }
 
     public void CheckAirlocks() {
@@ -972,15 +646,13 @@ public class Airlock {
         }
     }
 
-    public void GetMappedAirlocks() {
+    public void GetBlocks() {
         if (!this.program.config.Enabled("airlock")) {
             return;
         }
-        this.airlockBlocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyDoor>(this.airlockBlocks, door => door.IsSameConstructAs(this.program.Me));
+        this.Clear();
 
-        // Parse into hash (identifier => List(door)), where name is "Door <identifier>"
-        this.locationToAirlockMap.Clear();
+        this.program.GridTerminalSystem.GetBlocksOfType<IMyDoor>(this.airlockBlocks, door => door.IsSameConstructAs(this.program.Me));
 
         // Get all door blocks
         foreach (var block in this.airlockBlocks) {
@@ -1074,6 +746,9 @@ public class AirlockDoors {
         this.areOpen.Clear();
 
         foreach (var door in this.blocks) {
+            if (door == null) {
+                continue;
+            }
             if (this.IsOpen(door)) {
                 openCount++;
                 this.areOpen.Add(door);
@@ -1100,374 +775,6 @@ public class AirlockDoors {
 }
 /* AIRLOCK */
 /*
- * POWER
- */
-PowerDetails powerDetails;
-
-public class PowerDetails {
-    public Program program;
-    public Template template;
-    public List<IMyPowerProducer> powerProducerBlocks;
-    public List<IMyJumpDrive> jumpDriveBlocks;
-    public List<MyInventoryItem> items;
-
-    public int jumpDrives;
-    public float jumpMax;
-    public float jumpCurrent;
-
-    public int batteries;
-    public float batteryMax;
-    public float batteryCurrent;
-    public float batteryInput;
-    public float batteryOutput;
-
-    public int reactors;
-    public float reactorOutputMW;
-    public MyFixedPoint reactorUranium;
-
-    public int solars;
-    public float solarOutputMW;
-    public float solarOutputMax;
-
-    // turbines
-    // hydro engines
-
-    public PowerDetails(Program program, Template template = null) {
-        this.program = program;
-        this.template = template;
-        this.powerProducerBlocks = new List<IMyPowerProducer>();
-        this.jumpDriveBlocks = new List<IMyJumpDrive>();
-        this.items = new List<MyInventoryItem>();
-        this.Clear();
-
-        if (this.program.config.Enabled("power")) {
-            this.GetBlocks();
-            this.RegisterTemplateVars();
-        }
-    }
-
-    public void RegisterTemplateVars() {
-        if (this.template == null) {
-            return;
-        }
-        this.template.Register("power.jumpDrives", () => this.jumpDrives.ToString());
-        this.template.Register("power.jumpBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
-            if (this.jumpDrives == 0) {
-                return;
-            }
-            float pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
-            options.Set("text", Util.PctString(pct));
-            options.Set("pct", pct.ToString());
-            ds.Bar(options).Newline();
-        });
-        this.template.Register("power.batteries", () => this.batteries.ToString());
-        this.template.Register("power.batteryBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
-            if (this.batteries == 0) {
-                return;
-            }
-            float pct = this.GetPercent(this.batteryCurrent, this.batteryMax);
-            options.Set("text", Util.PctString(pct));
-            options.Set("pct", pct.ToString());
-            ds.Bar(options).Newline();
-        });
-        this.template.Register("power.solars", () => this.solars.ToString());
-        this.template.Register("power.reactors", () => this.reactors.ToString());
-        this.template.Register("power.reactorMw", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
-            ds.Text($"{this.reactorOutputMW}{text}");
-        });
-        this.template.Register("power.reactorUr", () => $"{Util.FormatNumber(reactorUranium)} kg");
-        this.template.Register("power.io", () => this.PowerIo().ToString());
-        this.template.Register("power.ioBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
-            options.Set("net", this.PowerIo().ToString());
-            options.Set("low", this.batteryCurrent.ToString());
-            options.Set("high", (this.batteryMax - this.batteryCurrent).ToString());
-            ds.MidBar(options).Newline();
-        });
-    }
-
-    public void Clear() {
-        this.jumpDrives = 0;
-        this.jumpMax = 0f;
-        this.jumpCurrent = 0f;
-        this.batteries = 0;
-        this.batteryMax = 0f;
-        this.batteryCurrent = 0f;
-        this.batteryOutput = 0f;
-        this.batteryInput = 0f;
-        this.reactors = 0;
-        this.reactorOutputMW = 0f;
-        this.reactorUranium = 0;
-        this.solars = 0;
-        this.solarOutputMW = 0f;
-        this.solarOutputMax = 0f;
-    }
-
-    public void GetBlocks() {
-        this.powerProducerBlocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyPowerProducer>(this.powerProducerBlocks, b => b.IsSameConstructAs(this.program.Me));
-        this.jumpDriveBlocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyJumpDrive>(this.jumpDriveBlocks, b => b.IsSameConstructAs(this.program.Me));
-    }
-
-    public float GetPercent(float current, float max) {
-        if (max == 0) {
-            return 0f;
-        }
-        return current / max;
-    }
-
-    public float PowerIo() {
-        return this.reactorOutputMW + this.solarOutputMW + this.batteryInput;
-    }
-
-    public void Refresh() {
-        Clear();
-
-        foreach (IMyPowerProducer powerBlock in this.powerProducerBlocks) {
-            if (powerBlock is IMyBatteryBlock) {
-                this.batteries += 1;
-                this.batteryCurrent += ((IMyBatteryBlock)powerBlock).CurrentStoredPower;
-                this.batteryMax += ((IMyBatteryBlock)powerBlock).MaxStoredPower;
-                this.batteryInput += ((IMyBatteryBlock)powerBlock).CurrentInput;
-                this.batteryOutput += ((IMyBatteryBlock)powerBlock).CurrentOutput;
-            } else if (powerBlock is IMyReactor) {
-                this.reactors += 1;
-                this.reactorOutputMW += ((IMyReactor)powerBlock).CurrentOutput;
-
-                this.items.Clear();
-                var inv = ((IMyReactor)powerBlock).GetInventory(0);
-                inv.GetItems(this.items);
-                for (var i = 0; i < items.Count; i++) {
-                    this.reactorUranium += items[i].Amount;
-                }
-            } else if (powerBlock is IMySolarPanel) {
-                this.solars += 1;
-                this.solarOutputMW += ((IMySolarPanel)powerBlock).CurrentOutput;
-                this.solarOutputMax += ((IMySolarPanel)powerBlock).MaxOutput;
-            }
-        }
-
-        foreach (IMyJumpDrive jumpDrive in jumpDriveBlocks) {
-            this.jumpDrives += 1;
-            this.jumpCurrent += jumpDrive.CurrentStoredPower;
-            this.jumpMax += jumpDrive.MaxStoredPower;
-        }
-    }
-
-    public override string ToString() {
-        return
-            $"{this.jumpDrives} Jump drive{Util.Plural(this.jumpDrives, "", "s")}:\n" +
-            $"{this.jumpCurrent} / {this.jumpMax}\n" +
-            $"{this.batteries} Batter{Util.Plural(this.batteries, "y", "ies")}\n" +
-            $"{this.batteryCurrent} / {this.batteryMax}\n" +
-            $"{this.reactors} Reactor{Util.Plural(this.reactors, "", "s")}\n" +
-            $"{this.reactorOutputMW} MW, {Util.FormatNumber(this.reactorUranium)} Fuel";
-    }
-}
-/* POWER */
-/*
- * CARGO
- */
-CargoStatus cargoStatus;
-
-public class CargoStatus {
-    public Program program;
-    public List<IMyTerminalBlock> cargo;
-    public Dictionary<string, VRage.MyFixedPoint> cargoItemCounts;
-    public List<MyInventoryItem> inventoryItems;
-    public System.Text.RegularExpressions.Regex itemRegex;
-    public System.Text.RegularExpressions.Regex ingotRegex;
-    public System.Text.RegularExpressions.Regex oreRegex;
-    public VRage.MyFixedPoint max;
-    public VRage.MyFixedPoint vol;
-    public Template template;
-    public List<float> widths;
-
-    public string itemText;
-    public float pct;
-
-    public CargoStatus(Program program, Template template = null) {
-        this.program = program;
-        this.template = template;
-        this.itemText = "";
-        this.pct = 0f;
-        this.cargo = new List<IMyTerminalBlock>();
-        this.cargoItemCounts = new Dictionary<string, VRage.MyFixedPoint>();
-        this.inventoryItems = new List<MyInventoryItem>();
-        this.itemRegex = Util.Regex(".*/");
-        this.ingotRegex = Util.Regex("Ingot/");
-        this.oreRegex = Util.Regex("Ore/(?!Ice)");
-        this.widths = new List<float>() { 0, 0, 0, 0 };
-
-        if (this.program.config.Enabled("cargo")) {
-            this.GetCargoBlocks();
-            this.RegisterTemplateVars();
-        }
-    }
-
-    public void RegisterTemplateVars() {
-        if (this.template == null) {
-            return;
-        }
-
-        this.template.Register("cargo.stored", () => $"{Util.FormatNumber(1000 * this.vol)} L");
-        this.template.Register("cargo.cap", () => $"{Util.FormatNumber(1000 * this.max)} L");
-        this.template.Register("cargo.bar", this.RenderPct);
-        this.template.Register("cargo.items", this.RenderItems);
-    }
-
-    public void RenderPct(DrawingSurface ds, string text, Dictionary<string, string> options) {
-        Color colour = DrawingSurface.stringToColour.Get("dimgreen");
-        if (this.pct > 60) {
-            colour = DrawingSurface.stringToColour.Get("dimyellow");
-        } else if (this.pct > 85) {
-            colour = DrawingSurface.stringToColour.Get("dimred");
-        }
-        ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct));
-    }
-
-    public void RenderItems(DrawingSurface ds, string text, Dictionary<string, string> options) {
-        if (ds.width / (ds.charSizeInPx.X + 1f) < 30) {
-            foreach (var item in this.cargoItemCounts) {
-                var fmtd = Util.FormatNumber(item.Value);
-                ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(fmtd, textAlignment: TextAlignment.RIGHT).Newline();
-            }
-        } else {
-            this.widths[0] = 0;
-            this.widths[1] = ds.width / 2 - 1.5f * ds.charSizeInPx.X;
-            this.widths[2] = ds.width / 2 + 1.5f * ds.charSizeInPx.X;
-            this.widths[3] = ds.width;
-
-            int i = 0;
-            foreach (var item in this.cargoItemCounts) {
-                var fmtd = Util.FormatNumber(item.Value);
-                ds
-                    .SetCursor(this.widths[(i++ % 4)], null)
-                    .Text($"{item.Key}")
-                    .SetCursor(this.widths[(i++ % 4)], null)
-                    .Text(fmtd, textAlignment: TextAlignment.RIGHT);
-
-                if ((i % 4) == 0) {
-                    ds.Newline();
-                }
-            }
-        }
-    }
-
-// public Func<TResult> MethodAccess<TResult, TArg> (Func<TArg, TResult> func, TArg arg) {
-//     return () => func(arg);
-// }
-
-    public void Clear() {
-        this.itemText = "";
-        this.pct = 0f;
-        this.cargoItemCounts.Clear();
-        this.inventoryItems.Clear();
-    }
-
-    public void GetCargoBlocks() {
-        this.cargo.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.cargo, c =>
-            c.IsSameConstructAs(this.program.Me) &&
-            (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector)
-            // (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector || c is IMyShipWelder || c is IMyShipGrinder)
-        );
-    }
-
-    public void Refresh() {
-        this.Clear();
-
-        this.max = 0;
-        this.vol = 0;
-
-        foreach (var c in this.cargo) {
-            var inv = c.GetInventory(0);
-            this.vol += inv.CurrentVolume;
-            this.max += inv.MaxVolume;
-
-            this.inventoryItems.Clear();
-            inv.GetItems(this.inventoryItems);
-            for (var i = 0; i < this.inventoryItems.Count; i++) {
-                string fullName = this.inventoryItems[i].Type.ToString();
-                string itemName = this.itemRegex.Replace(fullName, "");
-                if (this.ingotRegex.IsMatch(fullName)) {
-                    itemName += " Ingot";
-                } else if (this.oreRegex.IsMatch(fullName)) {
-                    itemName += " Ore";
-                }
-
-                var itemQty = this.inventoryItems[i].Amount;
-                if (!this.cargoItemCounts.ContainsKey(itemName)) {
-                    this.cargoItemCounts.Add(itemName, itemQty);
-                } else {
-                    this.cargoItemCounts[itemName] = this.cargoItemCounts[itemName] + itemQty;
-                }
-            }
-        }
-
-        this.pct = 0f;
-        if (max != 0) {
-            this.pct = (float)this.vol / (float)this.max;
-        }
-        // if (settings[CFG.CARGO_LIGHT] != "") {
-        //     IMyLightingBlock light = (IMyLightingBlock)GetBlockWithName(settings[CFG.CARGO_LIGHT]);
-
-        //     if (light != null && light is IMyLightingBlock) {
-        //         if (pct > 0.98f) {
-        //             light.Color = Color.Red;
-        //         } else if (pct > 0.90f) {
-        //             light.Color = Color.Yellow;
-        //         } else {
-        //             light.Color = Color.White;
-        //         }
-        //     }
-        // }
-
-        // string itemText = "";
-        // int chars;
-        // GetPanelWidthInChars(settings[CFG.CARGO], out chars);
-
-        // int itemIndex = 0;
-        // int doubleColumn = 60;
-        // foreach (var item in cargoItemCounts) {
-        //     var fmtd = Util.FormatNumber(item.Value);
-        //     int maxChars = chars;
-        //     if (chars > doubleColumn) {
-        //         maxChars = (chars - 4) / 2;
-        //     }
-        //     var padLen = (int)(maxChars - item.Key.ToString().Length - fmtd.Length);
-        //     string spacing = (padLen >= 0 ? "".PadRight(padLen, LINE_SPACER) : "\n  ");
-        //     itemText += String.Format("{0}{1}{2}", item.Key, spacing, fmtd);
-        //     if (chars <= doubleColumn || itemIndex % 2 != 0) {
-        //         itemText += '\n';
-        //     } else if (chars > doubleColumn) {
-        //         itemText += "   ";
-        //     }
-        //     itemIndex++;
-        // }
-
-        // itemText = itemText;
-
-        return;
-    }
-
-    public override string ToString() {
-        string itemText = $"{pct}%";
-        foreach (var item in this.cargoItemCounts) {
-            var fmtd = Util.FormatNumber(item.Value);
-            itemText += $"{item.Key}:{fmtd},";
-            this.program.Echo($"{item.Key}:{fmtd},");
-        }
-
-        return itemText;
-    }
-
-    public void Draw(IMyTextSurface surface) {
-        //todo
-    }
-}
-/* CARGO */
-/*
  * PRODUCTION
  */
 public ProductionDetails productionDetails;
@@ -1479,7 +786,8 @@ public class ProductionDetails {
     public List<ProductionBlock> productionBlocks;
     public List<IMyProductionBlock> blocks;
     public Dictionary<ProductionBlock, string> blockStatus;
-    public Dictionary<string, Color> statusDot;
+    public Dictionary<string, string> statusDotColour;
+    public Dictionary<string, VRage.MyFixedPoint> queueItems;
     public double productionCheckFreqMs = 2 * 60 * 1000;
     public double productionOnWaitMs = 5 * 1000;
     public double productionOutTimeMs = 3 * 1000;
@@ -1499,18 +807,36 @@ public class ProductionDetails {
         this.productionItems = new List<MyProductionItem>();
         this.productionBlocks = new List<ProductionBlock>();
         this.blockStatus = new Dictionary<ProductionBlock, string>();
-        this.statusDot = new Dictionary<string, Color>() {
-            { "Idle", DrawingSurface.stringToColour.Get("dimgreen") },
-            { "Working", DrawingSurface.stringToColour.Get("dimyellow") },
-            { "Blocked", DrawingSurface.stringToColour.Get("dimred") }
+        this.queueItems = new Dictionary<string, VRage.MyFixedPoint>();
+        this.statusDotColour = new Dictionary<string, string>() {
+            { "Idle", "dimgreen" },
+            { "Working", "dimyellow" },
+            { "Blocked", "dimred" }
         };
         this.queueBuilder = new StringBuilder();
         this.splitNeline = new[] { '\n' };
 
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
         if (this.program.config.Enabled("power")) {
-            this.GetProductionBlocks();
+            this.GetBlocks();
             this.RegisterTemplateVars();
         }
+    }
+
+    public void Clear() {
+        this.blocks.Clear();
+        this.productionItems.Clear();
+        this.productionBlocks.Clear();
+        this.blockStatus.Clear();
+        this.queueItems.Clear();
+        this.idleTime = 0;
+        this.timeDisabled = 0;
+        this.checking = false;
     }
 
     public void RegisterTemplateVars() {
@@ -1523,7 +849,8 @@ public class ProductionDetails {
             foreach (KeyValuePair<ProductionBlock, string> blk in this.blockStatus) {
                 string status = blk.Key.Status();
                 string blockName = $"{blk.Key.block.CustomName}: {status} {(blk.Key.IsIdle() ? blk.Key.IdleTime() : "")}";
-                ds.TextCircle(this.statusDot.Get(status)).Text(blockName).Newline();
+                Color? colour = ds.GetColourOpt(this.statusDotColour.Get(status));
+                ds.TextCircle(colour, outline: false).Text(blockName).Newline();
 
                 foreach (string str in blk.Value.Split(this.splitNeline, StringSplitOptions.RemoveEmptyEntries)) {
                     ds.Text(str).Newline();
@@ -1532,10 +859,10 @@ public class ProductionDetails {
         });
     }
 
-    public void GetProductionBlocks() {
+    public void GetBlocks() {
         this.blocks.Clear();
         this.program.GridTerminalSystem.GetBlocksOfType<IMyProductionBlock>(this.blocks, b =>
-            b.IsSameConstructAs(this.program.Me) &&
+            (this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me)) &&
             (b is IMyAssembler || b is IMyRefinery) &&
             !b.CustomName.Contains(this.productionIgnoreString)
         );
@@ -1551,12 +878,18 @@ public class ProductionDetails {
             return;
         }
 
-        this.blockStatus.Clear();
+        string itemName;
         bool allIdle = true;
-        this.status = "";
         int assemblers = 0;
         int refineries = 0;
+
+        this.blockStatus.Clear();
+        this.status = "";
+
         foreach (var block in this.productionBlocks) {
+            if (block == null) {
+                continue;
+            }
             bool idle = block.IsIdle();
             if (block.block.DefinitionDisplayNameText.ToString() != "Survival kit") {
                 allIdle = allIdle && idle;
@@ -1568,7 +901,29 @@ public class ProductionDetails {
                     refineries++;
                 }
             }
+
+            this.queueItems.Clear();
+
+            if (!block.IsIdle()) {
+                block.GetQueue(this.productionItems);
+                foreach (MyProductionItem i in this.productionItems) {
+                    itemName = Util.ToItemName(i);
+                    if (!this.queueItems.ContainsKey(itemName)) {
+                        this.queueItems.Add(itemName, i.Amount);
+                    } else {
+                        this.queueItems[itemName] = this.queueItems[itemName] + i.Amount;
+                    }
+                }
+            }
+
+            this.queueBuilder.Clear();
+            foreach (var kv in this.queueItems) {
+                this.queueBuilder.Append($"  {Util.FormatNumber(kv.Value)} x {kv.Key}\n");
+            }
+
+            this.blockStatus.Add(block, this.queueBuilder.ToString());
         }
+
         double timeNow = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
 
         if (allIdle) {
@@ -1614,7 +969,7 @@ public class ProductionDetails {
                 this.status = "Production Enabled";
             }
 
-            // If any assemblers are on, make sure they are all on (master/slave)
+            // If any assemblers are on, make sure they are all on (in case working together)
             if (assemblers > 0) {
                 foreach (var block in this.productionBlocks.Where(b => b.block is IMyAssembler).ToList()) {
                     block.Enabled = true;
@@ -1625,21 +980,6 @@ public class ProductionDetails {
             timeDisabled = 0;
             checking = false;
         }
-
-        foreach (var block in this.productionBlocks) {
-            this.queueBuilder.Clear();
-            // output += String.Format("{0}: {1} {2}\n", block.block.CustomName, block.Status(), (idle ? block.IdleTime() : ""));
-            if (!block.IsIdle()) {
-                block.GetQueue(this.productionItems);
-                foreach (MyProductionItem i in this.productionItems) {
-                    this.queueBuilder.Append($"  {Util.FormatNumber(i.Amount)} x {Util.ToItemName(i)}\n");
-                }
-            }
-
-            this.blockStatus.Add(block, this.queueBuilder.ToString());
-        }
-
-        return;
     }
 }
 
@@ -1701,26 +1041,1082 @@ public class ProductionBlock {
 }
 /* PRODUCTION */
 /*
+ * BLOCK_HEALTH
+ */
+BlockHealth blockHealth;
+
+class BlockHealth {
+    public Program program;
+    public Template template;
+    public System.Text.RegularExpressions.Regex ignoreHealth;
+    public List<IMyTerminalBlock> blocks;
+    public Dictionary<string, string> damaged;
+    public string status;
+
+    public BlockHealth(Program program, Template template) {
+        this.program = program;
+        this.template = template;
+        this.blocks = new List<IMyTerminalBlock>();
+        this.damaged = new Dictionary<string, string>();
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        if (this.program.config.Enabled("health")) {
+            this.GetBlocks();
+            this.RegisterTemplateVars();
+
+            string ignore = this.program.config.Get("healthIgnore");
+            if (ignore != "" && ignore != null) {
+                this.ignoreHealth = Util.Regex(System.Text.RegularExpressions.Regex.Replace(ignore, @"\s*,\s*", "|"));
+            }
+        }
+    }
+
+    public void Clear() {
+        this.damaged.Clear();
+    }
+
+    public void RegisterTemplateVars() {
+        if (this.template == null) {
+            return;
+        }
+
+        this.template.Register("health.status", () => this.status);
+        this.template.Register("health.blocks",
+            (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+                foreach (KeyValuePair<string, string> block in this.damaged) {
+                    ds.Text($"{block.Key} [{block.Value}]").Newline();
+                }
+            }
+        );
+    }
+
+    public float GetHealth(IMyTerminalBlock block) {
+        IMySlimBlock slimblock = block.CubeGrid.GetCubeBlock(block.Position);
+        if (slimblock == null) {
+            return 1f;
+        }
+        float MaxIntegrity = slimblock.MaxIntegrity;
+        float BuildIntegrity = slimblock.BuildIntegrity;
+        float CurrentDamage = slimblock.CurrentDamage;
+
+        return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
+    }
+
+    public void GetBlocks() {
+        this.blocks.Clear();
+        this.program.GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.blocks, b =>
+            this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me));
+    }
+
+    public void Refresh() {
+        this.damaged.Clear();
+        bool showOnHud = this.program.config.Enabled("healthOnHud");
+
+        foreach (var b in this.blocks) {
+            if (b == null) {
+                continue;
+            }
+            if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
+                continue;
+            }
+
+            var health = this.GetHealth(b);
+            if (health != 1f) {
+                this.damaged[b.CustomName] = Util.PctString(health);
+            }
+            if (showOnHud) {
+                b.ShowOnHUD = health != 1f;
+            }
+        }
+
+        this.status = $"{(this.damaged.Count == 0 ? "No damage" : "Damage")} detected";
+    }
+}
+/* BLOCK_HEALTH */
+public class Template {
+    public class Token {
+        public bool isText = true;
+        public string value = null;
+    }
+
+    public class Node {
+        public string action;
+        public string text;
+        public Dictionary<string, string> options;
+
+        public Node(string action, string text = null, Dictionary<string, string> options = null) {
+            this.action = action;
+            this.text = text;
+            this.options = options ?? new Dictionary<string, string>();
+        }
+    }
+
+    public delegate void DsCallback(DrawingSurface ds, string token, Dictionary<string, string> options);
+    public delegate string TextCallback();
+
+    public Program program;
+    public System.Text.RegularExpressions.Regex tokenizer;
+    public System.Text.RegularExpressions.Regex cmdSplitter;
+    public System.Text.RegularExpressions.Match match;
+    public Token token;
+    public Dictionary<string, DsCallback> methods;
+    public Dictionary<string, List<Node>> renderNodes;
+    public Dictionary<string, bool> templateVars;
+
+    public char[] splitSemi = new[] { ';' };
+    public char[] splitDot = new[] { '.' };
+    public string[] splitLine = new[] { "\r\n", "\r", "\n" };
+
+    public Template(Program program = null) {
+        this.program = program;
+        this.tokenizer = Util.Regex(@"(\{[^\}]+\}|[^\{]+)", System.Text.RegularExpressions.RegexOptions.Compiled);
+        this.cmdSplitter = Util.Regex(@"(?<newline>\?)?(?<name>[^:]+)(:(?<params>[^:]*))?(:(?<text>.+))?", System.Text.RegularExpressions.RegexOptions.Compiled);
+        this.token = new Token();
+        this.methods = new Dictionary<string, DsCallback>();
+        this.renderNodes = new Dictionary<string, List<Node>>();
+        this.templateVars = new Dictionary<string, bool>();
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        this.Register("text", this.RenderText);
+        this.Register("textCircle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.TextCircle(options));
+        this.Register("circle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Circle(options));
+        this.Register("bar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Bar(options));
+        this.Register("midBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.MidBar(options));
+        this.Register("multiBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.MultiBar(options));
+    }
+
+    public void Clear() {
+        this.methods.Clear();
+        this.renderNodes.Clear();
+        this.templateVars.Clear();
+    }
+
+    public void Register(string key, DsCallback callback) {
+        this.methods[key] = callback;
+    }
+
+    public void Register(string key, TextCallback callback) {
+        this.methods[key] = (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Text(callback(), options);
+    }
+
+    public void RenderText(DrawingSurface ds, string text, Dictionary<string, string> options) {
+        ds.Text(text, options);
+    }
+
+    public Dictionary<string, bool> PreRender(string outputName, string templateStrings) {
+        return this.PreRender(outputName, templateStrings.Split(splitLine, StringSplitOptions.None));
+    }
+
+    public Dictionary<string, bool> PreRender(string outputName, string[] templateStrings) {
+        this.templateVars.Clear();
+        List<Node> nodeList = new List<Node>();
+
+        bool autoNewline;
+        for (int i = 0; i < templateStrings.Length; ++i) {
+            string line = templateStrings[i].TrimEnd();
+            autoNewline = true;
+            this.match = null;
+
+            while (this.GetToken(line)) {
+                if (this.token.isText) {
+                    nodeList.Add(new Node("text", this.token.value));
+                    continue;
+                }
+
+                System.Text.RegularExpressions.Match m = this.cmdSplitter.Match(this.token.value);
+                if (m.Success) {
+                    var opts = this.StringToDict(m.Groups["params"].Value);
+                    if (m.Groups["newline"].Value != "") {
+                        opts["noNewline"] = "true";
+                        autoNewline = false;
+                    }
+                    string text = (m.Groups["text"].Value == "" ? null : m.Groups["text"].Value);
+                    if (text != null) {
+                        opts["text"] = text;
+                    }
+                    this.AddTemplateTokens(m.Groups["name"].Value);
+                    nodeList.Add(new Node(m.Groups["name"].Value, text, opts));
+                } else {
+                    this.AddTemplateTokens(this.token.value);
+                    nodeList.Add(new Node(this.token.value));
+                }
+            }
+
+            if (autoNewline) {
+                nodeList.Add(new Node("newline"));
+            }
+        }
+
+        this.renderNodes[outputName] = nodeList;
+
+        return this.templateVars;
+    }
+
+    public void AddTemplateTokens(string name) {
+        string prefix = "";
+        foreach (string part in name.Split(splitDot, StringSplitOptions.RemoveEmptyEntries)) {
+            this.templateVars[$"{prefix}{part}"] = true;
+            prefix = $"{prefix}{part}.";
+        }
+    }
+
+    public void Render(DrawingSurface ds, string name = null) {
+        string dsName = name ?? ds.name;
+        List<Node> nodeList = null;
+        if (!this.renderNodes.TryGetValue(dsName, out nodeList)) {
+            ds.Text("No template found").Draw();
+            return;
+        }
+
+        DsCallback callback = null;
+        foreach (Node node in nodeList) {
+            if (node.action == "newline") {
+                ds.Newline();
+                continue;
+            }
+
+            if (this.methods.TryGetValue(node.action, out callback)) {
+                callback(ds, node.text, node.options);
+            } else {
+                ds.Text($"{{{node.action}}}");
+            }
+        }
+
+        ds.Draw();
+    }
+
+    public Dictionary<string, string> StringToDict(string options = "") {
+        if (options == "") {
+            return new Dictionary<string, string>();
+        }
+
+        return options.Split(splitSemi, StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => value.Split('='))
+            .ToDictionary(pair => pair[0], pair => pair[1]);
+    }
+
+    public void Echo(string text) {
+        if (this.program != null) {
+            this.program.Echo(text);
+        }
+    }
+
+    public bool GetToken(string line) {
+        if (this.match == null) {
+            this.match = this.tokenizer.Match(line);
+        } else {
+            this.match = this.match.NextMatch();
+        }
+
+        if (this.match.Success) {
+            try {
+                string _token = this.match.Groups[1].Value;
+                if (_token[0] == '{') {
+                    this.token.value = _token.Substring(1, _token.Length - 2);
+                    this.token.isText = false;
+                } else {
+                    this.token.value = _token;
+                    this.token.isText = true;
+                }
+            } catch (Exception e) {
+                this.Echo($"err parsing token {e}");
+                return false;
+            }
+
+            return true;
+        } else {
+            return false;
+        }
+    }
+}
+/*
+ * CARGO
+ */
+CargoStatus cargoStatus;
+
+public class CargoStatus {
+    public Program program;
+    public List<IMyTerminalBlock> cargoBlocks;
+    public Dictionary<string, VRage.MyFixedPoint> cargoItemCounts;
+    public List<MyInventoryItem> inventoryItems;
+    public System.Text.RegularExpressions.Regex itemRegex;
+    public System.Text.RegularExpressions.Regex ingotRegex;
+    public System.Text.RegularExpressions.Regex oreRegex;
+    public VRage.MyFixedPoint max;
+    public VRage.MyFixedPoint vol;
+    public Template template;
+    public List<float> widths;
+
+    public string itemText;
+    public float pct;
+
+    public CargoStatus(Program program, Template template = null) {
+        this.program = program;
+        this.template = template;
+        this.itemRegex = Util.Regex(".*/");
+        this.ingotRegex = Util.Regex("Ingot/");
+        this.oreRegex = Util.Regex("Ore/(?!Ice)");
+        this.widths = new List<float>() { 0, 0, 0, 0 };
+
+        this.cargoBlocks = new List<IMyTerminalBlock>();
+        this.cargoItemCounts = new Dictionary<string, VRage.MyFixedPoint>();
+        this.inventoryItems = new List<MyInventoryItem>();
+        this.itemText = "";
+        this.pct = 0f;
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        if (this.program.config.Enabled("cargo")) {
+            this.GetBlocks();
+            this.RegisterTemplateVars();
+        }
+    }
+
+    public void Clear() {
+        this.cargoBlocks.Clear();
+        this.cargoItemCounts.Clear();
+        this.inventoryItems.Clear();
+    }
+
+    public void RegisterTemplateVars() {
+        if (this.template == null) {
+            return;
+        }
+
+        this.template.Register("cargo.stored", () => $"{Util.FormatNumber(1000 * this.vol)} L");
+        this.template.Register("cargo.cap", () => $"{Util.FormatNumber(1000 * this.max)} L");
+        this.template.Register("cargo.fullString", () => {
+            string capFmt = Util.GetFormatNumberStr(1000 * this.max);
+
+            return $"{Util.FormatNumber(1000 * this.vol, capFmt)} / {Util.FormatNumber(1000 * this.max, capFmt)} L";
+        });
+        this.template.Register("cargo.bar", this.RenderPct);
+        this.template.Register("cargo.items", this.RenderItems);
+    }
+
+    public void RenderPct(DrawingSurface ds, string text, Dictionary<string, string> options) {
+        string colourName = this.pct > 85 ? "dimred" : this.pct > 60 ? "dimyellow" : "dimgreen";
+        Color? colour = DrawingSurface.stringToColour.Get(colourName);
+        ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct));
+    }
+
+    public void RenderItems(DrawingSurface ds, string text, Dictionary<string, string> options) {
+        if (ds.width / (ds.charSizeInPx.X + 1f) < 40) {
+            foreach (var item in this.cargoItemCounts) {
+                var fmtd = Util.FormatNumber(item.Value);
+                ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(fmtd, textAlignment: TextAlignment.RIGHT).Newline();
+            }
+        } else {
+            this.widths[0] = 0;
+            this.widths[1] = ds.width / 2 - 1.5f * ds.charSizeInPx.X;
+            this.widths[2] = ds.width / 2 + 1.5f * ds.charSizeInPx.X;
+            this.widths[3] = ds.width;
+
+            int i = 0;
+            foreach (var item in this.cargoItemCounts) {
+                var fmtd = Util.FormatNumber(item.Value);
+                ds
+                    .SetCursor(this.widths[(i++ % 4)], null)
+                    .Text($"{item.Key}")
+                    .SetCursor(this.widths[(i++ % 4)], null)
+                    .Text(fmtd, textAlignment: TextAlignment.RIGHT);
+
+                if ((i % 4) == 0) {
+                    ds.Newline();
+                }
+            }
+        }
+    }
+
+    public void GetBlocks() {
+        this.cargoBlocks.Clear();
+        this.program.GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.cargoBlocks, c =>
+            (this.program.config.Enabled("getAllGrids") || c.IsSameConstructAs(this.program.Me)) &&
+            (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector || c is IMyAssembler || c is IMyRefinery)
+            // (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector || c is IMyShipWelder || c is IMyShipGrinder)
+        );
+    }
+
+    public void Refresh() {
+        this.cargoItemCounts.Clear();
+        this.inventoryItems.Clear();
+        this.max = 0;
+        this.vol = 0;
+        this.pct = 0f;
+        string fullName = "";
+        string itemName = "";
+
+        foreach (var c in this.cargoBlocks) {
+            if (c == null) {
+                continue;
+            }
+            var inv = c.GetInventory(0);
+            this.vol += inv.CurrentVolume;
+            this.max += inv.MaxVolume;
+
+            this.inventoryItems.Clear();
+            inv.GetItems(this.inventoryItems);
+            for (var i = 0; i < this.inventoryItems.Count; i++) {
+                fullName = this.inventoryItems[i].Type.ToString();
+                itemName = this.itemRegex.Replace(fullName, "");
+                if (this.ingotRegex.IsMatch(fullName)) {
+                    itemName += " Ingot";
+                } else if (this.oreRegex.IsMatch(fullName)) {
+                    itemName += " Ore";
+                }
+
+                var itemQty = this.inventoryItems[i].Amount;
+                if (!this.cargoItemCounts.ContainsKey(itemName)) {
+                    this.cargoItemCounts.Add(itemName, itemQty);
+                } else {
+                    this.cargoItemCounts[itemName] = this.cargoItemCounts[itemName] + itemQty;
+                }
+            }
+        }
+
+        if (this.max != 0) {
+            this.pct = (float)this.vol / (float)this.max;
+        }
+
+        return;
+    }
+}
+/* CARGO */
+/*
+ * GRAPHICS
+ */
+public class DrawingSurface {
+    public Program program;
+    public IMyTextSurface surface;
+    public RectangleF viewport;
+    public MySpriteDrawFrame frame;
+    public Vector2 cursor;
+    public Vector2 savedCursor;
+    public StringBuilder sb;
+    public Vector2 charSizeInPx;
+    public bool drawing;
+    public Vector2 padding;
+    public float width;
+    public float height;
+    public int charsPerWidth;
+    public int charsPerHeight;
+    public string name;
+    public int ySpace;
+    public Color colourGrey = new Color(40, 40, 40);
+    public char[] commaSep = { ',' };
+    public char[] underscoreSep = { '_' };
+
+    public static Dictionary<string, Color> stringToColour = new Dictionary<string, Color>() {
+        { "black", Color.Black },
+        { "blue", Color.Blue },
+        { "brown", Color.Brown },
+        { "cyan", Color.Cyan },
+        { "dimgray", Color.DimGray },
+        { "gray", Color.Gray },
+        { "green", Color.Green },
+        { "orange", Color.Orange },
+        { "pink", Color.Pink },
+        { "purple", Color.Purple },
+        { "red", Color.Red },
+        { "tan", Color.Tan },
+        { "transparent", Color.Transparent },
+        { "white", Color.White },
+        { "yellow", Color.Yellow },
+        { "dimgreen", Color.Darken(Color.Green, 0.3) },
+        { "dimyellow", Color.Darken(Color.Yellow, 0.6) },
+        { "dimorange", Color.Darken(Color.Orange, 0.2) },
+        { "dimred", Color.Darken(Color.Red, 0.2) }
+    };
+    public static Dictionary<string, TextAlignment> stringToAlignment = new Dictionary<string, TextAlignment>() {
+        { "center", TextAlignment.CENTER },
+        { "left", TextAlignment.LEFT },
+        { "right", TextAlignment.RIGHT }
+    };
+
+    public DrawingSurface(IMyTextSurface surface, Program program, string name = "", int ySpace = 2) {
+        this.program = program;
+        this.surface = surface;
+        this.cursor = new Vector2(0f, 0f);
+        this.savedCursor = new Vector2(0f, 0f);
+        this.sb = new StringBuilder("O");
+        this.charSizeInPx = new Vector2(0f, 0f);
+        this.surface.ContentType = ContentType.SCRIPT;
+        this.drawing = false;
+        this.viewport = new RectangleF(0f, 0f, 0f, 0f);
+        this.name = name;
+        this.ySpace = ySpace;
+
+        this.InitScreen();
+    }
+
+    public void InitScreen() {
+        this.cursor.X = 0f;
+        this.cursor.Y = 0f;
+        this.surface.Script = "";
+
+        this.padding = (this.surface.TextPadding / 100) * this.surface.SurfaceSize;
+        this.viewport.Position = (this.surface.TextureSize - this.surface.SurfaceSize) / 2f + this.padding;
+        this.viewport.Size = this.surface.SurfaceSize - (2 * this.padding);
+        this.width = this.viewport.Width;
+        this.height = this.viewport.Height;
+
+        this.Size();
+    }
+
+    public Color? GetColourOpt(string colour) {
+        if (colour == "" || colour == null) {
+            return null;
+        }
+        if (!colour.Contains(',')) {
+            return DrawingSurface.stringToColour.Get(colour);
+        }
+
+        string[] numbersStr = colour.Split(this.commaSep);
+
+        if (numbersStr.Length < 2) {
+            return null;
+        }
+
+        int r, g, b;
+        int a = 255;
+        if (
+            !int.TryParse(numbersStr[0], out r) ||
+            !int.TryParse(numbersStr[1], out g) ||
+            !int.TryParse(numbersStr[2], out b) ||
+            (numbersStr.Length > 3 && !int.TryParse(numbersStr[3], out a))
+        ) {
+            return null;
+        } else {
+            return new Color(r, g, b, a);
+        }
+    }
+
+    public void DrawStart() {
+        this.InitScreen();
+        this.drawing = true;
+        this.frame = this.surface.DrawFrame();
+    }
+
+    public DrawingSurface Draw() {
+        this.drawing = false;
+        this.frame.Dispose();
+        this.frame = default(MySpriteDrawFrame);
+
+        return this;
+    }
+
+    public DrawingSurface SaveCursor() {
+        this.savedCursor = this.cursor;
+
+        return this;
+    }
+
+    public DrawingSurface SetCursor(float? x, float? y) {
+        this.cursor.X = x ?? this.cursor.X;
+        this.cursor.Y = y ?? this.cursor.Y;
+
+        return this;
+    }
+
+    public DrawingSurface Newline(bool resetX = true) {
+        this.cursor.Y += this.charSizeInPx.Y + this.ySpace;
+        this.cursor.X = resetX ? 0 : this.savedCursor.X;
+
+        return this;
+    }
+
+    public DrawingSurface Size(float? size = null) {
+        this.surface.FontSize = size ?? this.surface.FontSize;
+
+        this.charSizeInPx = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
+        this.charsPerWidth = (int)Math.Floor(this.surface.SurfaceSize.X / this.charSizeInPx.X);
+        this.charsPerHeight = (int)Math.Floor(this.surface.SurfaceSize.Y / this.charSizeInPx.Y);
+
+        return this;
+    }
+
+    public DrawingSurface Text(string text, Dictionary<string, string> options) {
+        if (options == null) {
+            return this.Text(text);
+        }
+        Color? colour = this.GetColourOpt(options.Get("colour", null));
+        TextAlignment textAlignment = DrawingSurface.stringToAlignment.Get(options.Get("align", "left"));
+        float scale = Util.ParseFloat(options.Get("scale"), 1f);
+
+        return this.Text(text, colour: colour, textAlignment: textAlignment, scale: scale);
+    }
+
+    public DrawingSurface Text(
+        string text,
+        Color? colour = null,
+        TextAlignment textAlignment = TextAlignment.LEFT,
+        float scale = 1f,
+        Vector2? position = null
+    ) {
+        if (text == "" || text == null) {
+            return this;
+        }
+
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+        if (colour == null) {
+            colour = this.surface.ScriptForegroundColor;
+        }
+
+        Vector2 pos = (position ?? this.cursor) + this.viewport.Position;
+
+        this.frame.Add(new MySprite() {
+            Type = SpriteType.TEXT,
+            Data = text,
+            Position = pos,
+            RotationOrScale = this.surface.FontSize * scale,
+            Color = colour,
+            Alignment = textAlignment,
+            FontId = surface.Font
+        });
+
+        this.sb.Clear();
+        this.sb.Append(text);
+        Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
+        this.sb.Clear();
+        this.sb.Append("O");
+
+        this.cursor.X += size.X;
+
+        return this;
+    }
+
+    public float ToRad(float deg) {
+        return deg * ((float)Math.PI / 180f);
+    }
+
+    public Color FloatPctToColor(float pct) {
+        if (pct > 0.75f) {
+            return DrawingSurface.stringToColour.Get("dimgreen");
+        } else if (pct > 0.5f) {
+            return DrawingSurface.stringToColour.Get("dimyellow");
+        } else if (pct > 0.25f) {
+            return DrawingSurface.stringToColour.Get("dimorange");
+        }
+
+        return DrawingSurface.stringToColour.Get("dimred");
+    }
+
+    public DrawingSurface MidBar(Dictionary<string, string> options) {
+        float net = Util.ParseFloat(options.Get("net"), 0f);
+        float low = Util.ParseFloat(options.Get("low"), 1f);
+        float high = Util.ParseFloat(options.Get("high"), 1f);
+        float width = Util.ParseFloat(options.Get("width"), 0f);
+        float height = Util.ParseFloat(options.Get("height"), 0f);
+        float pad = Util.ParseFloat(options.Get("pad"), 0.1f);
+        Color? bgColour = this.GetColourOpt(options.Get("colour", null));
+        string text = options.Get("text", null);
+        Color? textColour = this.GetColourOpt(options.Get("textColour", null));
+
+        return this.MidBar(
+            net: net,
+            low: low,
+            high: high,
+            width: width,
+            height: height,
+            pad: pad,
+            bgColour: bgColour,
+            text: text,
+            textColour: textColour
+        );
+    }
+
+    public DrawingSurface MidBar(
+        float net,
+        float low,
+        float high,
+        float width = 0f,
+        float height = 0f,
+        float pad = 0.1f,
+        Color? bgColour = null,
+        string text = null,
+        Color? textColour = null
+    ) {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+        low = (float)Math.Abs(low);
+        high = (float)Math.Abs(high);
+
+        width = (width == 0f) ? this.width - this.cursor.X : width;
+        height = (height == 0f) ? this.charSizeInPx.Y : height;
+        height -= 1f;
+
+        Vector2 pos = this.cursor + this.viewport.Position;
+        pos.Y += (height / 2) + 1f;
+
+        using (frame.Clip((int)pos.X, (int)(pos.Y - height / 2), (int)width, (int)height)) {
+            this.frame.Add(new MySprite {
+                Type = SpriteType.TEXTURE,
+                Alignment = TextAlignment.CENTER,
+                Data = "SquareSimple",
+                Position = pos + new Vector2(width / 2, 0),
+                Size = new Vector2((float)Math.Sqrt(Math.Pow(width, 2) / 2), width),
+                Color = bgColour ?? this.colourGrey,
+                RotationOrScale = this.ToRad(-45f),
+            });
+        }
+
+        pad = (float)Math.Round(pad * height);
+        pos.X += pad;
+        width -= 2 * pad;
+        height -= 2 * pad;
+
+        Color colour = DrawingSurface.stringToColour.Get("dimgreen");
+        float pct = (high == 0f ? 1f : (float)Math.Min(1f, net / high));
+        if (net < 0) {
+            pct = (low == 0f ? -1f : (float)Math.Max(-1f, net / low));
+            colour = DrawingSurface.stringToColour.Get("dimred");
+        }
+        float sideWidth = (float)Math.Abs(Math.Sqrt(2) * pct * width);
+        float leftClip = Math.Min((width / 2), (width / 2) * (1 + pct));
+        float rightClip = Math.Max((width / 2), (width / 2) * (1 + pct));
+
+        using (this.frame.Clip((int)(pos.X + leftClip), (int)(pos.Y - height / 2), (int)Math.Abs(rightClip - leftClip), (int)height)) {
+            this.frame.Add(new MySprite {
+                Type = SpriteType.TEXTURE,
+                Alignment = TextAlignment.CENTER,
+                Data = "SquareSimple",
+                Position = pos + new Vector2(width / 2, 0),
+                Size = new Vector2(sideWidth / 2, width),
+                Color = colour,
+                RotationOrScale = this.ToRad(-45f)
+            });
+        }
+
+        this.frame.Add(new MySprite {
+            Type = SpriteType.TEXTURE,
+            Alignment = TextAlignment.CENTER,
+            Data = "SquareSimple",
+            Position = pos + new Vector2((width / 2), -1f),
+            Size = new Vector2(2f, height + 2f),
+            Color = Color.White,
+            RotationOrScale = 0f
+        });
+
+        text = text ?? Util.PctString(pct);
+        if (text != null && text != "") {
+            this.cursor.X += net > 0 ? (width / 4) : (3 * width / 4);
+            this.Text(text, textColour ?? Color.Black, textAlignment: TextAlignment.CENTER, scale: 0.9f);
+        } else {
+            this.cursor.X += width;
+        }
+
+        return this;
+    }
+
+    public DrawingSurface Bar(Dictionary<string, string> options) {
+        if (options == null || options.Get("pct", null) == null) {
+            return this.Bar(0f, text: "--/--");
+        }
+
+        float pct = Util.ParseFloat(options.Get("pct"));
+        float width = Util.ParseFloat(options.Get("width"), 0f);
+        float height = Util.ParseFloat(options.Get("height"), 0f);
+        Color? fillColour = this.GetColourOpt(options.Get("fillColour"));
+        TextAlignment textAlignment = DrawingSurface.stringToAlignment.Get(options.Get("align", "null"), TextAlignment.CENTER);
+        string text = options.Get("text", null);
+        Color? textColour = this.GetColourOpt(options.Get("textColour"));
+        Color? bgColour = this.GetColourOpt(options.Get("bgColour"));
+        float pad = Util.ParseFloat(options.Get("pad"), 0.1f);
+
+        return this.Bar(
+            pct,
+            width: width,
+            height: height,
+            fillColour: fillColour,
+            textAlignment: textAlignment,
+            text: text,
+            textColour: textColour,
+            bgColour: bgColour,
+            pad: pad
+        );
+    }
+
+    public DrawingSurface Bar(
+        float pct,
+        float width = 0f,
+        float height = 0f,
+        Color? fillColour = null,
+        Vector2? position = null,
+        string text = null,
+        Color? textColour = null,
+        Color? bgColour = null,
+        TextAlignment textAlignment = TextAlignment.CENTER,
+        float pad = 0.1f
+    ) {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
+        width = (width == 0f) ? this.width - this.cursor.X : width;
+        height = (height == 0f) ? this.charSizeInPx.Y : height;
+        height -= 1f;
+
+        Color fill = fillColour ?? this.FloatPctToColor(pct);
+        Vector2 pos = (position ?? this.cursor) + this.viewport.Position;
+        pos.Y += (height / 2) + 1f;
+
+        using (frame.Clip((int)pos.X, (int)(pos.Y - height / 2), (int)width, (int)height)) {
+            this.frame.Add(new MySprite {
+                Type = SpriteType.TEXTURE,
+                Alignment = TextAlignment.CENTER,
+                Data = "SquareSimple",
+                Position = pos + new Vector2(width / 2, 0),
+                Size = new Vector2((float)Math.Sqrt(Math.Pow(width, 2) / 2), width),
+                Color = bgColour ?? this.colourGrey,
+                RotationOrScale = this.ToRad(-45f),
+            });
+        }
+
+        pad = (float)Math.Round(pad * height);
+        pos.X += pad;
+        width -= 2 * pad;
+        height -= 2 * pad;
+
+        using (frame.Clip((int)pos.X, (int)(pos.Y - height / 2), (int)(width * pct), (int)height)) {
+            this.frame.Add(new MySprite {
+                Type = SpriteType.TEXTURE,
+                Alignment = TextAlignment.CENTER,
+                Data = "SquareSimple",
+                Position = pos + new Vector2((width * pct) / 2, 0),
+                Size = new Vector2((float)Math.Floor(Math.Sqrt(Math.Pow((width * pct), 2) / 2)), width),
+                Color = fill,
+                RotationOrScale = this.ToRad(-45f),
+            });
+        }
+
+        text = text ?? Util.PctString(pct);
+        if (text != null && text != "") {
+            this.cursor.X += (width / 2);
+            this.Text(text, textColour ?? Color.Black, textAlignment: textAlignment, scale: 0.9f);
+        } else {
+            this.cursor.X += width;
+        }
+
+        return this;
+    }
+
+    public DrawingSurface MultiBar(Dictionary<string, string> options) {
+        List<Color> colours = options.Get("colours", "").Split(this.underscoreSep)
+            .Select(col => this.GetColourOpt(col) ?? Color.White).ToList();
+        List<float> values = options.Get("values", "").Split(this.underscoreSep)
+            .Select(pct => Util.ParseFloat(pct, 0f)).ToList();
+
+        float width = Util.ParseFloat(options.Get("width"), 0f);
+        float height = Util.ParseFloat(options.Get("height"), 0f);
+        string text = options.Get("text", null);
+        Color? textColour = this.GetColourOpt(options.Get("textColour"));
+        Color? bgColour = this.GetColourOpt(options.Get("bgColour"));
+        TextAlignment textAlignment = DrawingSurface.stringToAlignment.Get(options.Get("align", "null"), TextAlignment.CENTER);
+        float pad = Util.ParseFloat(options.Get("pad"), 0.1f);
+
+        return this.MultiBar(
+            values,
+            colours,
+            width: width,
+            height: height,
+            text: text,
+            textColour: textColour,
+            bgColour: bgColour,
+            textAlignment: textAlignment,
+            pad: pad
+        );
+    }
+
+    public DrawingSurface MultiBar(
+        List<float> values,
+        List<Color> colours,
+        float width = 0f,
+        float height = 0f,
+        Vector2? position = null,
+        string text = null,
+        Color? textColour = null,
+        Color? bgColour = null,
+        TextAlignment textAlignment = TextAlignment.CENTER,
+        float pad = 0.1f
+    ) {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
+        width = (width == 0f) ? this.width - this.cursor.X : width;
+        height = (height == 0f) ? this.charSizeInPx.Y : height;
+        height -= 1f;
+
+        Vector2 pos = (position ?? this.cursor) + this.viewport.Position;
+        pos.Y += (height / 2) + 1f;
+
+        using (frame.Clip((int)pos.X, (int)(pos.Y - height / 2), (int)width, (int)height)) {
+            this.frame.Add(new MySprite {
+                Type = SpriteType.TEXTURE,
+                Alignment = TextAlignment.CENTER,
+                Data = "SquareSimple",
+                Position = pos + new Vector2(width / 2, 0),
+                Size = new Vector2((float)Math.Sqrt(Math.Pow(width, 2) / 2), width),
+                Color = bgColour ?? this.colourGrey,
+                RotationOrScale = this.ToRad(-45f),
+            });
+        }
+
+        pad = (float)Math.Round(pad * height);
+        pos.X += pad;
+        width -= 2 * pad;
+        height -= 2 * pad;
+
+        int i = 0;
+        float sum = 0f;
+        int length = values.Count;
+        for (i = 0; i < values.Count; ++i) {
+            sum += (float)Math.Abs(values[i]);
+            values[i] = sum;
+        }
+
+        for (i = values.Count - 1; i >= 0; --i) {
+            float pct = (float)Math.Min(values[i], 1f);
+            if (pct == 0f) {
+                continue;
+            }
+            Color colour = (colours.Count <= i) ?
+                DrawingSurface.stringToColour.ElementAt(i % DrawingSurface.stringToColour.Count).Value : colours[i];
+            using (frame.Clip((int)pos.X, (int)(pos.Y - height / 2), (int)(width * pct), (int)height)) {
+                this.frame.Add(new MySprite {
+                    Type = SpriteType.TEXTURE,
+                    Alignment = TextAlignment.CENTER,
+                    Data = "SquareSimple",
+                    Position = pos + new Vector2((width * pct) / 2, 0),
+                    Size = new Vector2((float)Math.Floor(Math.Sqrt(Math.Pow((width * pct), 2) / 2)), width),
+                    Color = Color.Black,
+                    RotationOrScale = this.ToRad(-45f),
+                });
+                this.frame.Add(new MySprite {
+                    Type = SpriteType.TEXTURE,
+                    Alignment = TextAlignment.CENTER,
+                    Data = "SquareSimple",
+                    Position = pos + new Vector2((width * pct) / 2, 0),
+                    Size = new Vector2((float)Math.Floor(Math.Sqrt(Math.Pow((width * pct), 2) / 2)), width),
+                    Color = colour,
+                    RotationOrScale = this.ToRad(-45f),
+                });
+            }
+        }
+
+        if (text != null && text != "") {
+            this.cursor.X += (width / 2);
+            this.Text(text, textColour ?? Color.Black, textAlignment: textAlignment, scale: 0.9f);
+        } else {
+            this.cursor.X += width;
+        }
+
+        return this;
+    }
+
+    public DrawingSurface TextCircle(Dictionary<string, string> options) {
+        if (options == null) {
+            return this.TextCircle();
+        }
+
+        Color? colour = this.GetColourOpt(options.Get("colour"));
+        bool outline = Util.ParseBool(options.Get("outline"));
+
+        return this.TextCircle(colour, outline: outline);
+    }
+
+    public DrawingSurface TextCircle(Color? colour = null, bool outline = false) {
+        this.Circle(this.charSizeInPx.X - 2f, colour, position: this.cursor + Vector2.Divide(this.charSizeInPx, 2f), outline: outline);
+        this.cursor.X += 2f;
+
+        return this;
+    }
+
+    public DrawingSurface Circle(Dictionary<string, string> options) {
+        if (options == null) {
+            return this.Circle(this.charSizeInPx.Y, null);
+        }
+
+        float size = Util.ParseFloat(options.Get("size"), this.charSizeInPx.Y);
+        Color? colour = this.GetColourOpt(options.Get("colour"));
+        bool outline = Util.ParseBool(options.Get("outline"), false);
+
+        return this.Circle(size: size, colour: colour, outline: outline);
+    }
+
+    public DrawingSurface Circle(float size, Color? colour, Vector2? position = null, bool outline = false) {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
+        Vector2 pos = (position ?? this.cursor) + this.viewport.Position;
+
+        this.frame.Add(new MySprite() {
+            Type = SpriteType.TEXTURE,
+            Alignment = TextAlignment.CENTER,
+            Data = outline ? "CircleHollow" : "Circle",
+            Position = pos,
+            Size = new Vector2(size, size),
+            Color = colour ?? this.surface.ScriptForegroundColor,
+            RotationOrScale = 0f,
+        });
+
+        this.cursor.X += size;
+
+        return this;
+    }
+}
+/* GRAPHICS */
+/*
  * UTIL
  */
+static readonly System.Globalization.NumberFormatInfo CustomFormat;
+
+static Program() {
+    CustomFormat = (System.Globalization.NumberFormatInfo)System.Globalization.CultureInfo.InvariantCulture.NumberFormat.Clone();
+    CustomFormat.NumberGroupSeparator = $"{(char)0xA0}";
+    CustomFormat.NumberGroupSizes = new [] {3};
+}
+
 public static class Util {
     public static System.Text.RegularExpressions.Regex surfaceExtractor =
         Util.Regex(@"\s<(\d+)>$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-    public static string FormatNumber(VRage.MyFixedPoint input) {
-        string fmt;
+    public static string GetFormatNumberStr(VRage.MyFixedPoint input) {
         int n = Math.Max(0, (int)input);
         if (n == 0) {
             return "0";
-        }
-        if (n < 10000) {
-            fmt = "##";
+        } else if (n < 10000) {
+            return "#,,#";
         } else if (n < 1000000) {
-            fmt = "###0,K";
-        } else {
-            fmt = "###0,,M";
+            return "###,,0,K";
         }
-        return n.ToString(fmt, System.Globalization.CultureInfo.InvariantCulture);
+
+        return string.Concat(Enumerable.Repeat("#", $"{n}".Length)) + "0,,#M";
+    }
+
+    public static string FormatNumber(VRage.MyFixedPoint input, string fmt = null) {
+        fmt = fmt ?? Util.GetFormatNumberStr(input);
+        int n = Math.Max(0, (int)input);
+
+        return n.ToString(fmt, CustomFormat);
     }
 
     public static string TimeFormat(double ms, bool s = false) {
@@ -1743,7 +2139,7 @@ public static class Util {
     }
 
     public static string PctString(float val) {
-        return String.Format("{0,3:0}%", 100 * val);
+        return (val * 100).ToString("#,0.00", CustomFormat) + " %";
     }
 
     public static System.Text.RegularExpressions.Regex Regex(
@@ -1792,7 +2188,7 @@ public static class Dict {
         return dict.TryGetValue(key, out value) ? value : defaultValue;
     }
 
-    public static TValue Set<TKey, TValue>(this Dictionary<TKey, TValue> dict, TKey key, TValue value) {
+    public static TValue Default<TKey, TValue>(this Dictionary<TKey, TValue> dict, TKey key, TValue value) {
         return dict[key] = dict.Get(key, value);
     }
 
