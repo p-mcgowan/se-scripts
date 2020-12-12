@@ -10,15 +10,10 @@
 - [Links](#links)
 
 ### About
-A configurable ship status display which renders sprites to different surfaces using a very flexible templating engine.
+A basic templating engine which allows you to register callbacks, and replace templates with data on the fly.
 
-Makes use of the [templating engine](https://github.com/p-mcgowan/se-scripts/tree/master/template) and [graphics lib](https://github.com/p-mcgowan/se-scripts/tree/master/graphics) scripts to draw sprites.
+Makes use of the [graphics lib](https://github.com/p-mcgowan/se-scripts/tree/master/graphics) script to draw sprites.
 
-Reads from CustomData, parsing a template and a display target section. Easily allows for customization and extension to render awesome screens.
-
-The templates have some built-in functionality, but you can also build your own rendering methods.
-
-Images generated with ini format CustomData (see [Malware's MDK](https://github.com/malware-dev/MDK-SE/wiki/Handling-configuration-and-storage)):
 
 ### Usage
 
