@@ -1,8 +1,17 @@
 [h1]Basic template engine for scripts[/h1]
 
+[b]Important[/b] If you installed an earlier version, there was an issue with the static Program constructor that may cause issues in your saves. Update immediately to fix this - if you have issues with your save files, contact me here or on github and I will help to resolve the issue.
+
 A basic templating engine which allows you to register callbacks, and replace templates with data on the fly
 
 see the [url=https://github.com/p-mcgowan/se-scripts/tree/master/template]template script on github[/url] for more info - will likely not maintain both readmes...
+
+Makes use of this graphics script:
+[url=https://steamcommunity.com/sharedfiles/filedetails/?id=2314207214]sprite graphics[/url]
+
+And is used in this ship status script (some good examples there):
+[url=https://steamcommunity.com/sharedfiles/filedetails/?id=2314209066]ShipStatus (workshop)[/url]
+
 
 [h1]Usage[/h1]
 The Main function shows a demo template, and how to register handlers.

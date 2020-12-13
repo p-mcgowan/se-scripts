@@ -3,6 +3,8 @@ Add some helper methods to make drawing sprites easier using an intuitive API
 
 Mostly just helper code, but can be used on it's own.
 
+[b]Important[/b] If you installed an earlier version, there was an issue with the static Program constructor that may cause issues in your saves. Update immediately to fix this - if you have issues with your save files, contact me here or on github and I will help to resolve the issue.
+
 The readme [url=https://github.com/p-mcgowan/se-scripts/tree/master/graphics]here[/url] has more info, and will likely be updated more often.
 
 See the template engine

@@ -2,6 +2,8 @@
 
 A configurable ship status display which renders sprites to different surfaces using a very flexible templating engine.
 
+[b]Important[/b] If you installed an earlier version, there was an issue with the static Program constructor that may cause issues in your saves. Update immediately to fix this - if you have issues with your save files, contact me here or on github and I will help to resolve the issue.
+
 Makes use of the following to draw sprites:
 [url=https://github.com/p-mcgowan/se-scripts/tree/master/template]template engine (github)[/url]
 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=2314207999]template engine (workshop)[/url]
