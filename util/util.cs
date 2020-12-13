@@ -1,12 +1,14 @@
 /*
  * UTIL
  */
-static readonly System.Globalization.NumberFormatInfo CustomFormat;
-
-static Program() {
-    CustomFormat = (System.Globalization.NumberFormatInfo)System.Globalization.CultureInfo.InvariantCulture.NumberFormat.Clone();
-    CustomFormat.NumberGroupSeparator = $"{(char)0xA0}";
-    CustomFormat.NumberGroupSizes = new [] {3};
+static System.Globalization.NumberFormatInfo CustomFormat;
+public static System.Globalization.NumberFormatInfo GetCustomFormat() {
+    if (CustomFormat == null) {
+        CustomFormat = (System.Globalization.NumberFormatInfo)System.Globalization.CultureInfo.InvariantCulture.NumberFormat.Clone();
+        CustomFormat.NumberGroupSeparator = $"{(char)0xA0}";
+        CustomFormat.NumberGroupSizes = new [] {3};
+    }
+    return CustomFormat;
 }
 
 public static class Util {
@@ -30,7 +32,7 @@ public static class Util {
         fmt = fmt ?? Util.GetFormatNumberStr(input);
         int n = Math.Max(0, (int)input);
 
-        return n.ToString(fmt, CustomFormat);
+        return n.ToString(fmt, GetCustomFormat());
     }
 
     public static string TimeFormat(double ms, bool s = false) {
@@ -53,7 +55,7 @@ public static class Util {
     }
 
     public static string PctString(float val) {
-        return (val * 100).ToString("#,0.00", CustomFormat) + " %";
+        return (val * 100).ToString("#,0.00", GetCustomFormat()) + " %";
     }
 
     public static System.Text.RegularExpressions.Regex Regex(
