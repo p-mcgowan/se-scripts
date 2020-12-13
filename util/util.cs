@@ -95,6 +95,10 @@ public static class Util {
 
         return output;
     }
+
+    public static bool BlockValid(IMyCubeBlock block) {
+        return block.WorldMatrix.Translation != Vector3.Zero;
+    }
 }
 }
 
