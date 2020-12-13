@@ -63,6 +63,14 @@ demo bar: {bar:bgColour=red;textColour=100,100,100;fillColour=blue;pct=0.63:asdf
 
 The template will render the image above (all in the Main demo method).
 
+If you want to show literal brace characters `{` or `}`, escape them with a backslash:
+```cs
+string tpl = "look at these cool squigglies \{\}";
+// also nested
+string tpl = "battery count: \{{tpl.battery}\}";
+// more complicated
+string tpl = "if you type this: {text:0,60,60:\{text:colour=60,0,60,150:\\{coloured text\\}\}}, you get this: {text:colour=60,0,60,150:\{coloured text\}}";
+```
 
 ### Api listing
 

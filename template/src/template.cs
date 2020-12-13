@@ -34,7 +34,7 @@ public class Template {
 
     public Template(Program program = null) {
         this.program = program;
-        this.tokenizer = Util.Regex(@"(\{[^\}]+\}|[^\{]+)", System.Text.RegularExpressions.RegexOptions.Compiled);
+        this.tokenizer = Util.Regex(@"((?<!\\)\{([^\}]|\\\})+(?<!\\)\}|(\\\{|[^\{])+)", System.Text.RegularExpressions.RegexOptions.Compiled);
         this.cmdSplitter = Util.Regex(@"(?<newline>\?)?(?<name>[^:]+)(:(?<params>[^:]*))?(:(?<text>.+))?", System.Text.RegularExpressions.RegexOptions.Compiled);
         this.token = new Token();
         this.methods = new Dictionary<string, DsCallback>();
@@ -82,14 +82,17 @@ public class Template {
         List<Node> nodeList = new List<Node>();
 
         bool autoNewline;
+        string text;
         for (int i = 0; i < templateStrings.Length; ++i) {
             string line = templateStrings[i].TrimEnd();
             autoNewline = true;
             this.match = null;
+            text = null;
 
             while (this.GetToken(line)) {
                 if (this.token.isText) {
-                    nodeList.Add(new Node("text", this.token.value));
+                    text = System.Text.RegularExpressions.Regex.Replace(this.token.value, @"\\([\{\}])", "$1");
+                    nodeList.Add(new Node("text", text));
                     continue;
                 }
 
@@ -100,8 +103,9 @@ public class Template {
                         opts["noNewline"] = "true";
                         autoNewline = false;
                     }
-                    string text = (m.Groups["text"].Value == "" ? null : m.Groups["text"].Value);
+                    text = (m.Groups["text"].Value == "" ? null : m.Groups["text"].Value);
                     if (text != null) {
+                        text = System.Text.RegularExpressions.Regex.Replace(text, @"\\([\{\}])", "$1");
                         opts["text"] = text;
                     }
                     this.AddTemplateTokens(m.Groups["name"].Value);
@@ -162,7 +166,7 @@ public class Template {
 
         return options.Split(splitSemi, StringSplitOptions.RemoveEmptyEntries)
             .Select(value => value.Split('='))
-            .ToDictionary(pair => pair[0], pair => pair[1]);
+            .ToDictionary(pair => pair.Length > 1 ? pair[0] : "unknown", pair => pair.Length > 1 ? pair[1] : pair[0]);
     }
 
     public void Echo(string text) {
