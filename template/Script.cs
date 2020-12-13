@@ -109,8 +109,6 @@ public class Template {
 
     public Template(Program program = null) {
         this.program = program;
-        // |\{text:colour=60,0,60,150:\{coloured text\}\}: {text:colour=60,0,60,150:\{coloured text\}}
-        // |{text:colour=0,60,60:\{cargo.bar\}}:
         this.tokenizer = Util.Regex(@"((?<!\\)\{([^\}]|\\\})+(?<!\\)\}|(\\\{|[^\{])+)", System.Text.RegularExpressions.RegexOptions.Compiled);
         this.cmdSplitter = Util.Regex(@"(?<newline>\?)?(?<name>[^:]+)(:(?<params>[^:]*))?(:(?<text>.+))?", System.Text.RegularExpressions.RegexOptions.Compiled);
         this.token = new Token();
