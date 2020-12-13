@@ -95,6 +95,7 @@ The template vars available by default are:
 [tr][td]power.output[/td][td]none[/td][td]Current energy output (MW).[/td][/tr]
 [tr][td]power.maxOutput[/td][td]none[/td][td]Max possible energy output (MW).[/td][/tr]
 [tr][td]power.ioBar[/td][td]none[/td][td]Bar showing contribution to total power by block. Reactors are blue, H2 engines red, betteries green, turbines yellow, solars cyan. If blocks are disabled, they are shown in a darker colour.[/td][/tr]
+[tr][td]power.ioLegend[/td][td]none[/td][td]Shows a coloured legend for the io bar.[/td][/tr]
 [tr][td]power.jumpBar[/td][td][url=https://github.com/p-mcgowan/se-scripts/tree/master/graphics]default bar options[/url], text: string, pct: float[/td][td]Jump drive charge status. Text and percent override the default bar contents.[/td][/tr]
 [tr][td]power.jumpCurrent[/td][td]none[/td][td]Jump drive current charge (MW).[/td][/tr]
 [tr][td]power.jumpDrives[/td][td]none[/td][td]Jump drive count.[/td][/tr]

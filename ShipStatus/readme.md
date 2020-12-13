@@ -155,6 +155,7 @@ power.engineOutputMax|none|Max H2 engine output (MW).
 power.engineOutputMW|none|Current H2 engine output (MW).
 power.engines|none|Count of H2 engines
 power.ioString|none|Formatted energy IO: net output / max output (utilization %).
+power.ioLegend|none|Shows a coloured legend for the io bar.
 power.input|none|Current energy input (MW).
 power.output|none|Current energy output (MW).
 power.maxOutput|none|Max possible energy output (MW).

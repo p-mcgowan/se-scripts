@@ -48,7 +48,7 @@ public class PowerDetails {
 
     public float battChargeMax = 12f;
 
-    public Color reactorColour = Color.Blue;
+    public Color reactorColour = Color.Lighten(Color.Blue, 0.05);
     public Color hEnginesColour = DrawingSurface.stringToColour["dimred"];
     public Color batteriesColour = DrawingSurface.stringToColour["dimgreen"];
     public Color turbinesColour = DrawingSurface.stringToColour["dimyellow"];
@@ -133,6 +133,21 @@ public class PowerDetails {
             return String.Format("{0:0.00} / {1:0.00} MWh ({2})", io, max, Util.PctString(Math.Abs(io) / max));
         });
         this.template.Register("power.ioBar", this.IoBar);
+        this.template.Register("power.ioLegend", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+            text = text ?? "Reactor / H2 Engine / Battery / Wind / Solar";
+            ds.sb.Clear();
+            ds.sb.Append(text);
+            Vector2 size = Vector2.Divide(ds.surface.MeasureStringInPixels(ds.sb, ds.surface.Font, ds.surface.FontSize), 2);
+            ds.sb.Clear();
+            ds.sb.Append("O");
+            ds.SetCursor(ds.width / 2 - size.X, null);
+            ds
+                .Text("Reactor / ", colour: this.reactorColour)
+                .Text("H2 Engine / ", colour: this.hEnginesColour)
+                .Text("Battery / ", colour: this.batteriesColour)
+                .Text("Wind / ", colour: this.turbinesColour)
+                .Text("Solar", colour: this.solarsColour);
+        });
         this.template.Register("power.reactorString", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
             if (this.reactors == 0) {
                 return;

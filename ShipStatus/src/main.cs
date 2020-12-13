@@ -36,6 +36,7 @@ output=
 |H2 Engines: {power.engines}, Output: {power.engineOutputMW} MW
 |Energy IO: {power.ioString}
 |{power.ioBar}
+|{power.ioLegend}
 |
 |Ship status: {health.status}
 |{health.blocks}
