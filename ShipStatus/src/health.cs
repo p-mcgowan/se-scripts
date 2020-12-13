@@ -77,7 +77,7 @@ class BlockHealth {
         bool showOnHud = this.program.config.Enabled("healthOnHud");
 
         foreach (var b in this.blocks) {
-            if (b == null) {
+            if (!Util.BlockValid(b)) {
                 continue;
             }
             if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {

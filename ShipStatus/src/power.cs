@@ -228,7 +228,7 @@ public class PowerDetails {
         this.Clear();
 
         foreach (IMyPowerProducer powerBlock in this.powerProducerBlocks) {
-            if (powerBlock == null) {
+            if (powerBlock == null || !Util.BlockValid(powerBlock)) {
                 continue;
             }
             string typeString = powerBlock.BlockDefinition.TypeIdString;

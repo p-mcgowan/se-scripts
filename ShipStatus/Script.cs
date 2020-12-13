@@ -378,6 +378,9 @@ public class ProductionDetails {
         );
         this.productionBlocks.Clear();
         foreach (IMyProductionBlock block in this.blocks) {
+            if (block == null || !Util.BlockValid(block)) {
+                continue;
+            }
             this.productionBlocks.Add(new ProductionBlock(this.program, block));
         }
         this.productionBlocks = this.productionBlocks.OrderBy(b => b.block.CustomName).ToList();
@@ -397,7 +400,7 @@ public class ProductionDetails {
         this.status = "";
 
         foreach (var block in this.productionBlocks) {
-            if (block == null) {
+            if (block == null || block.block == null || !Util.BlockValid(block.block)) {
                 continue;
             }
             bool idle = block.IsIdle();
@@ -673,7 +676,7 @@ public class CargoStatus {
         string itemName = "";
 
         foreach (var c in this.cargoBlocks) {
-            if (c == null) {
+            if (!Util.BlockValid(c)) {
                 continue;
             }
             var inv = c.GetInventory(0);
@@ -774,6 +777,9 @@ public class Airlock {
 
         // Get all door blocks
         foreach (var block in this.airlockBlocks) {
+            if (!Util.BlockValid(block)) {
+                continue;
+            }
             var match = this.include.Match(block.CustomName);
             var ignore = this.exclude.Match(block.CustomName);
             if (!match.Success || ignore.Success) {
@@ -864,7 +870,7 @@ public class AirlockDoors {
         this.areOpen.Clear();
 
         foreach (var door in this.blocks) {
-            if (door == null) {
+            if (door == null || !Util.BlockValid(door)) {
                 continue;
             }
             if (this.IsOpen(door)) {
@@ -1561,7 +1567,7 @@ class BlockHealth {
         bool showOnHud = this.program.config.Enabled("healthOnHud");
 
         foreach (var b in this.blocks) {
-            if (b == null) {
+            if (!Util.BlockValid(b)) {
                 continue;
             }
             if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
@@ -1811,7 +1817,7 @@ public class PowerDetails {
         this.Clear();
 
         foreach (IMyPowerProducer powerBlock in this.powerProducerBlocks) {
-            if (powerBlock == null) {
+            if (powerBlock == null || !Util.BlockValid(powerBlock)) {
                 continue;
             }
             string typeString = powerBlock.BlockDefinition.TypeIdString;
@@ -2231,6 +2237,10 @@ public static class Util {
         }
 
         return output;
+    }
+
+    public static bool BlockValid(IMyCubeBlock block) {
+        return block.WorldMatrix.Translation != Vector3.Zero;
     }
 }
 }

@@ -121,7 +121,7 @@ public class CargoStatus {
         string itemName = "";
 
         foreach (var c in this.cargoBlocks) {
-            if (c == null) {
+            if (!Util.BlockValid(c)) {
                 continue;
             }
             var inv = c.GetInventory(0);

@@ -97,6 +97,9 @@ public class ProductionDetails {
         );
         this.productionBlocks.Clear();
         foreach (IMyProductionBlock block in this.blocks) {
+            if (block == null || !Util.BlockValid(block)) {
+                continue;
+            }
             this.productionBlocks.Add(new ProductionBlock(this.program, block));
         }
         this.productionBlocks = this.productionBlocks.OrderBy(b => b.block.CustomName).ToList();
@@ -116,7 +119,7 @@ public class ProductionDetails {
         this.status = "";
 
         foreach (var block in this.productionBlocks) {
-            if (block == null) {
+            if (block == null || block.block == null || !Util.BlockValid(block.block)) {
                 continue;
             }
             bool idle = block.IsIdle();

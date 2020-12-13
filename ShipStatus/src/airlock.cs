@@ -64,6 +64,9 @@ public class Airlock {
 
         // Get all door blocks
         foreach (var block in this.airlockBlocks) {
+            if (!Util.BlockValid(block)) {
+                continue;
+            }
             var match = this.include.Match(block.CustomName);
             var ignore = this.exclude.Match(block.CustomName);
             if (!match.Success || ignore.Success) {
@@ -154,7 +157,7 @@ public class AirlockDoors {
         this.areOpen.Clear();
 
         foreach (var door in this.blocks) {
-            if (door == null) {
+            if (door == null || !Util.BlockValid(door)) {
                 continue;
             }
             if (this.IsOpen(door)) {
