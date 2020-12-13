@@ -1725,10 +1725,10 @@ public class PowerDetails {
             ds.sb.Append("O");
             ds.SetCursor(ds.width / 2 - size.X, null);
             ds
-                .Text("Reactor / ", colour: this.reactorColour)
-                .Text("H2 Engine / ", colour: this.hEnginesColour)
-                .Text("Battery / ", colour: this.batteriesColour)
-                .Text("Wind / ", colour: this.turbinesColour)
+                .Text("Reactor", colour: this.reactorColour).Text(" / ")
+                .Text("H2 Engine", colour: this.hEnginesColour).Text(" / ")
+                .Text("Battery", colour: this.batteriesColour).Text(" / ")
+                .Text("Wind", colour: this.turbinesColour).Text(" / ")
                 .Text("Solar", colour: this.solarsColour);
         });
         this.template.Register("power.reactorString", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
