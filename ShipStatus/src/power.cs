@@ -229,8 +229,10 @@ public class PowerDetails {
                 continue;
             }
             string typeString = block.BlockDefinition.TypeIdString;
+            IMyPowerProducer powerBlock = block as IMyPowerProducer;
+            IMyBatteryBlock battery = powerBlock as IMyBatteryBlock;
+            IMyJumpDrive jumpDrive = block as IMyJumpDrive;
 
-            IMyBatteryBlock battery = block as IMyBatteryBlock;
             if (battery != null) {
                 this.batteries++;
                 this.batteryCurrent += battery.CurrentStoredPower;
@@ -242,11 +244,7 @@ public class PowerDetails {
                 if (!battery.Enabled || battery.ChargeMode == ChargeMode.Recharge) {
                     this.batteryOutputDisabled += battChargeMax;
                 }
-                continue;
-            }
-
-            IMyPowerProducer powerBlock = block as IMyPowerProducer;
-            if (powerBlock is IMyReactor) {
+            } else if (powerBlock is IMyReactor) {
                 this.reactors++;
                 this.reactorOutputMW += powerBlock.CurrentOutput;
                 this.reactorOutputMax += powerBlock.MaxOutput;
@@ -282,10 +280,7 @@ public class PowerDetails {
                 if (!powerBlock.Enabled) {
                     this.turbineOutputDisabled += powerBlock.MaxOutput;
                 }
-            }
-
-            var jumpDrive = powerBlock as IMyJumpDrive;
-            if (jumpDrive != null) {
+            } else if (jumpDrive != null) {
                 this.jumpDrives += 1;
                 this.jumpCurrent += jumpDrive.CurrentStoredPower;
                 this.jumpMax += jumpDrive.MaxStoredPower;
