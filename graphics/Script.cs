@@ -747,6 +747,10 @@ public static class Util {
 
         return output;
     }
+
+    public static bool BlockValid(IMyCubeBlock block) {
+        return block != null && block.WorldMatrix.Translation != Vector3.Zero;
+    }
 }
 }
 
