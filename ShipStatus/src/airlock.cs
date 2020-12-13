@@ -6,7 +6,6 @@ Airlock airlock;
 public class Airlock {
     public Program program;
     public Dictionary<string, AirlockDoors> airlocks;
-    public List<IMyTerminalBlock> airlockBlocks;
     public Dictionary<string, List<IMyFunctionalBlock>> locationToAirlockMap;
     public System.Text.RegularExpressions.Regex include;
     public System.Text.RegularExpressions.Regex exclude;
@@ -19,7 +18,6 @@ public class Airlock {
     public Airlock(Program program) {
         this.program = program;
         this.airlocks = new Dictionary<string, AirlockDoors>();
-        this.airlockBlocks = new List<IMyTerminalBlock>();
         this.locationToAirlockMap = new Dictionary<string, List<IMyFunctionalBlock>>();
 
         this.Reset();
@@ -34,14 +32,11 @@ public class Airlock {
         this.exclude = Util.Regex(this.doorExclude);
         this.timeOpen = Util.ParseFloat(this.program.config.Get("airlockOpenTime"), 750f);
 
-        if (this.program.config.Enabled("airlock")) {
-            this.GetBlocks();
-        }
+        this.GetBlocks();
     }
 
     public void Clear() {
         this.airlocks.Clear();
-        this.airlockBlocks.Clear();
         this.locationToAirlockMap.Clear();
     }
 
@@ -60,10 +55,8 @@ public class Airlock {
         }
         this.Clear();
 
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyDoor>(this.airlockBlocks, door => door.IsSameConstructAs(this.program.Me));
-
         // Get all door blocks
-        foreach (var block in this.airlockBlocks) {
+        foreach (var block in this.program.allBlocks.Where(door => door is IMyDoor && door.IsSameConstructAs(this.program.Me))) {
             if (!Util.BlockValid(block)) {
                 continue;
             }
@@ -157,7 +150,7 @@ public class AirlockDoors {
         this.areOpen.Clear();
 
         foreach (var door in this.blocks) {
-            if (door == null || !Util.BlockValid(door)) {
+            if (!Util.BlockValid(door)) {
                 continue;
             }
             if (this.IsOpen(door)) {

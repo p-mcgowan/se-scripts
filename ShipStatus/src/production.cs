@@ -89,18 +89,17 @@ public class ProductionDetails {
     }
 
     public void GetBlocks() {
-        this.blocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyProductionBlock>(this.blocks, b =>
-            (this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me)) &&
-            (b is IMyAssembler || b is IMyRefinery) &&
-            !b.CustomName.Contains(this.productionIgnoreString)
-        );
         this.productionBlocks.Clear();
-        foreach (IMyProductionBlock block in this.blocks) {
+        foreach (IMyTerminalBlock block in this.program.allBlocks) {
             if (block == null || !Util.BlockValid(block)) {
                 continue;
             }
-            this.productionBlocks.Add(new ProductionBlock(this.program, block));
+            if (!this.program.config.Enabled("getAllGrids") && !block.IsSameConstructAs(this.program.Me)) {
+                continue;
+            }
+            if ((block is IMyAssembler || block is IMyRefinery) && !block.CustomName.Contains(this.productionIgnoreString)) {
+                this.productionBlocks.Add(new ProductionBlock(this.program, block as IMyProductionBlock));
+            }
         }
         this.productionBlocks = this.productionBlocks.OrderBy(b => b.block.CustomName).ToList();
     }
@@ -119,7 +118,7 @@ public class ProductionDetails {
         this.status = "";
 
         foreach (var block in this.productionBlocks) {
-            if (block == null || block.block == null || !Util.BlockValid(block.block)) {
+            if (block == null || !Util.BlockValid(block.block)) {
                 continue;
             }
             bool idle = block.IsIdle();

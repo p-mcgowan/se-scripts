@@ -6,8 +6,7 @@ PowerDetails powerDetails;
 public class PowerDetails {
     public Program program;
     public Template template;
-    public List<IMyPowerProducer> powerProducerBlocks;
-    public List<IMyJumpDrive> jumpDriveBlocks;
+    public IEnumerable<IMyTerminalBlock> blocks;
     public List<MyInventoryItem> items;
     public List<float> ioFloats;
     public List<Color> ioColours;
@@ -57,8 +56,6 @@ public class PowerDetails {
     public PowerDetails(Program program, Template template = null) {
         this.program = program;
         this.template = template;
-        this.powerProducerBlocks = new List<IMyPowerProducer>();
-        this.jumpDriveBlocks = new List<IMyJumpDrive>();
         this.items = new List<MyInventoryItem>();
         this.ioFloats = new List<float>();
         this.ioColours = new List<Color>() {
@@ -189,12 +186,12 @@ public class PowerDetails {
     }
 
     public void GetBlocks() {
-        this.powerProducerBlocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyPowerProducer>(this.powerProducerBlocks, b =>
-            this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me));
-        this.jumpDriveBlocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyJumpDrive>(this.jumpDriveBlocks, b =>
-            this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me));
+        this.blocks = this.program.allBlocks.Where(b => {
+            if (!this.program.config.Enabled("getAllGrids") && !b.IsSameConstructAs(this.program.Me)) {
+                return false;
+            }
+            return b is IMyPowerProducer || b is IMyJumpDrive;
+        });
     }
 
     public float GetPercent(float current, float max) {
@@ -227,13 +224,13 @@ public class PowerDetails {
     public void Refresh() {
         this.Clear();
 
-        foreach (IMyPowerProducer powerBlock in this.powerProducerBlocks) {
-            if (powerBlock == null || !Util.BlockValid(powerBlock)) {
+        foreach (IMyTerminalBlock block in this.blocks) {
+            if (!Util.BlockValid(block)) {
                 continue;
             }
-            string typeString = powerBlock.BlockDefinition.TypeIdString;
-            var battery = powerBlock as IMyBatteryBlock;
+            string typeString = block.BlockDefinition.TypeIdString;
 
+            IMyBatteryBlock battery = block as IMyBatteryBlock;
             if (battery != null) {
                 this.batteries++;
                 this.batteryCurrent += battery.CurrentStoredPower;
@@ -245,7 +242,11 @@ public class PowerDetails {
                 if (!battery.Enabled || battery.ChargeMode == ChargeMode.Recharge) {
                     this.batteryOutputDisabled += battChargeMax;
                 }
-            } else if (powerBlock is IMyReactor) {
+                continue;
+            }
+
+            IMyPowerProducer powerBlock = block as IMyPowerProducer;
+            if (powerBlock is IMyReactor) {
                 this.reactors++;
                 this.reactorOutputMW += powerBlock.CurrentOutput;
                 this.reactorOutputMax += powerBlock.MaxOutput;
@@ -282,15 +283,14 @@ public class PowerDetails {
                     this.turbineOutputDisabled += powerBlock.MaxOutput;
                 }
             }
-        }
 
-        foreach (IMyJumpDrive jumpDrive in jumpDriveBlocks) {
-            if (jumpDrive == null) {
+            var jumpDrive = powerBlock as IMyJumpDrive;
+            if (jumpDrive != null) {
+                this.jumpDrives += 1;
+                this.jumpCurrent += jumpDrive.CurrentStoredPower;
+                this.jumpMax += jumpDrive.MaxStoredPower;
                 continue;
             }
-            this.jumpDrives += 1;
-            this.jumpCurrent += jumpDrive.CurrentStoredPower;
-            this.jumpMax += jumpDrive.MaxStoredPower;
         }
     }
 

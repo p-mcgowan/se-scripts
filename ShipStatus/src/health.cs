@@ -7,14 +7,13 @@ class BlockHealth {
     public Program program;
     public Template template;
     public System.Text.RegularExpressions.Regex ignoreHealth;
-    public List<IMyTerminalBlock> blocks;
+    public IEnumerable<IMyTerminalBlock> blocks;
     public Dictionary<string, string> damaged;
     public string status;
 
     public BlockHealth(Program program, Template template) {
         this.program = program;
         this.template = template;
-        this.blocks = new List<IMyTerminalBlock>();
         this.damaged = new Dictionary<string, string>();
 
         this.Reset();
@@ -67,12 +66,14 @@ class BlockHealth {
     }
 
     public void GetBlocks() {
-        this.blocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.blocks, b =>
-            this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me));
+        this.blocks = this.program.allBlocks.Where(b => this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me));
     }
 
     public void Refresh() {
+        if (this.blocks == null) {
+            return;
+        }
+
         this.damaged.Clear();
         bool showOnHud = this.program.config.Enabled("healthOnHud");
 

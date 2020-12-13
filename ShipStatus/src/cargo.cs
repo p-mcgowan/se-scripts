@@ -5,7 +5,7 @@ CargoStatus cargoStatus;
 
 public class CargoStatus {
     public Program program;
-    public List<IMyTerminalBlock> cargoBlocks;
+    public IEnumerable<IMyTerminalBlock> cargoBlocks;
     public Dictionary<string, VRage.MyFixedPoint> cargoItemCounts;
     public List<MyInventoryItem> inventoryItems;
     public System.Text.RegularExpressions.Regex itemRegex;
@@ -27,7 +27,6 @@ public class CargoStatus {
         this.oreRegex = Util.Regex("Ore/(?!Ice)");
         this.widths = new List<float>() { 0, 0, 0, 0 };
 
-        this.cargoBlocks = new List<IMyTerminalBlock>();
         this.cargoItemCounts = new Dictionary<string, VRage.MyFixedPoint>();
         this.inventoryItems = new List<MyInventoryItem>();
         this.itemText = "";
@@ -46,7 +45,6 @@ public class CargoStatus {
     }
 
     public void Clear() {
-        this.cargoBlocks.Clear();
         this.cargoItemCounts.Clear();
         this.inventoryItems.Clear();
     }
@@ -103,15 +101,17 @@ public class CargoStatus {
     }
 
     public void GetBlocks() {
-        this.cargoBlocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.cargoBlocks, c =>
+        this.cargoBlocks = this.program.allBlocks.Where(c =>
             (this.program.config.Enabled("getAllGrids") || c.IsSameConstructAs(this.program.Me)) &&
             (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector || c is IMyAssembler || c is IMyRefinery)
-            // (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector || c is IMyShipWelder || c is IMyShipGrinder)
         );
     }
 
     public void Refresh() {
+        if (this.cargoBlocks == null) {
+            return;
+        }
+
         this.cargoItemCounts.Clear();
         this.inventoryItems.Clear();
         this.max = 0;

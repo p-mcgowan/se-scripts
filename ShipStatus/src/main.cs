@@ -51,6 +51,7 @@ output=
 
 Dictionary<string, DrawingSurface> drawables = new Dictionary<string, DrawingSurface>();
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
+List<IMyTerminalBlock> allBlocks = new List<IMyTerminalBlock>();
 List<string> strings = new List<string>();
 MyIni ini = new MyIni();
 Template template;
@@ -204,6 +205,7 @@ public bool Configure() {
 }
 
 public Program() {
+    GridTerminalSystem.GetBlocks(allBlocks);
     template = new Template(this);
     powerDetails = new PowerDetails(this, template);
     cargoStatus = new CargoStatus(this, template);
@@ -217,32 +219,20 @@ public Program() {
 }
 
 int i = 0;
-int update100sPerBlockCheck = 6;
-
+int update100sPerBlockCheck = 3;
 public bool RecheckFailed() {
     if (++i % update100sPerBlockCheck == 0 && config.customData != Me.CustomData) {
         return !Configure();
     }
 
     // TODO: fetch blocks once, pass it around
-    switch (i % update100sPerBlockCheck) {
-        case 1:
-            powerDetails.GetBlocks();
-            break;
-        case 2:
-            cargoStatus.GetBlocks();
-            break;
-        case 3:
-            blockHealth.GetBlocks();
-            break;
-        case 4:
-            productionDetails.GetBlocks();
-            break;
-        case 5:
-            airlock.GetBlocks();
-            break;
-        default:
-            break;
+    if (i % (update100sPerBlockCheck + 1) == 0) {
+        GridTerminalSystem.GetBlocks(allBlocks);
+        cargoStatus.GetBlocks();
+        airlock.GetBlocks();
+        blockHealth.GetBlocks();
+        powerDetails.GetBlocks();
+        productionDetails.GetBlocks();
     }
 
     return false;
@@ -251,7 +241,6 @@ public bool RecheckFailed() {
 public void Main(string argument, UpdateType updateSource) {
     if ((updateSource & UpdateType.Update10) == UpdateType.Update10 && config.Enabled("airlock")) {
         airlock.CheckAirlocks();
-
         if ((updateSource & UpdateType.Update100) != UpdateType.Update100) {
             return;
         }

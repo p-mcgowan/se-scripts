@@ -51,6 +51,7 @@ output=
 
 Dictionary<string, DrawingSurface> drawables = new Dictionary<string, DrawingSurface>();
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
+List<IMyTerminalBlock> allBlocks = new List<IMyTerminalBlock>();
 List<string> strings = new List<string>();
 MyIni ini = new MyIni();
 Template template;
@@ -204,6 +205,7 @@ public bool Configure() {
 }
 
 public Program() {
+    GridTerminalSystem.GetBlocks(allBlocks);
     template = new Template(this);
     powerDetails = new PowerDetails(this, template);
     cargoStatus = new CargoStatus(this, template);
@@ -217,32 +219,20 @@ public Program() {
 }
 
 int i = 0;
-int update100sPerBlockCheck = 6;
-
+int update100sPerBlockCheck = 3;
 public bool RecheckFailed() {
     if (++i % update100sPerBlockCheck == 0 && config.customData != Me.CustomData) {
         return !Configure();
     }
 
     // TODO: fetch blocks once, pass it around
-    switch (i % update100sPerBlockCheck) {
-        case 1:
-            powerDetails.GetBlocks();
-            break;
-        case 2:
-            cargoStatus.GetBlocks();
-            break;
-        case 3:
-            blockHealth.GetBlocks();
-            break;
-        case 4:
-            productionDetails.GetBlocks();
-            break;
-        case 5:
-            airlock.GetBlocks();
-            break;
-        default:
-            break;
+    if (i % (update100sPerBlockCheck + 1) == 0) {
+        GridTerminalSystem.GetBlocks(allBlocks);
+        cargoStatus.GetBlocks();
+        airlock.GetBlocks();
+        blockHealth.GetBlocks();
+        powerDetails.GetBlocks();
+        productionDetails.GetBlocks();
     }
 
     return false;
@@ -251,7 +241,6 @@ public bool RecheckFailed() {
 public void Main(string argument, UpdateType updateSource) {
     if ((updateSource & UpdateType.Update10) == UpdateType.Update10 && config.Enabled("airlock")) {
         airlock.CheckAirlocks();
-
         if ((updateSource & UpdateType.Update100) != UpdateType.Update100) {
             return;
         }
@@ -370,18 +359,17 @@ public class ProductionDetails {
     }
 
     public void GetBlocks() {
-        this.blocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyProductionBlock>(this.blocks, b =>
-            (this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me)) &&
-            (b is IMyAssembler || b is IMyRefinery) &&
-            !b.CustomName.Contains(this.productionIgnoreString)
-        );
         this.productionBlocks.Clear();
-        foreach (IMyProductionBlock block in this.blocks) {
+        foreach (IMyTerminalBlock block in this.program.allBlocks) {
             if (block == null || !Util.BlockValid(block)) {
                 continue;
             }
-            this.productionBlocks.Add(new ProductionBlock(this.program, block));
+            if (!this.program.config.Enabled("getAllGrids") && !block.IsSameConstructAs(this.program.Me)) {
+                continue;
+            }
+            if ((block is IMyAssembler || block is IMyRefinery) && !block.CustomName.Contains(this.productionIgnoreString)) {
+                this.productionBlocks.Add(new ProductionBlock(this.program, block as IMyProductionBlock));
+            }
         }
         this.productionBlocks = this.productionBlocks.OrderBy(b => b.block.CustomName).ToList();
     }
@@ -400,7 +388,7 @@ public class ProductionDetails {
         this.status = "";
 
         foreach (var block in this.productionBlocks) {
-            if (block == null || block.block == null || !Util.BlockValid(block.block)) {
+            if (block == null || !Util.BlockValid(block.block)) {
                 continue;
             }
             bool idle = block.IsIdle();
@@ -560,7 +548,7 @@ CargoStatus cargoStatus;
 
 public class CargoStatus {
     public Program program;
-    public List<IMyTerminalBlock> cargoBlocks;
+    public IEnumerable<IMyTerminalBlock> cargoBlocks;
     public Dictionary<string, VRage.MyFixedPoint> cargoItemCounts;
     public List<MyInventoryItem> inventoryItems;
     public System.Text.RegularExpressions.Regex itemRegex;
@@ -582,7 +570,6 @@ public class CargoStatus {
         this.oreRegex = Util.Regex("Ore/(?!Ice)");
         this.widths = new List<float>() { 0, 0, 0, 0 };
 
-        this.cargoBlocks = new List<IMyTerminalBlock>();
         this.cargoItemCounts = new Dictionary<string, VRage.MyFixedPoint>();
         this.inventoryItems = new List<MyInventoryItem>();
         this.itemText = "";
@@ -601,7 +588,6 @@ public class CargoStatus {
     }
 
     public void Clear() {
-        this.cargoBlocks.Clear();
         this.cargoItemCounts.Clear();
         this.inventoryItems.Clear();
     }
@@ -658,15 +644,17 @@ public class CargoStatus {
     }
 
     public void GetBlocks() {
-        this.cargoBlocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.cargoBlocks, c =>
+        this.cargoBlocks = this.program.allBlocks.Where(c =>
             (this.program.config.Enabled("getAllGrids") || c.IsSameConstructAs(this.program.Me)) &&
             (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector || c is IMyAssembler || c is IMyRefinery)
-            // (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector || c is IMyShipWelder || c is IMyShipGrinder)
         );
     }
 
     public void Refresh() {
+        if (this.cargoBlocks == null) {
+            return;
+        }
+
         this.cargoItemCounts.Clear();
         this.inventoryItems.Clear();
         this.max = 0;
@@ -719,7 +707,6 @@ Airlock airlock;
 public class Airlock {
     public Program program;
     public Dictionary<string, AirlockDoors> airlocks;
-    public List<IMyTerminalBlock> airlockBlocks;
     public Dictionary<string, List<IMyFunctionalBlock>> locationToAirlockMap;
     public System.Text.RegularExpressions.Regex include;
     public System.Text.RegularExpressions.Regex exclude;
@@ -732,7 +719,6 @@ public class Airlock {
     public Airlock(Program program) {
         this.program = program;
         this.airlocks = new Dictionary<string, AirlockDoors>();
-        this.airlockBlocks = new List<IMyTerminalBlock>();
         this.locationToAirlockMap = new Dictionary<string, List<IMyFunctionalBlock>>();
 
         this.Reset();
@@ -747,14 +733,11 @@ public class Airlock {
         this.exclude = Util.Regex(this.doorExclude);
         this.timeOpen = Util.ParseFloat(this.program.config.Get("airlockOpenTime"), 750f);
 
-        if (this.program.config.Enabled("airlock")) {
-            this.GetBlocks();
-        }
+        this.GetBlocks();
     }
 
     public void Clear() {
         this.airlocks.Clear();
-        this.airlockBlocks.Clear();
         this.locationToAirlockMap.Clear();
     }
 
@@ -773,10 +756,8 @@ public class Airlock {
         }
         this.Clear();
 
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyDoor>(this.airlockBlocks, door => door.IsSameConstructAs(this.program.Me));
-
         // Get all door blocks
-        foreach (var block in this.airlockBlocks) {
+        foreach (var block in this.program.allBlocks.Where(door => door is IMyDoor && door.IsSameConstructAs(this.program.Me))) {
             if (!Util.BlockValid(block)) {
                 continue;
             }
@@ -870,7 +851,7 @@ public class AirlockDoors {
         this.areOpen.Clear();
 
         foreach (var door in this.blocks) {
-            if (door == null || !Util.BlockValid(door)) {
+            if (!Util.BlockValid(door)) {
                 continue;
             }
             if (this.IsOpen(door)) {
@@ -1497,14 +1478,13 @@ class BlockHealth {
     public Program program;
     public Template template;
     public System.Text.RegularExpressions.Regex ignoreHealth;
-    public List<IMyTerminalBlock> blocks;
+    public IEnumerable<IMyTerminalBlock> blocks;
     public Dictionary<string, string> damaged;
     public string status;
 
     public BlockHealth(Program program, Template template) {
         this.program = program;
         this.template = template;
-        this.blocks = new List<IMyTerminalBlock>();
         this.damaged = new Dictionary<string, string>();
 
         this.Reset();
@@ -1557,12 +1537,14 @@ class BlockHealth {
     }
 
     public void GetBlocks() {
-        this.blocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(this.blocks, b =>
-            this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me));
+        this.blocks = this.program.allBlocks.Where(b => this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me));
     }
 
     public void Refresh() {
+        if (this.blocks == null) {
+            return;
+        }
+
         this.damaged.Clear();
         bool showOnHud = this.program.config.Enabled("healthOnHud");
 
@@ -1595,8 +1577,7 @@ PowerDetails powerDetails;
 public class PowerDetails {
     public Program program;
     public Template template;
-    public List<IMyPowerProducer> powerProducerBlocks;
-    public List<IMyJumpDrive> jumpDriveBlocks;
+    public IEnumerable<IMyTerminalBlock> blocks;
     public List<MyInventoryItem> items;
     public List<float> ioFloats;
     public List<Color> ioColours;
@@ -1646,8 +1627,6 @@ public class PowerDetails {
     public PowerDetails(Program program, Template template = null) {
         this.program = program;
         this.template = template;
-        this.powerProducerBlocks = new List<IMyPowerProducer>();
-        this.jumpDriveBlocks = new List<IMyJumpDrive>();
         this.items = new List<MyInventoryItem>();
         this.ioFloats = new List<float>();
         this.ioColours = new List<Color>() {
@@ -1778,12 +1757,12 @@ public class PowerDetails {
     }
 
     public void GetBlocks() {
-        this.powerProducerBlocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyPowerProducer>(this.powerProducerBlocks, b =>
-            this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me));
-        this.jumpDriveBlocks.Clear();
-        this.program.GridTerminalSystem.GetBlocksOfType<IMyJumpDrive>(this.jumpDriveBlocks, b =>
-            this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me));
+        this.blocks = this.program.allBlocks.Where(b => {
+            if (!this.program.config.Enabled("getAllGrids") && !b.IsSameConstructAs(this.program.Me)) {
+                return false;
+            }
+            return b is IMyPowerProducer || b is IMyJumpDrive;
+        });
     }
 
     public float GetPercent(float current, float max) {
@@ -1816,13 +1795,13 @@ public class PowerDetails {
     public void Refresh() {
         this.Clear();
 
-        foreach (IMyPowerProducer powerBlock in this.powerProducerBlocks) {
-            if (powerBlock == null || !Util.BlockValid(powerBlock)) {
+        foreach (IMyTerminalBlock block in this.blocks) {
+            if (!Util.BlockValid(block)) {
                 continue;
             }
-            string typeString = powerBlock.BlockDefinition.TypeIdString;
-            var battery = powerBlock as IMyBatteryBlock;
+            string typeString = block.BlockDefinition.TypeIdString;
 
+            IMyBatteryBlock battery = block as IMyBatteryBlock;
             if (battery != null) {
                 this.batteries++;
                 this.batteryCurrent += battery.CurrentStoredPower;
@@ -1834,7 +1813,11 @@ public class PowerDetails {
                 if (!battery.Enabled || battery.ChargeMode == ChargeMode.Recharge) {
                     this.batteryOutputDisabled += battChargeMax;
                 }
-            } else if (powerBlock is IMyReactor) {
+                continue;
+            }
+
+            IMyPowerProducer powerBlock = block as IMyPowerProducer;
+            if (powerBlock is IMyReactor) {
                 this.reactors++;
                 this.reactorOutputMW += powerBlock.CurrentOutput;
                 this.reactorOutputMax += powerBlock.MaxOutput;
@@ -1871,15 +1854,14 @@ public class PowerDetails {
                     this.turbineOutputDisabled += powerBlock.MaxOutput;
                 }
             }
-        }
 
-        foreach (IMyJumpDrive jumpDrive in jumpDriveBlocks) {
-            if (jumpDrive == null) {
+            var jumpDrive = powerBlock as IMyJumpDrive;
+            if (jumpDrive != null) {
+                this.jumpDrives += 1;
+                this.jumpCurrent += jumpDrive.CurrentStoredPower;
+                this.jumpMax += jumpDrive.MaxStoredPower;
                 continue;
             }
-            this.jumpDrives += 1;
-            this.jumpCurrent += jumpDrive.CurrentStoredPower;
-            this.jumpMax += jumpDrive.MaxStoredPower;
         }
     }
 
@@ -2240,7 +2222,7 @@ public static class Util {
     }
 
     public static bool BlockValid(IMyCubeBlock block) {
-        return block.WorldMatrix.Translation != Vector3.Zero;
+        return block != null && block.WorldMatrix.Translation != Vector3.Zero;
     }
 }
 }
