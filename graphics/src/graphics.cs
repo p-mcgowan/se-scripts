@@ -134,8 +134,9 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface Newline(bool resetX = true) {
-        this.cursor.Y += this.charSizeInPx.Y + this.ySpace;
+    public DrawingSurface Newline(bool resetX = true, bool reverse = false) {
+        float height = (this.charSizeInPx.Y + this.ySpace) * (reverse ? -1 : 1);
+        this.cursor.Y += height;
         this.cursor.X = resetX ? 0 : this.savedCursor.X;
 
         return this;
@@ -412,6 +413,7 @@ public class DrawingSurface {
         if (text != null && text != "") {
             this.cursor.X += (width / 2);
             this.Text(text, textColour ?? Color.Black, textAlignment: textAlignment, scale: 0.9f);
+            this.cursor.X += (width / 2);
         } else {
             this.cursor.X += width;
         }

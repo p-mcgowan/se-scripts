@@ -196,8 +196,9 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface Newline(bool resetX = true) {
-        this.cursor.Y += this.charSizeInPx.Y + this.ySpace;
+    public DrawingSurface Newline(bool resetX = true, bool reverse = false) {
+        float height = (this.charSizeInPx.Y + this.ySpace) * (reverse ? -1 : 1);
+        this.cursor.Y += height;
         this.cursor.X = resetX ? 0 : this.savedCursor.X;
 
         return this;
@@ -474,6 +475,7 @@ public class DrawingSurface {
         if (text != null && text != "") {
             this.cursor.X += (width / 2);
             this.Text(text, textColour ?? Color.Black, textAlignment: textAlignment, scale: 0.9f);
+            this.cursor.X += (width / 2);
         } else {
             this.cursor.X += width;
         }
@@ -651,12 +653,14 @@ public class DrawingSurface {
 /*
  * UTIL
  */
-static readonly System.Globalization.NumberFormatInfo CustomFormat;
-
-static Program() {
-    CustomFormat = (System.Globalization.NumberFormatInfo)System.Globalization.CultureInfo.InvariantCulture.NumberFormat.Clone();
-    CustomFormat.NumberGroupSeparator = $"{(char)0xA0}";
-    CustomFormat.NumberGroupSizes = new [] {3};
+static System.Globalization.NumberFormatInfo CustomFormat;
+public static System.Globalization.NumberFormatInfo GetCustomFormat() {
+    if (CustomFormat == null) {
+        CustomFormat = (System.Globalization.NumberFormatInfo)System.Globalization.CultureInfo.InvariantCulture.NumberFormat.Clone();
+        CustomFormat.NumberGroupSeparator = $"{(char)0xA0}";
+        CustomFormat.NumberGroupSizes = new [] {3};
+    }
+    return CustomFormat;
 }
 
 public static class Util {
@@ -680,7 +684,7 @@ public static class Util {
         fmt = fmt ?? Util.GetFormatNumberStr(input);
         int n = Math.Max(0, (int)input);
 
-        return n.ToString(fmt, CustomFormat);
+        return n.ToString(fmt, GetCustomFormat());
     }
 
     public static string TimeFormat(double ms, bool s = false) {
@@ -703,7 +707,7 @@ public static class Util {
     }
 
     public static string PctString(float val) {
-        return (val * 100).ToString("#,0.00", CustomFormat) + " %";
+        return (val * 100).ToString("#,0.00", GetCustomFormat()) + " %";
     }
 
     public static System.Text.RegularExpressions.Regex Regex(
@@ -742,10 +746,6 @@ public static class Util {
         }
 
         return output;
-    }
-
-    public static IEnumerable<TValue> Truthy<TValue>(List<TValue> list) {
-        return list.Where(item => item != null);
     }
 }
 }
