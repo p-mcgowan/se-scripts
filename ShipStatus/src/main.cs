@@ -225,7 +225,6 @@ public bool RecheckFailed() {
         return !Configure();
     }
 
-    // TODO: fetch blocks once, pass it around
     if (i % (update100sPerBlockCheck + 1) == 0) {
         GridTerminalSystem.GetBlocks(allBlocks);
         cargoStatus.GetBlocks();
