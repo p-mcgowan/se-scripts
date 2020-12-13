@@ -49,6 +49,7 @@ class BlockHealth {
                 foreach (KeyValuePair<string, string> block in this.damaged) {
                     ds.Text($"{block.Key} [{block.Value}]").Newline();
                 }
+                ds.Newline(reverse: true);
             }
         );
     }

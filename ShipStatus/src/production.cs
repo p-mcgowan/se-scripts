@@ -22,7 +22,7 @@ public class ProductionDetails {
     public double timeDisabled = 0;
     public bool checking = false;
     public double lastCheck = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
-    public char[] splitNeline;
+    public char[] splitNewline;
 
     public ProductionDetails(Program program, Template template) {
         this.program = program;
@@ -38,7 +38,7 @@ public class ProductionDetails {
             { "Blocked", "dimred" }
         };
         this.queueBuilder = new StringBuilder();
-        this.splitNeline = new[] { '\n' };
+        this.splitNewline = new[] { '\n' };
 
         this.Reset();
     }
@@ -70,15 +70,20 @@ public class ProductionDetails {
 
         this.template.Register("production.status", () => this.status);
         this.template.Register("production.blocks",  (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+            bool first = true;
             foreach (KeyValuePair<ProductionBlock, string> blk in this.blockStatus) {
+                if (!first) {
+                    ds.Newline();
+                }
                 string status = blk.Key.Status();
                 string blockName = $"{blk.Key.block.CustomName}: {status} {(blk.Key.IsIdle() ? blk.Key.IdleTime() : "")}";
                 Color? colour = ds.GetColourOpt(this.statusDotColour.Get(status));
-                ds.TextCircle(colour, outline: false).Text(blockName).Newline();
+                ds.TextCircle(colour, outline: false).Text(blockName);
 
-                foreach (string str in blk.Value.Split(this.splitNeline, StringSplitOptions.RemoveEmptyEntries)) {
-                    ds.Text(str).Newline();
+                foreach (string str in blk.Value.Split(this.splitNewline, StringSplitOptions.RemoveEmptyEntries)) {
+                    ds.Newline().Text(str);
                 }
+                first = false;
             }
         });
     }

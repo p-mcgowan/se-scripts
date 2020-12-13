@@ -94,11 +94,12 @@ public class CargoStatus {
                     .SetCursor(this.widths[(i++ % 4)], null)
                     .Text(fmtd, textAlignment: TextAlignment.RIGHT);
 
-                if ((i % 4) == 0) {
+                if ((i % 4) == 0 || i >= this.cargoItemCounts.Count * 2) {
                     ds.Newline();
                 }
             }
         }
+        ds.Newline(reverse: true);
     }
 
     public void GetBlocks() {

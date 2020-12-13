@@ -90,7 +90,32 @@ public class PowerDetails {
         if (this.template == null) {
             return;
         }
+        this.template.Register("power.batteries", () => this.batteries.ToString());
+        this.template.Register("power.batteryCurrent", () => String.Format("{0:0.##}", this.batteryCurrent));
+        this.template.Register("power.batteryInput", () => String.Format("{0:0.##}", this.batteryInput));
+        this.template.Register("power.batteryInputMax", () => String.Format("{0:0.##}", this.batteryInputMax));
+        this.template.Register("power.batteryMax", () => String.Format("{0:0.##}", this.batteryMax));
+        this.template.Register("power.batteryOutput", () => String.Format("{0:0.##}", this.batteryOutput));
+        this.template.Register("power.batteryOutputMax", () => String.Format("{0:0.##}", this.batteryOutputMax));
+        this.template.Register("power.engineOutputMax", () => String.Format("{0:0.##}", this.hEngineOutputMax));
+        this.template.Register("power.engineOutputMW", () => String.Format("{0:0.##}", this.hEngineOutputMW));
+        this.template.Register("power.engines", () => this.hEngines.ToString());
+        this.template.Register("power.input", () => String.Format("{0:0.##}", this.CurrentInput()));
+        this.template.Register("power.jumpCurrent", () => String.Format("{0:0.##}", this.jumpCurrent));
         this.template.Register("power.jumpDrives", () => this.jumpDrives.ToString());
+        this.template.Register("power.jumpMax", () => String.Format("{0:0.##}", this.jumpMax));
+        this.template.Register("power.maxOutput", () => String.Format("{0:0.##}", this.MaxOutput()));
+        this.template.Register("power.output", () => String.Format("{0:0.##}", this.CurrentOutput()));
+        this.template.Register("power.reactorOutputMax", () => String.Format("{0:0.##}", this.reactorOutputMax));
+        this.template.Register("power.reactorOutputMW", () => String.Format("{0:0.##}", this.reactorOutputMW));
+        this.template.Register("power.reactors", () => this.reactors.ToString());
+        this.template.Register("power.reactorUr", () => Util.FormatNumber(this.reactorUranium));
+        this.template.Register("power.solarOutputMax", () => String.Format("{0:0.##}", this.solarOutputMax));
+        this.template.Register("power.solarOutputMW", () => String.Format("{0:0.##}", this.solarOutputMW));
+        this.template.Register("power.solars", () => this.solars.ToString());
+        this.template.Register("power.turbineOutputMax", () => String.Format("{0:0.##}", this.turbineOutputMax));
+        this.template.Register("power.turbineOutputMW", () => String.Format("{0:0.##}", this.turbineOutputMW));
+        this.template.Register("power.turbines", () => this.turbines.ToString());
         this.template.Register("power.jumpBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
             if (this.jumpDrives == 0) {
                 return;
@@ -98,27 +123,23 @@ public class PowerDetails {
             float pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
             options["text"] = text ?? Util.PctString(pct);
             options["pct"] = pct.ToString();
-            ds.Bar(options).Newline();
+            ds.Bar(options);
         });
-        this.template.Register("power.batteries", () => this.batteries.ToString());
         this.template.Register("power.batteryBar", this.BatteryBar);
-        this.template.Register("power.solars", () => this.solars.ToString());
-        this.template.Register("power.turbines", () => this.turbines.ToString());
-        this.template.Register("power.engines", () => this.hEngines.ToString());
-        this.template.Register("power.reactors", () => this.reactors.ToString());
-        this.template.Register("power.reactorMw", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
-            ds.Text($"{this.reactorOutputMW}{text}");
-        });
-        this.template.Register("power.reactorUr", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
-            ds.Text($"{Util.FormatNumber(this.reactorUranium)}{text}");
-        });
-        this.template.Register("power.io", () => {
+        this.template.Register("power.ioString", () => {
             float io = this.CurrentInput() - this.CurrentOutput();
             float max = this.MaxOutput();
 
             return String.Format("{0:0.00} / {1:0.00} MWh ({2})", io, max, Util.PctString(Math.Abs(io) / max));
         });
         this.template.Register("power.ioBar", this.IoBar);
+        this.template.Register("power.reactorString", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+            if (this.reactors == 0) {
+                return;
+            }
+            string msg = text ?? options.Get("text", "Reactors: ");
+            ds.Text($"{msg}{this.reactors}, Output: {this.reactorOutputMW} MW, Ur: {this.reactorUranium}");
+        });
     }
 
     public void Clear() {
@@ -289,7 +310,7 @@ public class PowerDetails {
         options["high"] = high.ToString();
         options["text"] = text;
 
-        ds.MidBar(options).Newline();
+        ds.MidBar(options);
     }
 
     public void IoBar(DrawingSurface ds, string text, Dictionary<string, string> options) {
@@ -307,7 +328,7 @@ public class PowerDetails {
         this.ioFloats.Add(this.solarOutputMW / max);
         this.ioFloats.Add(this.solarOutputDisabled / max);
 
-        ds.MultiBar(this.ioFloats, this.ioColours, text: text, textAlignment: TextAlignment.LEFT).Newline();
+        ds.MultiBar(this.ioFloats, this.ioColours, text: text, textAlignment: TextAlignment.LEFT);
     }
 }
 /* POWER */

@@ -27,18 +27,19 @@
 [LCD Panel]
 output=
 |Jump drives: {power.jumpDrives}
-|{?power.jumpBar}
+|{power.jumpBar}
 |Batteries: {power.batteries}
 |{power.batteryBar}
-|Reactors: {power.reactors} {power.reactorMw:: MW} {power.reactorUr:: Ur}
-|Solar panels: {power.solars}
-|Wind turbines: {power.turbines}
-|H2 Engines: {power.engines}
-|Energy IO: {power.io}
-|{?power.ioBar}
+|Reactors: {power.reactors}, Output: {power.reactorOutputMW} MW  ({power.reactorUr} Ur)
+|Solar panels: {power.solars}, Output: {power.solarOutputMW} MW
+|Wind turbines: {power.turbines}, Output: {power.turbineOutputMW} MW
+|H2 Engines: {power.engines}, Output: {power.engineOutputMW} MW
+|Energy IO: {power.ioString}
+|{power.ioBar}
 |
 |Ship status: {health.status}
 |{health.blocks}
+|
 |{production.status}
 |{production.blocks}
 |
