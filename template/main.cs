@@ -22,30 +22,29 @@ demo bar: {bar:bgColour=red;textColour=100,100,100;fillColour=blue;pct=0.63:asdf
 does this still print
 {text:colour=0,0,100:i'm blue, abadee abadaa}
 {text:colour=red:some like it red}
-???",
-@" ([\r\n]+)",
-"$1"
-);
+???
+", @" ([\r\n]+)", "$1");
 
 
 Random random = new Random();
 
-public void Random(DrawingSurface ds, string text, Dictionary<string, string> opts) {
-    int min = Util.ParseInt(opts.Get("min", "0"), 0);
-    int max = Util.ParseInt(opts.Get("max", "100"), 100);
+public void Random(DrawingSurface ds, string text, DrawingSurface.Options opts) {
+    int min = Util.ParseInt(opts.custom.Get("min", "0"), 0);
+    int max = Util.ParseInt(opts.custom.Get("max", "100"), 100);
     ds.Text($"{this.random.Next(min, max)}");
 }
 
-public void Spacing(DrawingSurface ds, string text, Dictionary<string, string> opts) { }
+public void Spacing(DrawingSurface ds, string text, DrawingSurface.Options opts) { }
 
-public void ConditionalSpacing(DrawingSurface ds, string text, Dictionary<string, string> opts) {
+public void ConditionalSpacing(DrawingSurface ds, string text, DrawingSurface.Options opts) {
     if (this.random.Next(0, 10) > 5) {
-        Color? colour = ds.GetColourOpt(opts.Get("c"));
+        Color? colour = DrawingSurface.StringToColour(opts.custom.Get("c"));
         ds.Text(text, colour: colour).Newline();
     }
 }
 
 public Program() {
+    Runtime.UpdateFrequency = UpdateFrequency.Update100;
     template = new Template(this);
     template.PreRender("the_same_text_string_for_everything", templateStrings);
     blocks.Clear();
@@ -68,6 +67,7 @@ public Program() {
 }
 
 public void Main(string argument, UpdateType updateSource) {
+    Echo(Runtime.LastRunTimeMs.ToString());
     foreach (KeyValuePair<string, DrawingSurface> drawable in drawables) {
         template.Render(drawable.Value, "the_same_text_string_for_everything");
     }

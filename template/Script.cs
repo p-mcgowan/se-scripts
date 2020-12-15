@@ -22,30 +22,29 @@ demo bar: {bar:bgColour=red;textColour=100,100,100;fillColour=blue;pct=0.63:asdf
 does this still print
 {text:colour=0,0,100:i'm blue, abadee abadaa}
 {text:colour=red:some like it red}
-???",
-@" ([\r\n]+)",
-"$1"
-);
+???
+", @" ([\r\n]+)", "$1");
 
 
 Random random = new Random();
 
-public void Random(DrawingSurface ds, string text, Dictionary<string, string> opts) {
-    int min = Util.ParseInt(opts.Get("min", "0"), 0);
-    int max = Util.ParseInt(opts.Get("max", "100"), 100);
+public void Random(DrawingSurface ds, string text, DrawingSurface.Options opts) {
+    int min = Util.ParseInt(opts.custom.Get("min", "0"), 0);
+    int max = Util.ParseInt(opts.custom.Get("max", "100"), 100);
     ds.Text($"{this.random.Next(min, max)}");
 }
 
-public void Spacing(DrawingSurface ds, string text, Dictionary<string, string> opts) { }
+public void Spacing(DrawingSurface ds, string text, DrawingSurface.Options opts) { }
 
-public void ConditionalSpacing(DrawingSurface ds, string text, Dictionary<string, string> opts) {
+public void ConditionalSpacing(DrawingSurface ds, string text, DrawingSurface.Options opts) {
     if (this.random.Next(0, 10) > 5) {
-        Color? colour = ds.GetColourOpt(opts.Get("c"));
+        Color? colour = DrawingSurface.StringToColour(opts.custom.Get("c"));
         ds.Text(text, colour: colour).Newline();
     }
 }
 
 public Program() {
+    Runtime.UpdateFrequency = UpdateFrequency.Update100;
     template = new Template(this);
     template.PreRender("the_same_text_string_for_everything", templateStrings);
     blocks.Clear();
@@ -68,15 +67,287 @@ public Program() {
 }
 
 public void Main(string argument, UpdateType updateSource) {
+    Echo(Runtime.LastRunTimeMs.ToString());
     foreach (KeyValuePair<string, DrawingSurface> drawable in drawables) {
         template.Render(drawable.Value, "the_same_text_string_for_everything");
     }
 }
 /* MAIN */
+public class Template {
+    public class Token {
+        public bool isText = true;
+        public string value = null;
+    }
+
+    public class Node {
+        public string action;
+        public string text;
+        public DrawingSurface.Options options;
+        public MySprite? sprite;
+
+        public Node(string action, string text = null, DrawingSurface.Options opts = null) {
+            this.action = action;
+            this.text = text;
+            this.options = opts ?? new DrawingSurface.Options();
+            if (action == "text") {
+                this.options.text = this.options.text ?? text;
+                this.sprite = DrawingSurface.TextSprite(this.options);
+            }
+        }
+    }
+
+    public delegate void DsCallback(DrawingSurface ds, string token, DrawingSurface.Options options);
+    public delegate string TextCallback();
+
+    public Program program;
+    public System.Text.RegularExpressions.Regex tokenizer;
+    public System.Text.RegularExpressions.Regex cmdSplitter;
+    public System.Text.RegularExpressions.Match match;
+    public Token token;
+    public Dictionary<string, DsCallback> methods;
+    public Dictionary<string, List<Node>> renderNodes;
+    public Dictionary<string, bool> templateVars;
+
+    public char[] splitSemi = new[] { ';' };
+    public char[] splitDot = new[] { '.' };
+    public string[] splitLine = new[] { "\r\n", "\r", "\n" };
+
+    public Template(Program program = null) {
+        this.program = program;
+        this.tokenizer = Util.Regex(@"((?<!\\)\{([^\}]|\\\})+(?<!\\)\}|(\\\{|[^\{])+)", System.Text.RegularExpressions.RegexOptions.Compiled);
+        this.cmdSplitter = Util.Regex(@"(?<newline>\?)?(?<name>[^:]+)(:(?<params>[^:]*))?(:(?<text>.+))?", System.Text.RegularExpressions.RegexOptions.Compiled);
+        this.token = new Token();
+        this.methods = new Dictionary<string, DsCallback>();
+        this.renderNodes = new Dictionary<string, List<Node>>();
+        this.templateVars = new Dictionary<string, bool>();
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        this.Register("textCircle", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.TextCircle(options));
+        this.Register("circle", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.Circle(options));
+        this.Register("bar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.Bar(options));
+        this.Register("midBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.MidBar(options));
+        this.Register("multiBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.MultiBar(options));
+    }
+
+    public void Clear() {
+        this.methods.Clear();
+        this.renderNodes.Clear();
+        this.templateVars.Clear();
+    }
+
+    public void Register(string key, DsCallback callback) {
+        this.methods[key] = callback;
+    }
+
+    public void Register(string key, TextCallback callback) {
+        // TODO: precalc
+        this.methods[key] = (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.Text(callback(), options);
+    }
+
+    public Dictionary<string, bool> PreRender(string outputName, string templateStrings) {
+        return this.PreRender(outputName, templateStrings.Split(splitLine, StringSplitOptions.None));
+    }
+
+    // TODO: only string & yield
+    private Dictionary<string, bool> PreRender(string outputName, string[] templateStrings) {
+        this.templateVars.Clear();
+        List<Node> nodeList = new List<Node>();
+
+        bool autoNewline;
+        string text;
+        for (int i = 0; i < templateStrings.Length; ++i) {
+            string line = templateStrings[i].TrimEnd();
+            autoNewline = true;
+            this.match = null;
+            text = null;
+
+            while (this.GetToken(line)) {
+                if (this.token.isText) {
+                    text = System.Text.RegularExpressions.Regex.Replace(this.token.value, @"\\([\{\}])", "$1");
+                    nodeList.Add(new Node("text", text));
+                    continue;
+                }
+
+                System.Text.RegularExpressions.Match m = this.cmdSplitter.Match(this.token.value);
+                if (m.Success) {
+                    var opts = this.StringToOptions(m.Groups["params"].Value);
+                    if (m.Groups["newline"].Value != "") {
+                        opts.custom["noNewline"] = "true";
+                        autoNewline = false;
+                    }
+                    text = (m.Groups["text"].Value == "" ? null : m.Groups["text"].Value);
+                    if (text != null) {
+                        text = System.Text.RegularExpressions.Regex.Replace(text, @"\\([\{\}])", "$1");
+                        opts.text = text;
+                    }
+                    this.AddTemplateTokens(m.Groups["name"].Value);
+                    nodeList.Add(new Node(m.Groups["name"].Value, text, opts));
+                } else {
+                    this.AddTemplateTokens(this.token.value);
+                    nodeList.Add(new Node(this.token.value));
+                }
+            }
+
+            if (autoNewline) {
+                nodeList.Add(new Node("newline"));
+            }
+        }
+
+        this.renderNodes[outputName] = nodeList;
+
+        return this.templateVars;
+    }
+
+    public void AddTemplateTokens(string name) {
+        string prefix = "";
+        foreach (string part in name.Split(splitDot, StringSplitOptions.RemoveEmptyEntries)) {
+            this.templateVars[$"{prefix}{part}"] = true;
+            prefix = $"{prefix}{part}.";
+        }
+    }
+
+    public void Render(DrawingSurface ds, string name = null) {
+        string dsName = name ?? ds.name;
+        List<Node> nodeList = null;
+        if (!this.renderNodes.TryGetValue(dsName, out nodeList)) {
+            ds.Text("No template found").Draw();
+            return;
+        }
+
+        DsCallback callback = null;
+        foreach (Node node in nodeList) {
+            if (node.action == "newline") {
+                ds.Newline();
+                continue;
+            }
+
+            if (node.action == "text") {
+                ds.AddTextSprite((MySprite)node.sprite);
+                continue;
+            }
+
+            if (this.methods.TryGetValue(node.action, out callback)) {
+                callback(ds, node.text, node.options);
+            } else {
+                ds.Text($"{{{node.action}}}");
+            }
+        }
+
+        ds.Draw();
+    }
+
+    public DrawingSurface.Options StringToOptions(string options = "") {
+        DrawingSurface.Options opts = new DrawingSurface.Options();
+        if (options == "") {
+            return opts;
+        }
+
+        Dictionary<string, string> parsed = options.Split(splitSemi, StringSplitOptions.RemoveEmptyEntries)
+            .Select(v => v.Split('='))
+            .ToDictionary(pair => pair.Length > 1 ? pair[0] : "unknown", pair => pair.Length > 1 ? pair[1] : pair[0]);
+
+        string value;
+        if (parsed.Pop("width", out value)) { opts.width = Util.ParseFloat(value); }
+        if (parsed.Pop("height", out value)) { opts.height = Util.ParseFloat(value); }
+        if (parsed.Pop("outline", out value)) { opts.outline = Util.ParseBool(value); }
+        if (parsed.Pop("bgColour", out value)) { opts.bgColour = DrawingSurface.StringToColour(value); }
+        if (parsed.Pop("colour", out value)) { opts.colour = DrawingSurface.StringToColour(value); }
+        if (parsed.Pop("fillColour", out value)) { opts.fillColour = DrawingSurface.StringToColour(value); }
+        if (parsed.Pop("textColour", out value)) { opts.textColour = DrawingSurface.StringToColour(value); }
+        if (parsed.Pop("height", out value)) { opts.height = Util.ParseFloat(value); }
+        if (parsed.Pop("high", out value)) { opts.high = Util.ParseFloat(value); }
+        if (parsed.Pop("low", out value)) { opts.low = Util.ParseFloat(value); }
+        if (parsed.Pop("net", out value)) { opts.net = Util.ParseFloat(value); }
+        if (parsed.Pop("pad", out value)) { opts.pad = Util.ParseFloat(value); }
+        if (parsed.Pop("pct", out value)) { opts.pct = Util.ParseFloat(value); }
+        if (parsed.Pop("scale", out value)) { opts.scale = Util.ParseFloat(value); }
+        if (parsed.Pop("size", out value)) { opts.size = Util.ParseFloat(value); }
+        if (parsed.Pop("width", out value)) { opts.width = Util.ParseFloat(value); }
+        if (parsed.Pop("text", out value)) { opts.text = value; }
+        if (parsed.Pop("align", out value)) { opts.align = DrawingSurface.stringToAlignment.Get(value); }
+        if (parsed.Pop("colours", out value)) {
+            opts.colours = value.Split(DrawingSurface.underscoreSep)
+                .Select(col => DrawingSurface.StringToColour(col) ?? Color.White).ToList();
+        }
+        if (parsed.Pop("values", out value)) {
+            opts.values = value.Split(DrawingSurface.underscoreSep)
+                .Select(pct => Util.ParseFloat(pct, 0f)).ToList();
+        }
+
+        opts.custom = parsed;
+
+        return opts;
+    }
+
+    public void Echo(string text) {
+        if (this.program != null) {
+            this.program.Echo(text);
+        }
+    }
+
+    public bool GetToken(string line) {
+        if (this.match == null) {
+            this.match = this.tokenizer.Match(line);
+        } else {
+            this.match = this.match.NextMatch();
+        }
+
+        if (this.match.Success) {
+            try {
+                string _token = this.match.Groups[1].Value;
+                if (_token[0] == '{') {
+                    this.token.value = _token.Substring(1, _token.Length - 2);
+                    this.token.isText = false;
+                } else {
+                    this.token.value = _token;
+                    this.token.isText = true;
+                }
+            } catch (Exception e) {
+                this.Echo($"err parsing token {e}");
+                return false;
+            }
+
+            return true;
+        } else {
+            return false;
+        }
+    }
+}
 /*
  * GRAPHICS
  */
 public class DrawingSurface {
+    public class Options {
+        public bool outline = false;
+        public Color? bgColour = null;
+        public Color? colour = null;
+        public Color? fillColour = null;
+        public Color? textColour = null;
+        public float height = 0f;
+        public float high = 1f;
+        public float low = 1f;
+        public float net = 0f;
+        public float pad = 0.1f;
+        public float pct = 0f;
+        public float scale = 1f;
+        public float size = 0f;
+        public float width = 0f;
+        public List<Color> colours = new List<Color>();
+        public List<float> values = new List<float>();
+        public string text = null;
+        public TextAlignment? align = null;
+        public Dictionary<string, string> custom;
+
+        public Options() {
+            this.custom = new Dictionary<string, string>();
+        }
+    }
+
     public Program program;
     public IMyTextSurface surface;
     public RectangleF viewport;
@@ -89,14 +360,13 @@ public class DrawingSurface {
     public Vector2 padding;
     public float width;
     public float height;
-    public int charsPerWidth;
-    public int charsPerHeight;
     public string name;
     public int ySpace;
     public Color colourGrey = new Color(40, 40, 40);
-    public char[] commaSep = { ',' };
-    public char[] underscoreSep = { '_' };
+    public readonly StringBuilder sizeBuilder;
 
+    public static char[] underscoreSep = { '_' };
+    public static char[] commaSep = { ',' };
     public static Dictionary<string, Color> stringToColour = new Dictionary<string, Color>() {
         { "black", Color.Black },
         { "blue", Color.Blue },
@@ -124,12 +394,13 @@ public class DrawingSurface {
         { "right", TextAlignment.RIGHT }
     };
 
-    public DrawingSurface(IMyTextSurface surface, Program program, string name = "", int ySpace = 2) {
+    public DrawingSurface(IMyTextSurface surface = null, Program program = null, string name = "", int ySpace = 2) {
         this.program = program;
         this.surface = surface;
         this.cursor = new Vector2(0f, 0f);
         this.savedCursor = new Vector2(0f, 0f);
-        this.sb = new StringBuilder("O");
+        this.sb = new StringBuilder();
+        this.sizeBuilder = new StringBuilder("O");
         this.charSizeInPx = new Vector2(0f, 0f);
         this.surface.ContentType = ContentType.SCRIPT;
         this.drawing = false;
@@ -141,6 +412,10 @@ public class DrawingSurface {
     }
 
     public void InitScreen() {
+        if (this.surface == null) {
+            return;
+        }
+
         this.cursor.X = 0f;
         this.cursor.Y = 0f;
         this.surface.Script = "";
@@ -154,7 +429,7 @@ public class DrawingSurface {
         this.Size();
     }
 
-    public Color? GetColourOpt(string colour) {
+    public static Color? StringToColour(string colour) {
         if (colour == "" || colour == null) {
             return null;
         }
@@ -162,7 +437,7 @@ public class DrawingSurface {
             return DrawingSurface.stringToColour.Get(colour);
         }
 
-        string[] numbersStr = colour.Split(this.commaSep);
+        string[] numbersStr = colour.Split(DrawingSurface.commaSep);
 
         if (numbersStr.Length < 2) {
             return null;
@@ -191,7 +466,6 @@ public class DrawingSurface {
     public DrawingSurface Draw() {
         this.drawing = false;
         this.frame.Dispose();
-        this.frame = default(MySpriteDrawFrame);
 
         return this;
     }
@@ -219,23 +493,52 @@ public class DrawingSurface {
 
     public DrawingSurface Size(float? size = null) {
         this.surface.FontSize = size ?? this.surface.FontSize;
-
-        this.charSizeInPx = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
-        this.charsPerWidth = (int)Math.Floor(this.surface.SurfaceSize.X / this.charSizeInPx.X);
-        this.charsPerHeight = (int)Math.Floor(this.surface.SurfaceSize.Y / this.charSizeInPx.Y);
+        this.charSizeInPx = this.surface.MeasureStringInPixels(this.sizeBuilder, this.surface.Font, this.surface.FontSize);
 
         return this;
     }
 
-    public DrawingSurface Text(string text, Dictionary<string, string> options) {
+    public static MySprite TextSprite(Options options) {
+        Color? colour = options.colour;
+        TextAlignment textAlignment = options.align ?? TextAlignment.LEFT;
+        float scale = options.scale;
+        string text = options.text;
+
+        return new MySprite() {
+            Type = SpriteType.TEXT,
+            Data = text,
+            Color = colour,
+            Alignment = textAlignment,
+            RotationOrScale = scale
+        };
+    }
+
+    public void AddTextSprite(MySprite sprite) {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
+        this.sb.Clear();
+        this.sb.Append(sprite.Data);
+        Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
+
+        sprite.Position = this.cursor + this.viewport.Position;
+        sprite.RotationOrScale = this.surface.FontSize * sprite.RotationOrScale;
+        sprite.FontId = this.surface.Font;
+        sprite.Color = sprite.Color ?? this.surface.ScriptForegroundColor;
+
+        this.frame.Add(sprite);
+
+        this.cursor.X += size.X;
+    }
+
+    public DrawingSurface Text(string text, Options options) {
         if (options == null) {
             return this.Text(text);
         }
-        Color? colour = this.GetColourOpt(options.Get("colour", null));
-        TextAlignment textAlignment = DrawingSurface.stringToAlignment.Get(options.Get("align", "left"));
-        float scale = Util.ParseFloat(options.Get("scale"), 1f);
+        TextAlignment textAlignment = options.align ?? TextAlignment.LEFT;
 
-        return this.Text(text, colour: colour, textAlignment: textAlignment, scale: scale);
+        return this.Text(text, colour: options.colour, textAlignment: textAlignment, scale: options.scale);
     }
 
     public DrawingSurface Text(
@@ -252,9 +555,7 @@ public class DrawingSurface {
         if (!this.drawing) {
             this.DrawStart();
         }
-        if (colour == null) {
-            colour = this.surface.ScriptForegroundColor;
-        }
+        colour = colour ?? this.surface.ScriptForegroundColor;
 
         Vector2 pos = (position ?? this.cursor) + this.viewport.Position;
 
@@ -271,8 +572,6 @@ public class DrawingSurface {
         this.sb.Clear();
         this.sb.Append(text);
         Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
-        this.sb.Clear();
-        this.sb.Append("O");
 
         this.cursor.X += size.X;
 
@@ -295,27 +594,17 @@ public class DrawingSurface {
         return DrawingSurface.stringToColour.Get("dimred");
     }
 
-    public DrawingSurface MidBar(Dictionary<string, string> options) {
-        float net = Util.ParseFloat(options.Get("net"), 0f);
-        float low = Util.ParseFloat(options.Get("low"), 1f);
-        float high = Util.ParseFloat(options.Get("high"), 1f);
-        float width = Util.ParseFloat(options.Get("width"), 0f);
-        float height = Util.ParseFloat(options.Get("height"), 0f);
-        float pad = Util.ParseFloat(options.Get("pad"), 0.1f);
-        Color? bgColour = this.GetColourOpt(options.Get("colour", null));
-        string text = options.Get("text", null);
-        Color? textColour = this.GetColourOpt(options.Get("textColour", null));
-
+    public DrawingSurface MidBar(Options options) {
         return this.MidBar(
-            net: net,
-            low: low,
-            high: high,
-            width: width,
-            height: height,
-            pad: pad,
-            bgColour: bgColour,
-            text: text,
-            textColour: textColour
+            net: options.net,
+            low: options.low,
+            high: options.high,
+            width: options.width,
+            height: options.height,
+            pad: options.pad,
+            bgColour: options.bgColour,
+            text: options.text,
+            textColour: options.textColour
         );
     }
 
@@ -403,31 +692,21 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface Bar(Dictionary<string, string> options) {
-        if (options == null || options.Get("pct", null) == null) {
+    public DrawingSurface Bar(Options options) {
+        if (options == null || options.pct == 0f) {
             return this.Bar(0f, text: "--/--");
         }
 
-        float pct = Util.ParseFloat(options.Get("pct"));
-        float width = Util.ParseFloat(options.Get("width"), 0f);
-        float height = Util.ParseFloat(options.Get("height"), 0f);
-        Color? fillColour = this.GetColourOpt(options.Get("fillColour"));
-        TextAlignment textAlignment = DrawingSurface.stringToAlignment.Get(options.Get("align", "null"), TextAlignment.CENTER);
-        string text = options.Get("text", null);
-        Color? textColour = this.GetColourOpt(options.Get("textColour"));
-        Color? bgColour = this.GetColourOpt(options.Get("bgColour"));
-        float pad = Util.ParseFloat(options.Get("pad"), 0.1f);
-
         return this.Bar(
-            pct,
-            width: width,
-            height: height,
-            fillColour: fillColour,
-            textAlignment: textAlignment,
-            text: text,
-            textColour: textColour,
-            bgColour: bgColour,
-            pad: pad
+            options.pct,
+            width: options.width,
+            height: options.height,
+            fillColour: options.fillColour,
+            textAlignment: options.align ?? TextAlignment.CENTER,
+            text: options.text,
+            textColour: options.textColour,
+            bgColour: options.bgColour,
+            pad: options.pad
         );
     }
 
@@ -496,30 +775,17 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface MultiBar(Dictionary<string, string> options) {
-        List<Color> colours = options.Get("colours", "").Split(this.underscoreSep)
-            .Select(col => this.GetColourOpt(col) ?? Color.White).ToList();
-        List<float> values = options.Get("values", "").Split(this.underscoreSep)
-            .Select(pct => Util.ParseFloat(pct, 0f)).ToList();
-
-        float width = Util.ParseFloat(options.Get("width"), 0f);
-        float height = Util.ParseFloat(options.Get("height"), 0f);
-        string text = options.Get("text", null);
-        Color? textColour = this.GetColourOpt(options.Get("textColour"));
-        Color? bgColour = this.GetColourOpt(options.Get("bgColour"));
-        TextAlignment textAlignment = DrawingSurface.stringToAlignment.Get(options.Get("align", "null"), TextAlignment.CENTER);
-        float pad = Util.ParseFloat(options.Get("pad"), 0.1f);
-
+    public DrawingSurface MultiBar(Options options) {
         return this.MultiBar(
-            values,
-            colours,
-            width: width,
-            height: height,
-            text: text,
-            textColour: textColour,
-            bgColour: bgColour,
-            textAlignment: textAlignment,
-            pad: pad
+            options.values,
+            options.colours,
+            width: options.width,
+            height: options.height,
+            text: options.text,
+            textColour: options.textColour,
+            bgColour: options.bgColour,
+            textAlignment: options.align ?? TextAlignment.CENTER,
+            pad: options.pad
         );
     }
 
@@ -610,15 +876,8 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface TextCircle(Dictionary<string, string> options) {
-        if (options == null) {
-            return this.TextCircle();
-        }
-
-        Color? colour = this.GetColourOpt(options.Get("colour"));
-        bool outline = Util.ParseBool(options.Get("outline"));
-
-        return this.TextCircle(colour, outline: outline);
+    public DrawingSurface TextCircle(Options options) {
+        return (options == null) ? this.TextCircle() : this.TextCircle(options.colour, outline: options.outline);
     }
 
     public DrawingSurface TextCircle(Color? colour = null, bool outline = false) {
@@ -628,16 +887,14 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface Circle(Dictionary<string, string> options) {
+    public DrawingSurface Circle(Options options) {
         if (options == null) {
             return this.Circle(this.charSizeInPx.Y, null);
         }
 
-        float size = Util.ParseFloat(options.Get("size"), this.charSizeInPx.Y);
-        Color? colour = this.GetColourOpt(options.Get("colour"));
-        bool outline = Util.ParseBool(options.Get("outline"), false);
+        float size = (options.size <= 0f) ? this.charSizeInPx.Y : options.size;
 
-        return this.Circle(size: size, colour: colour, outline: outline);
+        return this.Circle(size: size, colour: options.colour, outline: options.outline);
     }
 
     public DrawingSurface Circle(float size, Color? colour, Vector2? position = null, bool outline = false) {
@@ -663,211 +920,6 @@ public class DrawingSurface {
     }
 }
 /* GRAPHICS */
-public class Template {
-    public class Token {
-        public bool isText = true;
-        public string value = null;
-    }
-
-    public class Node {
-        public string action;
-        public string text;
-        public Dictionary<string, string> options;
-
-        public Node(string action, string text = null, Dictionary<string, string> options = null) {
-            this.action = action;
-            this.text = text;
-            this.options = options ?? new Dictionary<string, string>();
-        }
-    }
-
-    public delegate void DsCallback(DrawingSurface ds, string token, Dictionary<string, string> options);
-    public delegate string TextCallback();
-
-    public Program program;
-    public System.Text.RegularExpressions.Regex tokenizer;
-    public System.Text.RegularExpressions.Regex cmdSplitter;
-    public System.Text.RegularExpressions.Match match;
-    public Token token;
-    public Dictionary<string, DsCallback> methods;
-    public Dictionary<string, List<Node>> renderNodes;
-    public Dictionary<string, bool> templateVars;
-
-    public char[] splitSemi = new[] { ';' };
-    public char[] splitDot = new[] { '.' };
-    public string[] splitLine = new[] { "\r\n", "\r", "\n" };
-
-    public Template(Program program = null) {
-        this.program = program;
-        this.tokenizer = Util.Regex(@"((?<!\\)\{([^\}]|\\\})+(?<!\\)\}|(\\\{|[^\{])+)", System.Text.RegularExpressions.RegexOptions.Compiled);
-        this.cmdSplitter = Util.Regex(@"(?<newline>\?)?(?<name>[^:]+)(:(?<params>[^:]*))?(:(?<text>.+))?", System.Text.RegularExpressions.RegexOptions.Compiled);
-        this.token = new Token();
-        this.methods = new Dictionary<string, DsCallback>();
-        this.renderNodes = new Dictionary<string, List<Node>>();
-        this.templateVars = new Dictionary<string, bool>();
-
-        this.Reset();
-    }
-
-    public void Reset() {
-        this.Clear();
-
-        this.Register("text", this.RenderText);
-        this.Register("textCircle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.TextCircle(options));
-        this.Register("circle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Circle(options));
-        this.Register("bar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Bar(options));
-        this.Register("midBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.MidBar(options));
-        this.Register("multiBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.MultiBar(options));
-    }
-
-    public void Clear() {
-        this.methods.Clear();
-        this.renderNodes.Clear();
-        this.templateVars.Clear();
-    }
-
-    public void Register(string key, DsCallback callback) {
-        this.methods[key] = callback;
-    }
-
-    public void Register(string key, TextCallback callback) {
-        this.methods[key] = (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Text(callback(), options);
-    }
-
-    public void RenderText(DrawingSurface ds, string text, Dictionary<string, string> options) {
-        ds.Text(text, options);
-    }
-
-    public Dictionary<string, bool> PreRender(string outputName, string templateStrings) {
-        return this.PreRender(outputName, templateStrings.Split(splitLine, StringSplitOptions.None));
-    }
-
-    public Dictionary<string, bool> PreRender(string outputName, string[] templateStrings) {
-        this.templateVars.Clear();
-        List<Node> nodeList = new List<Node>();
-
-        bool autoNewline;
-        string text;
-        for (int i = 0; i < templateStrings.Length; ++i) {
-            string line = templateStrings[i].TrimEnd();
-            autoNewline = true;
-            this.match = null;
-            text = null;
-
-            while (this.GetToken(line)) {
-                if (this.token.isText) {
-                    text = System.Text.RegularExpressions.Regex.Replace(this.token.value, @"\\([\{\}])", "$1");
-                    nodeList.Add(new Node("text", text));
-                    continue;
-                }
-
-                System.Text.RegularExpressions.Match m = this.cmdSplitter.Match(this.token.value);
-                if (m.Success) {
-                    var opts = this.StringToDict(m.Groups["params"].Value);
-                    if (m.Groups["newline"].Value != "") {
-                        opts["noNewline"] = "true";
-                        autoNewline = false;
-                    }
-                    text = (m.Groups["text"].Value == "" ? null : m.Groups["text"].Value);
-                    if (text != null) {
-                        text = System.Text.RegularExpressions.Regex.Replace(text, @"\\([\{\}])", "$1");
-                        opts["text"] = text;
-                    }
-                    this.AddTemplateTokens(m.Groups["name"].Value);
-                    nodeList.Add(new Node(m.Groups["name"].Value, text, opts));
-                } else {
-                    this.AddTemplateTokens(this.token.value);
-                    nodeList.Add(new Node(this.token.value));
-                }
-            }
-
-            if (autoNewline) {
-                nodeList.Add(new Node("newline"));
-            }
-        }
-
-        this.renderNodes[outputName] = nodeList;
-
-        return this.templateVars;
-    }
-
-    public void AddTemplateTokens(string name) {
-        string prefix = "";
-        foreach (string part in name.Split(splitDot, StringSplitOptions.RemoveEmptyEntries)) {
-            this.templateVars[$"{prefix}{part}"] = true;
-            prefix = $"{prefix}{part}.";
-        }
-    }
-
-    public void Render(DrawingSurface ds, string name = null) {
-        string dsName = name ?? ds.name;
-        List<Node> nodeList = null;
-        if (!this.renderNodes.TryGetValue(dsName, out nodeList)) {
-            ds.Text("No template found").Draw();
-            return;
-        }
-
-        DsCallback callback = null;
-        foreach (Node node in nodeList) {
-            if (node.action == "newline") {
-                ds.Newline();
-                continue;
-            }
-
-            if (this.methods.TryGetValue(node.action, out callback)) {
-                callback(ds, node.text, node.options);
-            } else {
-                ds.Text($"{{{node.action}}}");
-            }
-        }
-
-        ds.Draw();
-    }
-
-    public Dictionary<string, string> StringToDict(string options = "") {
-        if (options == "") {
-            return new Dictionary<string, string>();
-        }
-
-        return options.Split(splitSemi, StringSplitOptions.RemoveEmptyEntries)
-            .Select(value => value.Split('='))
-            .ToDictionary(pair => pair.Length > 1 ? pair[0] : "unknown", pair => pair.Length > 1 ? pair[1] : pair[0]);
-    }
-
-    public void Echo(string text) {
-        if (this.program != null) {
-            this.program.Echo(text);
-        }
-    }
-
-    public bool GetToken(string line) {
-        if (this.match == null) {
-            this.match = this.tokenizer.Match(line);
-        } else {
-            this.match = this.match.NextMatch();
-        }
-
-        if (this.match.Success) {
-            try {
-                string _token = this.match.Groups[1].Value;
-                if (_token[0] == '{') {
-                    this.token.value = _token.Substring(1, _token.Length - 2);
-                    this.token.isText = false;
-                } else {
-                    this.token.value = _token;
-                    this.token.isText = true;
-                }
-            } catch (Exception e) {
-                this.Echo($"err parsing token {e}");
-                return false;
-            }
-
-            return true;
-        } else {
-            return false;
-        }
-    }
-}
 /*
  * UTIL
  */
@@ -989,5 +1041,14 @@ public static class Dict {
         }
 
         return sb.Append("}").ToString();
+    }
+
+    public static bool Pop<TKey, TValue>(this Dictionary<TKey, TValue> dict, TKey key, out TValue result) {
+        if (dict.TryGetValue(key, out result)) {
+            dict.Remove(key);
+
+            return true;
+        };
+        return false;
     }
 /* UTIL */
