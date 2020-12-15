@@ -156,6 +156,7 @@ public bool ParseCustomData() {
     string surfaceName;
     IMyTextSurface surface;
     drawables.Clear();
+    bool hasNumberedSurface;
 
     blocks.Clear();
     GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
@@ -164,13 +165,16 @@ public bool ParseCustomData() {
         for (int i = 0; i < block.SurfaceCount; i++) {
             name = ((IMyTerminalBlock)block).CustomName;
             surfaceName = $"{name} <{i}>";
-            if (!strings.Contains(name) && !strings.Contains(surfaceName)) {
+
+            hasNumberedSurface = strings.Contains(surfaceName);
+            if (!strings.Contains(name) && !hasNumberedSurface) {
                 continue;
             }
 
             surface = block.GetSurface(i);
-            drawables.Add(surfaceName, new DrawingSurface(surface, this, $"{name} <{i}>"));
-            if (i == 0 && block.SurfaceCount == 1) {
+            if (hasNumberedSurface) {
+                drawables.Add(surfaceName, new DrawingSurface(surface, this, $"{name} <{i}>"));
+            } else {
                 drawables.Add(name, new DrawingSurface(surface, this, name));
             }
         }
@@ -225,13 +229,34 @@ public bool RecheckFailed() {
         return !Configure();
     }
 
-    if (i % (update100sPerBlockCheck + 1) == 0) {
+    if (i == 1 || i % (update100sPerBlockCheck + 1) == 0) {
+        cargoStatus.Clear();
+        airlock.Clear();
+        blockHealth.Clear();
+        powerDetails.Clear();
+        productionDetails.Clear();
+
         GridTerminalSystem.GetBlocks(allBlocks);
-        cargoStatus.GetBlocks();
-        airlock.GetBlocks();
-        blockHealth.GetBlocks();
-        powerDetails.GetBlocks();
-        productionDetails.GetBlocks();
+        foreach (IMyTerminalBlock block in allBlocks) {
+            if (!Util.BlockValid(block)) {
+                continue;
+            }
+            if (!config.Enabled("getAllGrids") && !block.IsSameConstructAs(Me)) {
+                continue;
+            }
+
+            powerDetails.GetBlock(block);
+            cargoStatus.GetBlock(block);
+            blockHealth.GetBlock(block);
+            productionDetails.GetBlock(block);
+            airlock.GetBlock(block);
+        }
+
+        cargoStatus.GotBLocks();
+        airlock.GotBLocks();
+        blockHealth.GotBLocks();
+        powerDetails.GotBLocks();
+        productionDetails.GotBLocks();
     }
 
     return false;
@@ -267,6 +292,805 @@ public void Main(string argument, UpdateType updateSource) {
     }
 }
 /* MAIN */
+/*
+ * AIRLOCK
+ */
+Airlock airlock;
+
+public class Airlock {
+    public Program program;
+    public Dictionary<string, AirlockDoors> airlocks;
+    public Dictionary<string, List<IMyFunctionalBlock>> locationToAirlockMap;
+    public System.Text.RegularExpressions.Regex include;
+    public System.Text.RegularExpressions.Regex exclude;
+
+    // The name to match (Default will match regular doors). The capture group "(.*)" is used when grouping airlock doors.
+    public string doorMatch = "Door(.*)";
+    public string doorExclude = "Hangar";  // The exclusion tag (can be anything).
+    public double timeOpen = 720f;  // Duration before auto close (milliseconds)
+
+    public Airlock(Program program) {
+        this.program = program;
+        this.airlocks = new Dictionary<string, AirlockDoors>();
+        this.locationToAirlockMap = new Dictionary<string, List<IMyFunctionalBlock>>();
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        this.doorMatch = this.program.config.Get("airlockDoorMatch", "Door(.*)");
+        this.doorExclude = this.program.config.Get("airlockDoorExclude", "Hangar");
+        this.include = Util.Regex(this.doorMatch);
+        this.exclude = Util.Regex(this.doorExclude);
+        this.timeOpen = Util.ParseFloat(this.program.config.Get("airlockOpenTime"), 750f);
+    }
+
+    public void Clear() {
+        this.airlocks.Clear();
+        this.locationToAirlockMap.Clear();
+    }
+
+    public void CheckAirlocks() {
+        if (!this.program.config.Enabled("airlock")) {
+            return;
+        }
+        foreach (var al in this.airlocks) {
+            al.Value.Check();
+        }
+    }
+
+    public void GetBlock(IMyTerminalBlock block) {
+        // Get all door blocks
+        if (block is IMyDoor) {
+            var match = this.include.Match(block.CustomName);
+            var ignore = this.exclude.Match(block.CustomName);
+            if (!match.Success || ignore.Success) {
+                return;
+            }
+            var key = match.Groups[1].ToString();
+            if (!this.locationToAirlockMap.ContainsKey(key)) {
+                this.locationToAirlockMap.Add(key, new List<IMyFunctionalBlock>());
+            }
+            this.locationToAirlockMap[key].Add(block as IMyFunctionalBlock);
+        }
+
+    }
+
+    public void GotBLocks() {
+        bool doAllDoors = this.program.config.Enabled("airlockAllDoors");
+        foreach (var keyval in this.locationToAirlockMap) {
+            if (!doAllDoors && keyval.Value.Count < 2) {
+                continue;
+            }
+            this.airlocks.Add(keyval.Key, new AirlockDoors(keyval.Value, this.program));
+        }
+    }
+}
+
+public class AirlockDoors {
+    public Program program;
+    private List<IMyFunctionalBlock> blocks;
+    private List<IMyFunctionalBlock> areClosed;
+    private List<IMyFunctionalBlock> areOpen;
+    private double openTimer;
+    public double timeOpen;
+
+    public AirlockDoors(List<IMyFunctionalBlock> doors, Program program, double timeOpen = 750f) {
+        this.program = program;
+        this.blocks = new List<IMyFunctionalBlock>(doors);
+        this.areClosed = new List<IMyFunctionalBlock>();
+        this.areOpen = new List<IMyFunctionalBlock>();
+        this.openTimer = timeOpen;
+        this.timeOpen = timeOpen;
+    }
+
+    private bool IsOpen(IMyFunctionalBlock door) {
+        return (door as IMyDoor).OpenRatio > 0;
+    }
+
+    private void Lock(List<IMyFunctionalBlock> doors = null) {
+        doors = doors ?? this.blocks;
+        foreach (var door in doors) {
+            (door as IMyDoor).Enabled = false;
+        }
+    }
+
+    private void Unlock(List<IMyFunctionalBlock> doors = null) {
+        doors = doors ?? this.blocks;
+        foreach (var door in doors) {
+            (door as IMyDoor).Enabled = true;
+        }
+    }
+
+    private void OpenClose(string action, IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
+        (door1 as IMyDoor).ApplyAction(action);
+        if (door2 != null) {
+            (door2 as IMyDoor).ApplyAction(action);
+        }
+    }
+
+    private void Open(IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
+        this.OpenClose("Open_On", door1, door2);
+    }
+
+    private void OpenAll() {
+        foreach (var door in this.blocks) {
+            this.OpenClose("Open_On", door);
+        }
+    }
+
+    private void Close(IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
+        this.OpenClose("Open_Off", door1, door2);
+    }
+
+    private void CloseAll() {
+        foreach (var door in this.blocks) {
+            this.OpenClose("Open_Off", door);
+        }
+    }
+
+    public bool Check() {
+        int openCount = 0;
+        this.areClosed.Clear();
+        this.areOpen.Clear();
+
+        foreach (var door in this.blocks) {
+            if (!Util.BlockValid(door)) {
+                continue;
+            }
+            if (this.IsOpen(door)) {
+                openCount++;
+                this.areOpen.Add(door);
+            } else {
+                this.areClosed.Add(door);
+            }
+        }
+
+        if (areOpen.Count > 0) {
+            this.openTimer -= this.program.Runtime.TimeSinceLastRun.TotalMilliseconds;
+            if (this.openTimer < 0) {
+                this.CloseAll();
+            } else {
+                this.Lock(this.areClosed);
+                this.Unlock(this.areOpen);
+            }
+        } else {
+            this.Unlock();
+            this.openTimer = this.timeOpen;
+        }
+
+        return true;
+    }
+}
+/* AIRLOCK */
+/*
+ * CARGO
+ */
+CargoStatus cargoStatus;
+
+public class CargoStatus {
+    public Program program;
+    public List<IMyTerminalBlock> cargoBlocks;
+    public Dictionary<string, VRage.MyFixedPoint> cargoItemCounts;
+    public List<MyInventoryItem> inventoryItems;
+    public System.Text.RegularExpressions.Regex itemRegex;
+    public System.Text.RegularExpressions.Regex ingotRegex;
+    public System.Text.RegularExpressions.Regex oreRegex;
+    public VRage.MyFixedPoint max;
+    public VRage.MyFixedPoint vol;
+    public Template template;
+    public List<float> widths;
+
+    public string itemText;
+    public float pct;
+
+    public CargoStatus(Program program, Template template = null) {
+        this.program = program;
+        this.template = template;
+        this.itemRegex = Util.Regex(".*/");
+        this.ingotRegex = Util.Regex("Ingot/");
+        this.oreRegex = Util.Regex("Ore/(?!Ice)");
+        this.widths = new List<float>() { 0, 0, 0, 0 };
+
+        this.cargoItemCounts = new Dictionary<string, VRage.MyFixedPoint>();
+        this.inventoryItems = new List<MyInventoryItem>();
+        this.cargoBlocks = new List<IMyTerminalBlock>();
+        this.itemText = "";
+        this.pct = 0f;
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        if (this.program.config.Enabled("cargo")) {
+            this.RegisterTemplateVars();
+        }
+    }
+
+    public void Clear() {
+        this.cargoItemCounts.Clear();
+        this.inventoryItems.Clear();
+        this.cargoBlocks.Clear();
+    }
+
+    public void RegisterTemplateVars() {
+        if (this.template == null) {
+            return;
+        }
+
+        this.template.Register("cargo.stored", () => $"{Util.FormatNumber(1000 * this.vol)} L");
+        this.template.Register("cargo.cap", () => $"{Util.FormatNumber(1000 * this.max)} L");
+        this.template.Register("cargo.fullString", () => {
+            string capFmt = Util.GetFormatNumberStr(1000 * this.max);
+
+            return $"{Util.FormatNumber(1000 * this.vol, capFmt)} / {Util.FormatNumber(1000 * this.max, capFmt)} L";
+        });
+        this.template.Register("cargo.bar", this.RenderPct);
+        this.template.Register("cargo.items", this.RenderItems);
+    }
+
+    public void RenderPct(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        string colourName = this.pct > 85 ? "dimred" : this.pct > 60 ? "dimyellow" : "dimgreen";
+        Color? colour = DrawingSurface.stringToColour.Get(colourName);
+        ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct));
+    }
+
+    public void RenderItems(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        if (ds.width / (ds.charSizeInPx.X + 1f) < 40) {
+            foreach (var item in this.cargoItemCounts) {
+                var fmtd = Util.FormatNumber(item.Value);
+                ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(fmtd, textAlignment: TextAlignment.RIGHT).Newline();
+            }
+        } else {
+            this.widths[0] = 0;
+            this.widths[1] = ds.width / 2 - 1.5f * ds.charSizeInPx.X;
+            this.widths[2] = ds.width / 2 + 1.5f * ds.charSizeInPx.X;
+            this.widths[3] = ds.width;
+
+            int i = 0;
+            foreach (var item in this.cargoItemCounts) {
+                var fmtd = Util.FormatNumber(item.Value);
+                ds
+                    .SetCursor(this.widths[(i++ % 4)], null)
+                    .Text($"{item.Key}")
+                    .SetCursor(this.widths[(i++ % 4)], null)
+                    .Text(fmtd, textAlignment: TextAlignment.RIGHT);
+
+                if ((i % 4) == 0 || i >= this.cargoItemCounts.Count * 2) {
+                    ds.Newline();
+                }
+            }
+        }
+        ds.Newline(reverse: true);
+    }
+
+    public void GetBlock(IMyTerminalBlock block) {
+        if (block is IMyCargoContainer || block is IMyShipDrill || block is IMyShipConnector || block is IMyAssembler || block is IMyRefinery) {
+            this.cargoBlocks.Add(block);
+        }
+    }
+
+    public void GotBLocks() {}
+
+    public void Refresh() {
+        if (this.cargoBlocks == null) {
+            return;
+        }
+
+        this.cargoItemCounts.Clear();
+        this.inventoryItems.Clear();
+        this.max = 0;
+        this.vol = 0;
+        this.pct = 0f;
+        string fullName = "";
+        string itemName = "";
+
+        foreach (var c in this.cargoBlocks) {
+            if (!Util.BlockValid(c)) {
+                continue;
+            }
+            var inv = c.GetInventory(0);
+            this.vol += inv.CurrentVolume;
+            this.max += inv.MaxVolume;
+
+            this.inventoryItems.Clear();
+            inv.GetItems(this.inventoryItems);
+            for (var i = 0; i < this.inventoryItems.Count; i++) {
+                fullName = this.inventoryItems[i].Type.ToString();
+                itemName = this.itemRegex.Replace(fullName, "");
+                if (this.ingotRegex.IsMatch(fullName)) {
+                    itemName += " Ingot";
+                } else if (this.oreRegex.IsMatch(fullName)) {
+                    itemName += " Ore";
+                }
+
+                var itemQty = this.inventoryItems[i].Amount;
+                if (!this.cargoItemCounts.ContainsKey(itemName)) {
+                    this.cargoItemCounts.Add(itemName, itemQty);
+                } else {
+                    this.cargoItemCounts[itemName] = this.cargoItemCounts[itemName] + itemQty;
+                }
+            }
+        }
+
+        if (this.max != 0) {
+            this.pct = (float)this.vol / (float)this.max;
+        }
+
+        return;
+    }
+}
+/* CARGO */
+/*
+ * POWER
+ */
+PowerDetails powerDetails;
+
+public class PowerDetails {
+    public Program program;
+    public Template template;
+    public List<IMyTerminalBlock> powerProducerBlocks;
+    public List<IMyTerminalBlock> jumpDriveBlocks;
+    public List<MyInventoryItem> items;
+    public List<float> ioFloats;
+    public List<Color> ioColours;
+    public Dictionary<string, Color> ioLegendNames;
+
+    public int jumpDrives;
+    public float jumpMax;
+    public float jumpCurrent;
+
+    public int batteries;
+    public float batteryMax;
+    public float batteryCurrent;
+    public float batteryInput;
+    public float batteryOutput;
+    public float batteryOutputDisabled;
+    public float batteryOutputMax;
+    public float batteryInputMax;
+
+    public int reactors;
+    public float reactorOutputMW;
+    public float reactorOutputMax;
+    public float reactorOutputDisabled;
+    public MyFixedPoint reactorUranium;
+
+    public int solars;
+    public float solarOutputMW;
+    public float solarOutputDisabled;
+    public float solarOutputMax;
+
+    public int turbines;
+    public float turbineOutputMW;
+    public float turbineOutputDisabled;
+    public float turbineOutputMax;
+
+    public int hEngines;
+    public float hEngineOutputMW;
+    public float hEngineOutputDisabled;
+    public float hEngineOutputMax;
+
+    public float battChargeMax = 12f;
+
+    public Color reactorColour = Color.Lighten(Color.Blue, 0.05);
+    public Color hEnginesColour = DrawingSurface.stringToColour["dimred"];
+    public Color batteriesColour = DrawingSurface.stringToColour["dimgreen"];
+    public Color turbinesColour = DrawingSurface.stringToColour["dimyellow"];
+    public Color solarsColour = Color.Darken(Color.Cyan, 0.6);
+
+    public PowerDetails(Program program, Template template = null) {
+        this.program = program;
+        this.template = template;
+        this.items = new List<MyInventoryItem>();
+        this.ioFloats = new List<float>();
+        this.ioColours = new List<Color>() {
+            this.reactorColour,
+            new Color(this.reactorColour, 0.01f),
+            this.hEnginesColour,
+            new Color(this.hEnginesColour, 0.01f),
+            this.batteriesColour,
+            new Color(this.batteriesColour, 0.01f),
+            this.turbinesColour,
+            new Color(this.turbinesColour, 0.01f),
+            this.solarsColour,
+            new Color(this.solarsColour, 0.01f)
+        };
+        this.powerProducerBlocks = new List<IMyTerminalBlock>();
+        this.jumpDriveBlocks = new List<IMyTerminalBlock>();
+        this.ioLegendNames = new Dictionary<string, Color>();
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        if (this.program.config.Enabled("power")) {
+            this.RegisterTemplateVars();
+        }
+    }
+
+    public void RegisterTemplateVars() {
+        if (this.template == null) {
+            return;
+        }
+        this.template.Register("power.batteries", () => this.batteries.ToString());
+        this.template.Register("power.batteryCurrent", () => String.Format("{0:0.##}", this.batteryCurrent));
+        this.template.Register("power.batteryInput", () => String.Format("{0:0.##}", this.batteryInput));
+        this.template.Register("power.batteryInputMax", () => String.Format("{0:0.##}", this.batteryInputMax));
+        this.template.Register("power.batteryMax", () => String.Format("{0:0.##}", this.batteryMax));
+        this.template.Register("power.batteryOutput", () => String.Format("{0:0.##}", this.batteryOutput));
+        this.template.Register("power.batteryOutputMax", () => String.Format("{0:0.##}", this.batteryOutputMax));
+        this.template.Register("power.engineOutputMax", () => String.Format("{0:0.##}", this.hEngineOutputMax));
+        this.template.Register("power.engineOutputMW", () => String.Format("{0:0.##}", this.hEngineOutputMW));
+        this.template.Register("power.engines", () => this.hEngines.ToString());
+        this.template.Register("power.input", () => String.Format("{0:0.##}", this.CurrentInput()));
+        this.template.Register("power.jumpCurrent", () => String.Format("{0:0.##}", this.jumpCurrent));
+        this.template.Register("power.jumpDrives", () => this.jumpDrives.ToString());
+        this.template.Register("power.jumpMax", () => String.Format("{0:0.##}", this.jumpMax));
+        this.template.Register("power.maxOutput", () => String.Format("{0:0.##}", this.MaxOutput()));
+        this.template.Register("power.output", () => String.Format("{0:0.##}", this.CurrentOutput()));
+        this.template.Register("power.reactorOutputMax", () => String.Format("{0:0.##}", this.reactorOutputMax));
+        this.template.Register("power.reactorOutputMW", () => String.Format("{0:0.##}", this.reactorOutputMW));
+        this.template.Register("power.reactors", () => this.reactors.ToString());
+        this.template.Register("power.reactorUr", () => Util.FormatNumber(this.reactorUranium));
+        this.template.Register("power.solarOutputMax", () => String.Format("{0:0.##}", this.solarOutputMax));
+        this.template.Register("power.solarOutputMW", () => String.Format("{0:0.##}", this.solarOutputMW));
+        this.template.Register("power.solars", () => this.solars.ToString());
+        this.template.Register("power.turbineOutputMax", () => String.Format("{0:0.##}", this.turbineOutputMax));
+        this.template.Register("power.turbineOutputMW", () => String.Format("{0:0.##}", this.turbineOutputMW));
+        this.template.Register("power.turbines", () => this.turbines.ToString());
+        this.template.Register("power.jumpBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+            if (this.jumpDrives == 0) {
+                return;
+            }
+            options.pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
+            options.text = text ?? Util.PctString(options.pct);
+            ds.Bar(options);
+        });
+        this.template.Register("power.batteryBar", this.BatteryBar);
+        this.template.Register("power.ioString", () => {
+            float io = this.CurrentInput() - this.CurrentOutput();
+            float max = this.MaxOutput();
+
+            return String.Format("{0:0.00} / {1:0.00} MWh ({2})", io, max, Util.PctString(Math.Abs(io) / max));
+        });
+        this.template.Register("power.ioBar", this.IoBar);
+        this.template.Register("power.ioLegend", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+            this.ioLegendNames.Clear();
+            if (this.reactors > 0) {
+                this.ioLegendNames["Reactor"] = this.reactorColour;
+            }
+            if (this.hEngines > 0) {
+                this.ioLegendNames["H2 Engine"] = this.hEnginesColour;
+            }
+            if (this.batteries > 0) {
+                this.ioLegendNames["Battery"] = this.batteriesColour;
+            }
+            if (this.turbines > 0) {
+                this.ioLegendNames["Wind"] = this.turbinesColour;
+            }
+            if (this.solars > 0) {
+                this.ioLegendNames["Solar"] = this.solarsColour;
+            }
+            ds.sb.Clear();
+            ds.sb.Append(string.Join(" / ", this.ioLegendNames.Keys));
+            Vector2 size = Vector2.Divide(ds.surface.MeasureStringInPixels(ds.sb, ds.surface.Font, ds.surface.FontSize), 2);
+            ds.sb.Clear();
+            ds.sb.Append("O");
+            ds.SetCursor(ds.width / 2 - size.X, null);
+
+            bool first = true;
+            foreach (var kv in this.ioLegendNames) {
+                if (!first) {
+                    ds.Text(" / ");
+                }
+                ds.Text(kv.Key, colour: kv.Value);
+                first = false;
+            }
+        });
+        this.template.Register("power.reactorString", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+            if (this.reactors == 0) {
+                return;
+            }
+            string msg = text ?? options.text ?? "Reactors: ";
+            ds.Text($"{msg}{this.reactors}, Output: {this.reactorOutputMW} MW, Ur: {this.reactorUranium}");
+        });
+    }
+
+    public void Clear() {
+        this.jumpDrives = 0;
+        this.jumpMax = 0f;
+        this.jumpCurrent = 0f;
+        this.batteries = 0;
+        this.batteryMax = 0f;
+        this.batteryCurrent = 0f;
+        this.batteryInput = 0f;
+        this.batteryOutput = 0f;
+        this.batteryOutputDisabled = 0f;
+        this.batteryOutputMax = 0f;
+        this.batteryInputMax = 0f;
+        this.reactors = 0;
+        this.reactorOutputMW = 0f;
+        this.reactorOutputDisabled = 0f;
+        this.reactorOutputMax = 0f;
+        this.reactorUranium = 0;
+        this.solars = 0;
+        this.solarOutputMW = 0f;
+        this.solarOutputDisabled = 0f;
+        this.solarOutputMax = 0f;
+        this.turbines = 0;
+        this.turbineOutputMW = 0f;
+        this.turbineOutputDisabled = 0f;
+        this.turbineOutputMax = 0f;
+        this.hEngines = 0;
+        this.hEngineOutputMW = 0f;
+        this.hEngineOutputDisabled = 0f;
+        this.hEngineOutputMax = 0f;
+        this.powerProducerBlocks.Clear();
+        this.jumpDriveBlocks.Clear();
+    }
+
+    public void GetBlock(IMyTerminalBlock block) {
+        if (block is IMyPowerProducer) {
+            this.powerProducerBlocks.Add(block);
+        } else if (block is IMyJumpDrive) {
+            this.jumpDriveBlocks.Add(block);
+        }
+    }
+
+    public void GotBLocks() {}
+
+    public float GetPercent(float current, float max) {
+        if (max == 0) {
+            return 0f;
+        }
+        return current / max;
+    }
+
+    public float MaxOutput() {
+        return this.hEngineOutputMax + this.reactorOutputMax + this.solarOutputMax + this.turbineOutputMax + (battChargeMax * this.batteries);
+    }
+
+    public float MaxInput() {
+        return (battChargeMax * this.batteries);
+    }
+
+    public float CurrentInput() {
+        return this.batteryInput;
+    }
+
+    public float CurrentOutput() {
+        return this.reactorOutputMW + this.solarOutputMW + this.turbineOutputMW + this.hEngineOutputMW + this.batteryOutput;
+    }
+
+    public float DisabledMaxOutput() {
+        return this.batteryOutputDisabled + this.reactorOutputDisabled + this.solarOutputDisabled + this.turbineOutputDisabled + this.hEngineOutputDisabled;
+    }
+
+    public void Refresh() {
+        foreach (IMyJumpDrive jumpDrive in this.jumpDriveBlocks) {
+            if (!Util.BlockValid(jumpDrive)) {
+                continue;
+            }
+            this.jumpDrives += 1;
+            this.jumpCurrent += jumpDrive.CurrentStoredPower;
+            this.jumpMax += jumpDrive.MaxStoredPower;
+        }
+
+        foreach (IMyPowerProducer powerBlock in this.powerProducerBlocks) {
+            if (!Util.BlockValid(powerBlock)) {
+                continue;
+            }
+            string typeString = powerBlock.BlockDefinition.TypeIdString;
+            IMyBatteryBlock battery = powerBlock as IMyBatteryBlock;
+
+            if (battery != null) {
+                this.batteries++;
+                this.batteryCurrent += battery.CurrentStoredPower;
+                this.batteryMax += battery.MaxStoredPower;
+                this.batteryInput += battery.CurrentInput;
+                this.batteryOutput += battery.CurrentOutput;
+                this.batteryOutputMax += battery.MaxOutput;
+                this.batteryOutputMax += battery.MaxInput;
+                if (!battery.Enabled || battery.ChargeMode == ChargeMode.Recharge) {
+                    this.batteryOutputDisabled += battChargeMax;
+                }
+            } else if (powerBlock is IMyReactor) {
+                this.reactors++;
+                this.reactorOutputMW += powerBlock.CurrentOutput;
+                this.reactorOutputMax += powerBlock.MaxOutput;
+
+                if (!powerBlock.Enabled) {
+                    this.reactorOutputDisabled += powerBlock.MaxOutput;
+                }
+
+                this.items.Clear();
+                var inv = powerBlock.GetInventory(0);
+                inv.GetItems(this.items);
+                for (var i = 0; i < items.Count; i++) {
+                    this.reactorUranium += items[i].Amount;
+                }
+            } else if (powerBlock is IMySolarPanel) {
+                this.solars++;
+                this.solarOutputMW += powerBlock.CurrentOutput;
+                this.solarOutputMax += powerBlock.MaxOutput;
+                if (!powerBlock.Enabled) {
+                    this.solarOutputDisabled += powerBlock.MaxOutput;
+                }
+            } else if (typeString == "MyObjectBuilder_HydrogenEngine") {
+                this.hEngines++;
+                this.hEngineOutputMW += powerBlock.CurrentOutput;
+                this.hEngineOutputMax += powerBlock.MaxOutput;
+                if (!powerBlock.Enabled) {
+                    this.hEngineOutputDisabled += powerBlock.MaxOutput;
+                }
+            } else if (typeString == "MyObjectBuilder_WindTurbine") {
+                this.turbines++;
+                this.turbineOutputMW += powerBlock.CurrentOutput;
+                this.turbineOutputMax += powerBlock.MaxOutput;
+                if (!powerBlock.Enabled) {
+                    this.turbineOutputDisabled += powerBlock.MaxOutput;
+                }
+            }
+        }
+    }
+
+    public void BatteryBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        if (this.batteries == 0) {
+            return;
+        }
+        float io = this.batteryInput - this.batteryOutput;
+
+        options.net = this.batteryCurrent;
+        float remainingMins = io == 0f ? 0 : (this.batteryMax - this.batteryCurrent) * 60 / Math.Abs(io);
+        string pct = Util.PctString(this.batteryCurrent / this.batteryMax);
+        if (this.batteryCurrent / this.batteryMax >= 0.9999f) {
+            pct = "100 %";
+            io = 0;
+            remainingMins = 0;
+        }
+        string msg = $"{pct}";
+        if (io < 0) {
+            options.net = (this.batteryCurrent - this.batteryMax);
+            remainingMins = this.batteryCurrent * 60 / Math.Abs(io);
+            msg = $"{pct}";
+        }
+        double minsLeft = Math.Round(remainingMins);
+        options.text = text ?? options.text ?? $"{msg} ({(minsLeft <= 60 ? $"{minsLeft} min" : String.Format("{0:0.00} hours", minsLeft / 60))})";
+
+        options.high = this.batteryMax;
+        options.low = options.high;
+
+        ds.MidBar(options);
+    }
+
+    public void IoBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        float max = this.CurrentOutput() + this.DisabledMaxOutput();
+
+        this.ioFloats.Clear();
+        this.ioFloats.Add(this.reactorOutputMW / max);
+        this.ioFloats.Add(this.reactorOutputDisabled / max);
+        this.ioFloats.Add(this.hEngineOutputMW / max);
+        this.ioFloats.Add(this.hEngineOutputDisabled / max);
+        this.ioFloats.Add(this.batteryOutput / max);
+        this.ioFloats.Add(this.batteryOutputDisabled / max);
+        this.ioFloats.Add(this.turbineOutputMW / max);
+        this.ioFloats.Add(this.turbineOutputDisabled / max);
+        this.ioFloats.Add(this.solarOutputMW / max);
+        this.ioFloats.Add(this.solarOutputDisabled / max);
+
+        ds.MultiBar(this.ioFloats, this.ioColours, text: text, textAlignment: TextAlignment.LEFT);
+    }
+}
+/* POWER */
+/*
+ * BLOCK_HEALTH
+ */
+BlockHealth blockHealth;
+
+class BlockHealth {
+    public Program program;
+    public Template template;
+    public System.Text.RegularExpressions.Regex ignoreHealth;
+    public List<IMyTerminalBlock> blocks;
+    public Dictionary<string, string> damaged;
+    public string status;
+
+    public BlockHealth(Program program, Template template) {
+        this.program = program;
+        this.template = template;
+        this.blocks = new List<IMyTerminalBlock>();
+        this.damaged = new Dictionary<string, string>();
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        if (this.program.config.Enabled("health")) {
+            this.RegisterTemplateVars();
+
+            string ignore = this.program.config.Get("healthIgnore");
+            if (ignore != "" && ignore != null) {
+                this.ignoreHealth = Util.Regex(System.Text.RegularExpressions.Regex.Replace(ignore, @"\s*,\s*", "|"));
+            }
+        }
+    }
+
+    public void Clear() {
+        this.blocks.Clear();
+        this.damaged.Clear();
+    }
+
+    public void RegisterTemplateVars() {
+        if (this.template == null) {
+            return;
+        }
+
+        this.template.Register("health.status", () => this.status);
+        this.template.Register("health.blocks",
+            (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+                foreach (KeyValuePair<string, string> block in this.damaged) {
+                    ds.Text($"{block.Key} [{block.Value}]").Newline();
+                }
+                ds.Newline(reverse: true);
+            }
+        );
+    }
+
+    public float GetHealth(IMyTerminalBlock block) {
+        IMySlimBlock slimblock = block.CubeGrid.GetCubeBlock(block.Position);
+        if (slimblock == null) {
+            return 1f;
+        }
+        float MaxIntegrity = slimblock.MaxIntegrity;
+        float BuildIntegrity = slimblock.BuildIntegrity;
+        float CurrentDamage = slimblock.CurrentDamage;
+
+        return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
+    }
+
+    public void GetBlock(IMyTerminalBlock block) {
+        this.blocks.Add(block);
+    }
+
+    public void GotBLocks() {}
+
+    public void Refresh() {
+        if (this.blocks == null) {
+            return;
+        }
+
+        this.damaged.Clear();
+        bool showOnHud = this.program.config.Enabled("healthOnHud");
+
+        foreach (var b in this.blocks) {
+            if (!Util.BlockValid(b)) {
+                continue;
+            }
+            if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
+                continue;
+            }
+
+            var health = this.GetHealth(b);
+            if (health != 1f) {
+                this.damaged[b.CustomName] = Util.PctString(health);
+            }
+            if (showOnHud) {
+                b.ShowOnHUD = health != 1f;
+            }
+        }
+
+        this.status = $"{(this.damaged.Count == 0 ? "No damage" : "Damage")} detected";
+    }
+}
+/* BLOCK_HEALTH */
 /*
  * PRODUCTION
  */
@@ -316,7 +1140,6 @@ public class ProductionDetails {
         this.Clear();
 
         if (this.program.config.Enabled("power")) {
-            this.GetBlocks();
             this.RegisterTemplateVars();
         }
     }
@@ -338,7 +1161,7 @@ public class ProductionDetails {
         }
 
         this.template.Register("production.status", () => this.status);
-        this.template.Register("production.blocks",  (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+        this.template.Register("production.blocks",  (DrawingSurface ds, string text, DrawingSurface.Options options) => {
             bool first = true;
             foreach (KeyValuePair<ProductionBlock, string> blk in this.blockStatus) {
                 if (!first) {
@@ -346,7 +1169,7 @@ public class ProductionDetails {
                 }
                 string status = blk.Key.Status();
                 string blockName = $"{blk.Key.block.CustomName}: {status} {(blk.Key.IsIdle() ? blk.Key.IdleTime() : "")}";
-                Color? colour = ds.GetColourOpt(this.statusDotColour.Get(status));
+                Color? colour = DrawingSurface.StringToColour(this.statusDotColour.Get(status));
                 ds.TextCircle(colour, outline: false).Text(blockName);
 
                 foreach (string str in blk.Value.Split(this.splitNewline, StringSplitOptions.RemoveEmptyEntries)) {
@@ -357,19 +1180,13 @@ public class ProductionDetails {
         });
     }
 
-    public void GetBlocks() {
-        this.productionBlocks.Clear();
-        foreach (IMyTerminalBlock block in this.program.allBlocks) {
-            if (block == null || !Util.BlockValid(block)) {
-                continue;
-            }
-            if (!this.program.config.Enabled("getAllGrids") && !block.IsSameConstructAs(this.program.Me)) {
-                continue;
-            }
-            if ((block is IMyAssembler || block is IMyRefinery) && !block.CustomName.Contains(this.productionIgnoreString)) {
-                this.productionBlocks.Add(new ProductionBlock(this.program, block as IMyProductionBlock));
-            }
+    public void GetBlock(IMyTerminalBlock block) {
+        if ((block is IMyAssembler || block is IMyRefinery) && !block.CustomName.Contains(this.productionIgnoreString)) {
+            this.productionBlocks.Add(new ProductionBlock(this.program, block as IMyProductionBlock));
         }
+    }
+
+    public void GotBLocks() {
         this.productionBlocks = this.productionBlocks.OrderBy(b => b.block.CustomName).ToList();
     }
 
@@ -541,347 +1358,35 @@ public class ProductionBlock {
 }
 /* PRODUCTION */
 /*
- * CARGO
- */
-CargoStatus cargoStatus;
-
-public class CargoStatus {
-    public Program program;
-    public IEnumerable<IMyTerminalBlock> cargoBlocks;
-    public Dictionary<string, VRage.MyFixedPoint> cargoItemCounts;
-    public List<MyInventoryItem> inventoryItems;
-    public System.Text.RegularExpressions.Regex itemRegex;
-    public System.Text.RegularExpressions.Regex ingotRegex;
-    public System.Text.RegularExpressions.Regex oreRegex;
-    public VRage.MyFixedPoint max;
-    public VRage.MyFixedPoint vol;
-    public Template template;
-    public List<float> widths;
-
-    public string itemText;
-    public float pct;
-
-    public CargoStatus(Program program, Template template = null) {
-        this.program = program;
-        this.template = template;
-        this.itemRegex = Util.Regex(".*/");
-        this.ingotRegex = Util.Regex("Ingot/");
-        this.oreRegex = Util.Regex("Ore/(?!Ice)");
-        this.widths = new List<float>() { 0, 0, 0, 0 };
-
-        this.cargoItemCounts = new Dictionary<string, VRage.MyFixedPoint>();
-        this.inventoryItems = new List<MyInventoryItem>();
-        this.itemText = "";
-        this.pct = 0f;
-
-        this.Reset();
-    }
-
-    public void Reset() {
-        this.Clear();
-
-        if (this.program.config.Enabled("cargo")) {
-            this.GetBlocks();
-            this.RegisterTemplateVars();
-        }
-    }
-
-    public void Clear() {
-        this.cargoItemCounts.Clear();
-        this.inventoryItems.Clear();
-    }
-
-    public void RegisterTemplateVars() {
-        if (this.template == null) {
-            return;
-        }
-
-        this.template.Register("cargo.stored", () => $"{Util.FormatNumber(1000 * this.vol)} L");
-        this.template.Register("cargo.cap", () => $"{Util.FormatNumber(1000 * this.max)} L");
-        this.template.Register("cargo.fullString", () => {
-            string capFmt = Util.GetFormatNumberStr(1000 * this.max);
-
-            return $"{Util.FormatNumber(1000 * this.vol, capFmt)} / {Util.FormatNumber(1000 * this.max, capFmt)} L";
-        });
-        this.template.Register("cargo.bar", this.RenderPct);
-        this.template.Register("cargo.items", this.RenderItems);
-    }
-
-    public void RenderPct(DrawingSurface ds, string text, Dictionary<string, string> options) {
-        string colourName = this.pct > 85 ? "dimred" : this.pct > 60 ? "dimyellow" : "dimgreen";
-        Color? colour = DrawingSurface.stringToColour.Get(colourName);
-        ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct));
-    }
-
-    public void RenderItems(DrawingSurface ds, string text, Dictionary<string, string> options) {
-        if (ds.width / (ds.charSizeInPx.X + 1f) < 40) {
-            foreach (var item in this.cargoItemCounts) {
-                var fmtd = Util.FormatNumber(item.Value);
-                ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(fmtd, textAlignment: TextAlignment.RIGHT).Newline();
-            }
-        } else {
-            this.widths[0] = 0;
-            this.widths[1] = ds.width / 2 - 1.5f * ds.charSizeInPx.X;
-            this.widths[2] = ds.width / 2 + 1.5f * ds.charSizeInPx.X;
-            this.widths[3] = ds.width;
-
-            int i = 0;
-            foreach (var item in this.cargoItemCounts) {
-                var fmtd = Util.FormatNumber(item.Value);
-                ds
-                    .SetCursor(this.widths[(i++ % 4)], null)
-                    .Text($"{item.Key}")
-                    .SetCursor(this.widths[(i++ % 4)], null)
-                    .Text(fmtd, textAlignment: TextAlignment.RIGHT);
-
-                if ((i % 4) == 0 || i >= this.cargoItemCounts.Count * 2) {
-                    ds.Newline();
-                }
-            }
-        }
-        ds.Newline(reverse: true);
-    }
-
-    public void GetBlocks() {
-        this.cargoBlocks = this.program.allBlocks.Where(c =>
-            (this.program.config.Enabled("getAllGrids") || c.IsSameConstructAs(this.program.Me)) &&
-            (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector || c is IMyAssembler || c is IMyRefinery)
-        );
-    }
-
-    public void Refresh() {
-        if (this.cargoBlocks == null) {
-            return;
-        }
-
-        this.cargoItemCounts.Clear();
-        this.inventoryItems.Clear();
-        this.max = 0;
-        this.vol = 0;
-        this.pct = 0f;
-        string fullName = "";
-        string itemName = "";
-
-        foreach (var c in this.cargoBlocks) {
-            if (!Util.BlockValid(c)) {
-                continue;
-            }
-            var inv = c.GetInventory(0);
-            this.vol += inv.CurrentVolume;
-            this.max += inv.MaxVolume;
-
-            this.inventoryItems.Clear();
-            inv.GetItems(this.inventoryItems);
-            for (var i = 0; i < this.inventoryItems.Count; i++) {
-                fullName = this.inventoryItems[i].Type.ToString();
-                itemName = this.itemRegex.Replace(fullName, "");
-                if (this.ingotRegex.IsMatch(fullName)) {
-                    itemName += " Ingot";
-                } else if (this.oreRegex.IsMatch(fullName)) {
-                    itemName += " Ore";
-                }
-
-                var itemQty = this.inventoryItems[i].Amount;
-                if (!this.cargoItemCounts.ContainsKey(itemName)) {
-                    this.cargoItemCounts.Add(itemName, itemQty);
-                } else {
-                    this.cargoItemCounts[itemName] = this.cargoItemCounts[itemName] + itemQty;
-                }
-            }
-        }
-
-        if (this.max != 0) {
-            this.pct = (float)this.vol / (float)this.max;
-        }
-
-        return;
-    }
-}
-/* CARGO */
-/*
- * AIRLOCK
- */
-Airlock airlock;
-
-public class Airlock {
-    public Program program;
-    public Dictionary<string, AirlockDoors> airlocks;
-    public Dictionary<string, List<IMyFunctionalBlock>> locationToAirlockMap;
-    public System.Text.RegularExpressions.Regex include;
-    public System.Text.RegularExpressions.Regex exclude;
-
-    // The name to match (Default will match regular doors). The capture group "(.*)" is used when grouping airlock doors.
-    public string doorMatch = "Door(.*)";
-    public string doorExclude = "Hangar";  // The exclusion tag (can be anything).
-    public double timeOpen = 720f;  // Duration before auto close (milliseconds)
-
-    public Airlock(Program program) {
-        this.program = program;
-        this.airlocks = new Dictionary<string, AirlockDoors>();
-        this.locationToAirlockMap = new Dictionary<string, List<IMyFunctionalBlock>>();
-
-        this.Reset();
-    }
-
-    public void Reset() {
-        this.Clear();
-
-        this.doorMatch = this.program.config.Get("airlockDoorMatch", "Door(.*)");
-        this.doorExclude = this.program.config.Get("airlockDoorExclude", "Hangar");
-        this.include = Util.Regex(this.doorMatch);
-        this.exclude = Util.Regex(this.doorExclude);
-        this.timeOpen = Util.ParseFloat(this.program.config.Get("airlockOpenTime"), 750f);
-
-        this.GetBlocks();
-    }
-
-    public void Clear() {
-        this.airlocks.Clear();
-        this.locationToAirlockMap.Clear();
-    }
-
-    public void CheckAirlocks() {
-        if (!this.program.config.Enabled("airlock")) {
-            return;
-        }
-        foreach (var al in this.airlocks) {
-            al.Value.Check();
-        }
-    }
-
-    public void GetBlocks() {
-        if (!this.program.config.Enabled("airlock")) {
-            return;
-        }
-        this.Clear();
-
-        // Get all door blocks
-        foreach (var block in this.program.allBlocks.Where(door => door is IMyDoor && door.IsSameConstructAs(this.program.Me))) {
-            if (!Util.BlockValid(block)) {
-                continue;
-            }
-            var match = this.include.Match(block.CustomName);
-            var ignore = this.exclude.Match(block.CustomName);
-            if (!match.Success || ignore.Success) {
-                continue;
-            }
-            var key = match.Groups[1].ToString();
-            if (!this.locationToAirlockMap.ContainsKey(key)) {
-                this.locationToAirlockMap.Add(key, new List<IMyFunctionalBlock>());
-            }
-            this.locationToAirlockMap[key].Add(block as IMyFunctionalBlock);
-        }
-
-        bool doAllDoors = this.program.config.Enabled("airlockAllDoors");
-        foreach (var keyval in this.locationToAirlockMap) {
-            if (!doAllDoors && keyval.Value.Count < 2) {
-                continue;
-            }
-            this.airlocks.Add(keyval.Key, new AirlockDoors(keyval.Value, this.program));
-        }
-    }
-}
-
-public class AirlockDoors {
-    public Program program;
-    private List<IMyFunctionalBlock> blocks;
-    private List<IMyFunctionalBlock> areClosed;
-    private List<IMyFunctionalBlock> areOpen;
-    private double openTimer;
-    public double timeOpen;
-
-    public AirlockDoors(List<IMyFunctionalBlock> doors, Program program, double timeOpen = 750f) {
-        this.program = program;
-        this.blocks = new List<IMyFunctionalBlock>(doors);
-        this.areClosed = new List<IMyFunctionalBlock>();
-        this.areOpen = new List<IMyFunctionalBlock>();
-        this.openTimer = timeOpen;
-        this.timeOpen = timeOpen;
-    }
-
-    private bool IsOpen(IMyFunctionalBlock door) {
-        return (door as IMyDoor).OpenRatio > 0;
-    }
-
-    private void Lock(List<IMyFunctionalBlock> doors = null) {
-        doors = doors ?? this.blocks;
-        foreach (var door in doors) {
-            (door as IMyDoor).Enabled = false;
-        }
-    }
-
-    private void Unlock(List<IMyFunctionalBlock> doors = null) {
-        doors = doors ?? this.blocks;
-        foreach (var door in doors) {
-            (door as IMyDoor).Enabled = true;
-        }
-    }
-
-    private void OpenClose(string action, IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
-        (door1 as IMyDoor).ApplyAction(action);
-        if (door2 != null) {
-            (door2 as IMyDoor).ApplyAction(action);
-        }
-    }
-
-    private void Open(IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
-        this.OpenClose("Open_On", door1, door2);
-    }
-
-    private void OpenAll() {
-        foreach (var door in this.blocks) {
-            this.OpenClose("Open_On", door);
-        }
-    }
-
-    private void Close(IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
-        this.OpenClose("Open_Off", door1, door2);
-    }
-
-    private void CloseAll() {
-        foreach (var door in this.blocks) {
-            this.OpenClose("Open_Off", door);
-        }
-    }
-
-    public bool Check() {
-        int openCount = 0;
-        this.areClosed.Clear();
-        this.areOpen.Clear();
-
-        foreach (var door in this.blocks) {
-            if (!Util.BlockValid(door)) {
-                continue;
-            }
-            if (this.IsOpen(door)) {
-                openCount++;
-                this.areOpen.Add(door);
-            } else {
-                this.areClosed.Add(door);
-            }
-        }
-
-        if (areOpen.Count > 0) {
-            this.openTimer -= this.program.Runtime.TimeSinceLastRun.TotalMilliseconds;
-            if (this.openTimer < 0) {
-                this.CloseAll();
-            } else {
-                this.Lock(this.areClosed);
-                this.Unlock(this.areOpen);
-            }
-        } else {
-            this.Unlock();
-            this.openTimer = this.timeOpen;
-        }
-
-        return true;
-    }
-}
-/* AIRLOCK */
-/*
  * GRAPHICS
  */
 public class DrawingSurface {
+    public class Options {
+        public bool outline = false;
+        public Color? bgColour = null;
+        public Color? colour = null;
+        public Color? fillColour = null;
+        public Color? textColour = null;
+        public float height = 0f;
+        public float high = 1f;
+        public float low = 1f;
+        public float net = 0f;
+        public float pad = 0.1f;
+        public float pct = 0f;
+        public float scale = 1f;
+        public float size = 0f;
+        public float width = 0f;
+        public List<Color> colours = new List<Color>();
+        public List<float> values = new List<float>();
+        public string text = null;
+        public TextAlignment? align = null;
+        public Dictionary<string, string> custom;
+
+        public Options() {
+            this.custom = new Dictionary<string, string>();
+        }
+    }
+
     public Program program;
     public IMyTextSurface surface;
     public RectangleF viewport;
@@ -894,14 +1399,13 @@ public class DrawingSurface {
     public Vector2 padding;
     public float width;
     public float height;
-    public int charsPerWidth;
-    public int charsPerHeight;
     public string name;
     public int ySpace;
     public Color colourGrey = new Color(40, 40, 40);
-    public char[] commaSep = { ',' };
-    public char[] underscoreSep = { '_' };
+    public readonly StringBuilder sizeBuilder;
 
+    public static char[] underscoreSep = { '_' };
+    public static char[] commaSep = { ',' };
     public static Dictionary<string, Color> stringToColour = new Dictionary<string, Color>() {
         { "black", Color.Black },
         { "blue", Color.Blue },
@@ -929,12 +1433,13 @@ public class DrawingSurface {
         { "right", TextAlignment.RIGHT }
     };
 
-    public DrawingSurface(IMyTextSurface surface, Program program, string name = "", int ySpace = 2) {
+    public DrawingSurface(IMyTextSurface surface = null, Program program = null, string name = "", int ySpace = 2) {
         this.program = program;
         this.surface = surface;
         this.cursor = new Vector2(0f, 0f);
         this.savedCursor = new Vector2(0f, 0f);
-        this.sb = new StringBuilder("O");
+        this.sb = new StringBuilder();
+        this.sizeBuilder = new StringBuilder("O");
         this.charSizeInPx = new Vector2(0f, 0f);
         this.surface.ContentType = ContentType.SCRIPT;
         this.drawing = false;
@@ -946,6 +1451,10 @@ public class DrawingSurface {
     }
 
     public void InitScreen() {
+        if (this.surface == null) {
+            return;
+        }
+
         this.cursor.X = 0f;
         this.cursor.Y = 0f;
         this.surface.Script = "";
@@ -959,7 +1468,7 @@ public class DrawingSurface {
         this.Size();
     }
 
-    public Color? GetColourOpt(string colour) {
+    public static Color? StringToColour(string colour) {
         if (colour == "" || colour == null) {
             return null;
         }
@@ -967,7 +1476,7 @@ public class DrawingSurface {
             return DrawingSurface.stringToColour.Get(colour);
         }
 
-        string[] numbersStr = colour.Split(this.commaSep);
+        string[] numbersStr = colour.Split(DrawingSurface.commaSep);
 
         if (numbersStr.Length < 2) {
             return null;
@@ -996,7 +1505,6 @@ public class DrawingSurface {
     public DrawingSurface Draw() {
         this.drawing = false;
         this.frame.Dispose();
-        this.frame = default(MySpriteDrawFrame);
 
         return this;
     }
@@ -1024,23 +1532,52 @@ public class DrawingSurface {
 
     public DrawingSurface Size(float? size = null) {
         this.surface.FontSize = size ?? this.surface.FontSize;
-
-        this.charSizeInPx = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
-        this.charsPerWidth = (int)Math.Floor(this.surface.SurfaceSize.X / this.charSizeInPx.X);
-        this.charsPerHeight = (int)Math.Floor(this.surface.SurfaceSize.Y / this.charSizeInPx.Y);
+        this.charSizeInPx = this.surface.MeasureStringInPixels(this.sizeBuilder, this.surface.Font, this.surface.FontSize);
 
         return this;
     }
 
-    public DrawingSurface Text(string text, Dictionary<string, string> options) {
+    public static MySprite TextSprite(Options options) {
+        Color? colour = options.colour;
+        TextAlignment textAlignment = options.align ?? TextAlignment.LEFT;
+        float scale = options.scale;
+        string text = options.text;
+
+        return new MySprite() {
+            Type = SpriteType.TEXT,
+            Data = text,
+            Color = colour,
+            Alignment = textAlignment,
+            RotationOrScale = scale
+        };
+    }
+
+    public void AddTextSprite(MySprite sprite) {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
+        this.sb.Clear();
+        this.sb.Append(sprite.Data);
+        Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
+
+        sprite.Position = this.cursor + this.viewport.Position;
+        sprite.RotationOrScale = this.surface.FontSize * sprite.RotationOrScale;
+        sprite.FontId = this.surface.Font;
+        sprite.Color = sprite.Color ?? this.surface.ScriptForegroundColor;
+
+        this.frame.Add(sprite);
+
+        this.cursor.X += size.X;
+    }
+
+    public DrawingSurface Text(string text, Options options) {
         if (options == null) {
             return this.Text(text);
         }
-        Color? colour = this.GetColourOpt(options.Get("colour", null));
-        TextAlignment textAlignment = DrawingSurface.stringToAlignment.Get(options.Get("align", "left"));
-        float scale = Util.ParseFloat(options.Get("scale"), 1f);
+        TextAlignment textAlignment = options.align ?? TextAlignment.LEFT;
 
-        return this.Text(text, colour: colour, textAlignment: textAlignment, scale: scale);
+        return this.Text(text, colour: options.colour, textAlignment: textAlignment, scale: options.scale);
     }
 
     public DrawingSurface Text(
@@ -1057,9 +1594,7 @@ public class DrawingSurface {
         if (!this.drawing) {
             this.DrawStart();
         }
-        if (colour == null) {
-            colour = this.surface.ScriptForegroundColor;
-        }
+        colour = colour ?? this.surface.ScriptForegroundColor;
 
         Vector2 pos = (position ?? this.cursor) + this.viewport.Position;
 
@@ -1076,8 +1611,6 @@ public class DrawingSurface {
         this.sb.Clear();
         this.sb.Append(text);
         Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
-        this.sb.Clear();
-        this.sb.Append("O");
 
         this.cursor.X += size.X;
 
@@ -1100,27 +1633,17 @@ public class DrawingSurface {
         return DrawingSurface.stringToColour.Get("dimred");
     }
 
-    public DrawingSurface MidBar(Dictionary<string, string> options) {
-        float net = Util.ParseFloat(options.Get("net"), 0f);
-        float low = Util.ParseFloat(options.Get("low"), 1f);
-        float high = Util.ParseFloat(options.Get("high"), 1f);
-        float width = Util.ParseFloat(options.Get("width"), 0f);
-        float height = Util.ParseFloat(options.Get("height"), 0f);
-        float pad = Util.ParseFloat(options.Get("pad"), 0.1f);
-        Color? bgColour = this.GetColourOpt(options.Get("colour", null));
-        string text = options.Get("text", null);
-        Color? textColour = this.GetColourOpt(options.Get("textColour", null));
-
+    public DrawingSurface MidBar(Options options) {
         return this.MidBar(
-            net: net,
-            low: low,
-            high: high,
-            width: width,
-            height: height,
-            pad: pad,
-            bgColour: bgColour,
-            text: text,
-            textColour: textColour
+            net: options.net,
+            low: options.low,
+            high: options.high,
+            width: options.width,
+            height: options.height,
+            pad: options.pad,
+            bgColour: options.bgColour,
+            text: options.text,
+            textColour: options.textColour
         );
     }
 
@@ -1208,31 +1731,21 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface Bar(Dictionary<string, string> options) {
-        if (options == null || options.Get("pct", null) == null) {
+    public DrawingSurface Bar(Options options) {
+        if (options == null || options.pct == 0f) {
             return this.Bar(0f, text: "--/--");
         }
 
-        float pct = Util.ParseFloat(options.Get("pct"));
-        float width = Util.ParseFloat(options.Get("width"), 0f);
-        float height = Util.ParseFloat(options.Get("height"), 0f);
-        Color? fillColour = this.GetColourOpt(options.Get("fillColour"));
-        TextAlignment textAlignment = DrawingSurface.stringToAlignment.Get(options.Get("align", "null"), TextAlignment.CENTER);
-        string text = options.Get("text", null);
-        Color? textColour = this.GetColourOpt(options.Get("textColour"));
-        Color? bgColour = this.GetColourOpt(options.Get("bgColour"));
-        float pad = Util.ParseFloat(options.Get("pad"), 0.1f);
-
         return this.Bar(
-            pct,
-            width: width,
-            height: height,
-            fillColour: fillColour,
-            textAlignment: textAlignment,
-            text: text,
-            textColour: textColour,
-            bgColour: bgColour,
-            pad: pad
+            options.pct,
+            width: options.width,
+            height: options.height,
+            fillColour: options.fillColour,
+            textAlignment: options.align ?? TextAlignment.CENTER,
+            text: options.text,
+            textColour: options.textColour,
+            bgColour: options.bgColour,
+            pad: options.pad
         );
     }
 
@@ -1301,30 +1814,17 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface MultiBar(Dictionary<string, string> options) {
-        List<Color> colours = options.Get("colours", "").Split(this.underscoreSep)
-            .Select(col => this.GetColourOpt(col) ?? Color.White).ToList();
-        List<float> values = options.Get("values", "").Split(this.underscoreSep)
-            .Select(pct => Util.ParseFloat(pct, 0f)).ToList();
-
-        float width = Util.ParseFloat(options.Get("width"), 0f);
-        float height = Util.ParseFloat(options.Get("height"), 0f);
-        string text = options.Get("text", null);
-        Color? textColour = this.GetColourOpt(options.Get("textColour"));
-        Color? bgColour = this.GetColourOpt(options.Get("bgColour"));
-        TextAlignment textAlignment = DrawingSurface.stringToAlignment.Get(options.Get("align", "null"), TextAlignment.CENTER);
-        float pad = Util.ParseFloat(options.Get("pad"), 0.1f);
-
+    public DrawingSurface MultiBar(Options options) {
         return this.MultiBar(
-            values,
-            colours,
-            width: width,
-            height: height,
-            text: text,
-            textColour: textColour,
-            bgColour: bgColour,
-            textAlignment: textAlignment,
-            pad: pad
+            options.values,
+            options.colours,
+            width: options.width,
+            height: options.height,
+            text: options.text,
+            textColour: options.textColour,
+            bgColour: options.bgColour,
+            textAlignment: options.align ?? TextAlignment.CENTER,
+            pad: options.pad
         );
     }
 
@@ -1415,15 +1915,8 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface TextCircle(Dictionary<string, string> options) {
-        if (options == null) {
-            return this.TextCircle();
-        }
-
-        Color? colour = this.GetColourOpt(options.Get("colour"));
-        bool outline = Util.ParseBool(options.Get("outline"));
-
-        return this.TextCircle(colour, outline: outline);
+    public DrawingSurface TextCircle(Options options) {
+        return (options == null) ? this.TextCircle() : this.TextCircle(options.colour, outline: options.outline);
     }
 
     public DrawingSurface TextCircle(Color? colour = null, bool outline = false) {
@@ -1433,16 +1926,14 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface Circle(Dictionary<string, string> options) {
+    public DrawingSurface Circle(Options options) {
         if (options == null) {
             return this.Circle(this.charSizeInPx.Y, null);
         }
 
-        float size = Util.ParseFloat(options.Get("size"), this.charSizeInPx.Y);
-        Color? colour = this.GetColourOpt(options.Get("colour"));
-        bool outline = Util.ParseBool(options.Get("outline"), false);
+        float size = (options.size <= 0f) ? this.charSizeInPx.Y : options.size;
 
-        return this.Circle(size: size, colour: colour, outline: outline);
+        return this.Circle(size: size, colour: options.colour, outline: options.outline);
     }
 
     public DrawingSurface Circle(float size, Color? colour, Vector2? position = null, bool outline = false) {
@@ -1468,450 +1959,6 @@ public class DrawingSurface {
     }
 }
 /* GRAPHICS */
-/*
- * BLOCK_HEALTH
- */
-BlockHealth blockHealth;
-
-class BlockHealth {
-    public Program program;
-    public Template template;
-    public System.Text.RegularExpressions.Regex ignoreHealth;
-    public IEnumerable<IMyTerminalBlock> blocks;
-    public Dictionary<string, string> damaged;
-    public string status;
-
-    public BlockHealth(Program program, Template template) {
-        this.program = program;
-        this.template = template;
-        this.damaged = new Dictionary<string, string>();
-
-        this.Reset();
-    }
-
-    public void Reset() {
-        this.Clear();
-
-        if (this.program.config.Enabled("health")) {
-            this.GetBlocks();
-            this.RegisterTemplateVars();
-
-            string ignore = this.program.config.Get("healthIgnore");
-            if (ignore != "" && ignore != null) {
-                this.ignoreHealth = Util.Regex(System.Text.RegularExpressions.Regex.Replace(ignore, @"\s*,\s*", "|"));
-            }
-        }
-    }
-
-    public void Clear() {
-        this.damaged.Clear();
-    }
-
-    public void RegisterTemplateVars() {
-        if (this.template == null) {
-            return;
-        }
-
-        this.template.Register("health.status", () => this.status);
-        this.template.Register("health.blocks",
-            (DrawingSurface ds, string text, Dictionary<string, string> options) => {
-                foreach (KeyValuePair<string, string> block in this.damaged) {
-                    ds.Text($"{block.Key} [{block.Value}]").Newline();
-                }
-                ds.Newline(reverse: true);
-            }
-        );
-    }
-
-    public float GetHealth(IMyTerminalBlock block) {
-        IMySlimBlock slimblock = block.CubeGrid.GetCubeBlock(block.Position);
-        if (slimblock == null) {
-            return 1f;
-        }
-        float MaxIntegrity = slimblock.MaxIntegrity;
-        float BuildIntegrity = slimblock.BuildIntegrity;
-        float CurrentDamage = slimblock.CurrentDamage;
-
-        return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
-    }
-
-    public void GetBlocks() {
-        this.blocks = this.program.allBlocks.Where(b => this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me));
-    }
-
-    public void Refresh() {
-        if (this.blocks == null) {
-            return;
-        }
-
-        this.damaged.Clear();
-        bool showOnHud = this.program.config.Enabled("healthOnHud");
-
-        foreach (var b in this.blocks) {
-            if (!Util.BlockValid(b)) {
-                continue;
-            }
-            if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
-                continue;
-            }
-
-            var health = this.GetHealth(b);
-            if (health != 1f) {
-                this.damaged[b.CustomName] = Util.PctString(health);
-            }
-            if (showOnHud) {
-                b.ShowOnHUD = health != 1f;
-            }
-        }
-
-        this.status = $"{(this.damaged.Count == 0 ? "No damage" : "Damage")} detected";
-    }
-}
-/* BLOCK_HEALTH */
-/*
- * POWER
- */
-PowerDetails powerDetails;
-
-public class PowerDetails {
-    public Program program;
-    public Template template;
-    public IEnumerable<IMyTerminalBlock> blocks;
-    public List<MyInventoryItem> items;
-    public List<float> ioFloats;
-    public List<Color> ioColours;
-
-    public int jumpDrives;
-    public float jumpMax;
-    public float jumpCurrent;
-
-    public int batteries;
-    public float batteryMax;
-    public float batteryCurrent;
-    public float batteryInput;
-    public float batteryOutput;
-    public float batteryOutputDisabled;
-    public float batteryOutputMax;
-    public float batteryInputMax;
-
-    public int reactors;
-    public float reactorOutputMW;
-    public float reactorOutputMax;
-    public float reactorOutputDisabled;
-    public MyFixedPoint reactorUranium;
-
-    public int solars;
-    public float solarOutputMW;
-    public float solarOutputDisabled;
-    public float solarOutputMax;
-
-    public int turbines;
-    public float turbineOutputMW;
-    public float turbineOutputDisabled;
-    public float turbineOutputMax;
-
-    public int hEngines;
-    public float hEngineOutputMW;
-    public float hEngineOutputDisabled;
-    public float hEngineOutputMax;
-
-    public float battChargeMax = 12f;
-
-    public Color reactorColour = Color.Lighten(Color.Blue, 0.05);
-    public Color hEnginesColour = DrawingSurface.stringToColour["dimred"];
-    public Color batteriesColour = DrawingSurface.stringToColour["dimgreen"];
-    public Color turbinesColour = DrawingSurface.stringToColour["dimyellow"];
-    public Color solarsColour = Color.Darken(Color.Cyan, 0.6);
-
-    public PowerDetails(Program program, Template template = null) {
-        this.program = program;
-        this.template = template;
-        this.items = new List<MyInventoryItem>();
-        this.ioFloats = new List<float>();
-        this.ioColours = new List<Color>() {
-            this.reactorColour,
-            new Color(this.reactorColour, 0.01f),
-            this.hEnginesColour,
-            new Color(this.hEnginesColour, 0.01f),
-            this.batteriesColour,
-            new Color(this.batteriesColour, 0.01f),
-            this.turbinesColour,
-            new Color(this.turbinesColour, 0.01f),
-            this.solarsColour,
-            new Color(this.solarsColour, 0.01f)
-        };
-
-        this.Reset();
-    }
-
-    public void Reset() {
-        this.Clear();
-
-        if (this.program.config.Enabled("power")) {
-            this.GetBlocks();
-            this.RegisterTemplateVars();
-        }
-    }
-
-    public void RegisterTemplateVars() {
-        if (this.template == null) {
-            return;
-        }
-        this.template.Register("power.batteries", () => this.batteries.ToString());
-        this.template.Register("power.batteryCurrent", () => String.Format("{0:0.##}", this.batteryCurrent));
-        this.template.Register("power.batteryInput", () => String.Format("{0:0.##}", this.batteryInput));
-        this.template.Register("power.batteryInputMax", () => String.Format("{0:0.##}", this.batteryInputMax));
-        this.template.Register("power.batteryMax", () => String.Format("{0:0.##}", this.batteryMax));
-        this.template.Register("power.batteryOutput", () => String.Format("{0:0.##}", this.batteryOutput));
-        this.template.Register("power.batteryOutputMax", () => String.Format("{0:0.##}", this.batteryOutputMax));
-        this.template.Register("power.engineOutputMax", () => String.Format("{0:0.##}", this.hEngineOutputMax));
-        this.template.Register("power.engineOutputMW", () => String.Format("{0:0.##}", this.hEngineOutputMW));
-        this.template.Register("power.engines", () => this.hEngines.ToString());
-        this.template.Register("power.input", () => String.Format("{0:0.##}", this.CurrentInput()));
-        this.template.Register("power.jumpCurrent", () => String.Format("{0:0.##}", this.jumpCurrent));
-        this.template.Register("power.jumpDrives", () => this.jumpDrives.ToString());
-        this.template.Register("power.jumpMax", () => String.Format("{0:0.##}", this.jumpMax));
-        this.template.Register("power.maxOutput", () => String.Format("{0:0.##}", this.MaxOutput()));
-        this.template.Register("power.output", () => String.Format("{0:0.##}", this.CurrentOutput()));
-        this.template.Register("power.reactorOutputMax", () => String.Format("{0:0.##}", this.reactorOutputMax));
-        this.template.Register("power.reactorOutputMW", () => String.Format("{0:0.##}", this.reactorOutputMW));
-        this.template.Register("power.reactors", () => this.reactors.ToString());
-        this.template.Register("power.reactorUr", () => Util.FormatNumber(this.reactorUranium));
-        this.template.Register("power.solarOutputMax", () => String.Format("{0:0.##}", this.solarOutputMax));
-        this.template.Register("power.solarOutputMW", () => String.Format("{0:0.##}", this.solarOutputMW));
-        this.template.Register("power.solars", () => this.solars.ToString());
-        this.template.Register("power.turbineOutputMax", () => String.Format("{0:0.##}", this.turbineOutputMax));
-        this.template.Register("power.turbineOutputMW", () => String.Format("{0:0.##}", this.turbineOutputMW));
-        this.template.Register("power.turbines", () => this.turbines.ToString());
-        this.template.Register("power.jumpBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
-            if (this.jumpDrives == 0) {
-                return;
-            }
-            float pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
-            options["text"] = text ?? Util.PctString(pct);
-            options["pct"] = pct.ToString();
-            ds.Bar(options);
-        });
-        this.template.Register("power.batteryBar", this.BatteryBar);
-        this.template.Register("power.ioString", () => {
-            float io = this.CurrentInput() - this.CurrentOutput();
-            float max = this.MaxOutput();
-
-            return String.Format("{0:0.00} / {1:0.00} MWh ({2})", io, max, Util.PctString(Math.Abs(io) / max));
-        });
-        this.template.Register("power.ioBar", this.IoBar);
-        this.template.Register("power.ioLegend", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
-            text = text ?? "Reactor / H2 Engine / Battery / Wind / Solar";
-            ds.sb.Clear();
-            ds.sb.Append(text);
-            Vector2 size = Vector2.Divide(ds.surface.MeasureStringInPixels(ds.sb, ds.surface.Font, ds.surface.FontSize), 2);
-            ds.sb.Clear();
-            ds.sb.Append("O");
-            ds.SetCursor(ds.width / 2 - size.X, null);
-            ds
-                .Text("Reactor", colour: this.reactorColour).Text(" / ")
-                .Text("H2 Engine", colour: this.hEnginesColour).Text(" / ")
-                .Text("Battery", colour: this.batteriesColour).Text(" / ")
-                .Text("Wind", colour: this.turbinesColour).Text(" / ")
-                .Text("Solar", colour: this.solarsColour);
-        });
-        this.template.Register("power.reactorString", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
-            if (this.reactors == 0) {
-                return;
-            }
-            string msg = text ?? options.Get("text", "Reactors: ");
-            ds.Text($"{msg}{this.reactors}, Output: {this.reactorOutputMW} MW, Ur: {this.reactorUranium}");
-        });
-    }
-
-    public void Clear() {
-        this.jumpDrives = 0;
-        this.jumpMax = 0f;
-        this.jumpCurrent = 0f;
-        this.batteries = 0;
-        this.batteryMax = 0f;
-        this.batteryCurrent = 0f;
-        this.batteryInput = 0f;
-        this.batteryOutput = 0f;
-        this.batteryOutputDisabled = 0f;
-        this.batteryOutputMax = 0f;
-        this.batteryInputMax = 0f;
-        this.reactors = 0;
-        this.reactorOutputMW = 0f;
-        this.reactorOutputDisabled = 0f;
-        this.reactorOutputMax = 0f;
-        this.reactorUranium = 0;
-        this.solars = 0;
-        this.solarOutputMW = 0f;
-        this.solarOutputDisabled = 0f;
-        this.solarOutputMax = 0f;
-        this.turbines = 0;
-        this.turbineOutputMW = 0f;
-        this.turbineOutputDisabled = 0f;
-        this.turbineOutputMax = 0f;
-        this.hEngines = 0;
-        this.hEngineOutputMW = 0f;
-        this.hEngineOutputDisabled = 0f;
-        this.hEngineOutputMax = 0f;
-    }
-
-    public void GetBlocks() {
-        this.blocks = this.program.allBlocks.Where(b => {
-            if (!this.program.config.Enabled("getAllGrids") && !b.IsSameConstructAs(this.program.Me)) {
-                return false;
-            }
-            return b is IMyPowerProducer || b is IMyJumpDrive;
-        });
-    }
-
-    public float GetPercent(float current, float max) {
-        if (max == 0) {
-            return 0f;
-        }
-        return current / max;
-    }
-
-    public float MaxOutput() {
-        return this.hEngineOutputMax + this.reactorOutputMax + this.solarOutputMax + this.turbineOutputMax + (battChargeMax * this.batteries);
-    }
-
-    public float MaxInput() {
-        return (battChargeMax * this.batteries);
-    }
-
-    public float CurrentInput() {
-        return this.batteryInput;
-    }
-
-    public float CurrentOutput() {
-        return this.reactorOutputMW + this.solarOutputMW + this.turbineOutputMW + this.hEngineOutputMW + this.batteryOutput;
-    }
-
-    public float DisabledMaxOutput() {
-        return this.batteryOutputDisabled + this.reactorOutputDisabled + this.solarOutputDisabled + this.turbineOutputDisabled + this.hEngineOutputDisabled;
-    }
-
-    public void Refresh() {
-        this.Clear();
-
-        foreach (IMyTerminalBlock block in this.blocks) {
-            if (!Util.BlockValid(block)) {
-                continue;
-            }
-            string typeString = block.BlockDefinition.TypeIdString;
-            IMyPowerProducer powerBlock = block as IMyPowerProducer;
-            IMyBatteryBlock battery = powerBlock as IMyBatteryBlock;
-            IMyJumpDrive jumpDrive = block as IMyJumpDrive;
-
-            if (battery != null) {
-                this.batteries++;
-                this.batteryCurrent += battery.CurrentStoredPower;
-                this.batteryMax += battery.MaxStoredPower;
-                this.batteryInput += battery.CurrentInput;
-                this.batteryOutput += battery.CurrentOutput;
-                this.batteryOutputMax += battery.MaxOutput;
-                this.batteryOutputMax += battery.MaxInput;
-                if (!battery.Enabled || battery.ChargeMode == ChargeMode.Recharge) {
-                    this.batteryOutputDisabled += battChargeMax;
-                }
-            } else if (powerBlock is IMyReactor) {
-                this.reactors++;
-                this.reactorOutputMW += powerBlock.CurrentOutput;
-                this.reactorOutputMax += powerBlock.MaxOutput;
-
-                if (!powerBlock.Enabled) {
-                    this.reactorOutputDisabled += powerBlock.MaxOutput;
-                }
-
-                this.items.Clear();
-                var inv = powerBlock.GetInventory(0);
-                inv.GetItems(this.items);
-                for (var i = 0; i < items.Count; i++) {
-                    this.reactorUranium += items[i].Amount;
-                }
-            } else if (powerBlock is IMySolarPanel) {
-                this.solars++;
-                this.solarOutputMW += powerBlock.CurrentOutput;
-                this.solarOutputMax += powerBlock.MaxOutput;
-                if (!powerBlock.Enabled) {
-                    this.solarOutputDisabled += powerBlock.MaxOutput;
-                }
-            } else if (typeString == "MyObjectBuilder_HydrogenEngine") {
-                this.hEngines++;
-                this.hEngineOutputMW += powerBlock.CurrentOutput;
-                this.hEngineOutputMax += powerBlock.MaxOutput;
-                if (!powerBlock.Enabled) {
-                    this.hEngineOutputDisabled += powerBlock.MaxOutput;
-                }
-            } else if (typeString == "MyObjectBuilder_WindTurbine") {
-                this.turbines++;
-                this.turbineOutputMW += powerBlock.CurrentOutput;
-                this.turbineOutputMax += powerBlock.MaxOutput;
-                if (!powerBlock.Enabled) {
-                    this.turbineOutputDisabled += powerBlock.MaxOutput;
-                }
-            } else if (jumpDrive != null) {
-                this.jumpDrives += 1;
-                this.jumpCurrent += jumpDrive.CurrentStoredPower;
-                this.jumpMax += jumpDrive.MaxStoredPower;
-                continue;
-            }
-        }
-    }
-
-    public void BatteryBar(DrawingSurface ds, string text, Dictionary<string, string> options) {
-        if (this.batteries == 0) {
-            return;
-        }
-        float io = this.batteryInput - this.batteryOutput;
-
-        float net = this.batteryCurrent;
-        float remainingMins = io == 0f ? 0 : (this.batteryMax - this.batteryCurrent) * 60 / Math.Abs(io);
-        string pct = Util.PctString(this.batteryCurrent / this.batteryMax);
-        if (this.batteryCurrent / this.batteryMax >= 0.9999f) {
-            pct = "100 %";
-            io = 0;
-            remainingMins = 0;
-        }
-        string msg = $"{pct}";
-        if (io < 0) {
-            net = (this.batteryCurrent - this.batteryMax);
-            remainingMins = this.batteryCurrent * 60 / Math.Abs(io);
-            msg = $"{pct}";
-        }
-        double minsLeft = Math.Round(remainingMins);
-        text = text ?? $"{msg} ({(minsLeft <= 60 ? $"{minsLeft} min" : String.Format("{0:0.00} hours", minsLeft / 60))})";
-
-        float high = this.batteryMax;
-        float low = high;
-
-        options["net"] = net.ToString();
-        options["low"] = low.ToString();
-        options["high"] = high.ToString();
-        options["text"] = text;
-
-        ds.MidBar(options);
-    }
-
-    public void IoBar(DrawingSurface ds, string text, Dictionary<string, string> options) {
-        float max = this.CurrentOutput() + this.DisabledMaxOutput();
-
-        this.ioFloats.Clear();
-        this.ioFloats.Add(this.reactorOutputMW / max);
-        this.ioFloats.Add(this.reactorOutputDisabled / max);
-        this.ioFloats.Add(this.hEngineOutputMW / max);
-        this.ioFloats.Add(this.hEngineOutputDisabled / max);
-        this.ioFloats.Add(this.batteryOutput / max);
-        this.ioFloats.Add(this.batteryOutputDisabled / max);
-        this.ioFloats.Add(this.turbineOutputMW / max);
-        this.ioFloats.Add(this.turbineOutputDisabled / max);
-        this.ioFloats.Add(this.solarOutputMW / max);
-        this.ioFloats.Add(this.solarOutputDisabled / max);
-
-        ds.MultiBar(this.ioFloats, this.ioColours, text: text, textAlignment: TextAlignment.LEFT);
-    }
-}
-/* POWER */
 public class Template {
     public class Token {
         public bool isText = true;
@@ -1921,16 +1968,21 @@ public class Template {
     public class Node {
         public string action;
         public string text;
-        public Dictionary<string, string> options;
+        public DrawingSurface.Options options;
+        public MySprite? sprite;
 
-        public Node(string action, string text = null, Dictionary<string, string> options = null) {
+        public Node(string action, string text = null, DrawingSurface.Options opts = null) {
             this.action = action;
             this.text = text;
-            this.options = options ?? new Dictionary<string, string>();
+            this.options = opts ?? new DrawingSurface.Options();
+            if (action == "text") {
+                this.options.text = this.options.text ?? text;
+                this.sprite = DrawingSurface.TextSprite(this.options);
+            }
         }
     }
 
-    public delegate void DsCallback(DrawingSurface ds, string token, Dictionary<string, string> options);
+    public delegate void DsCallback(DrawingSurface ds, string token, DrawingSurface.Options options);
     public delegate string TextCallback();
 
     public Program program;
@@ -1961,12 +2013,11 @@ public class Template {
     public void Reset() {
         this.Clear();
 
-        this.Register("text", this.RenderText);
-        this.Register("textCircle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.TextCircle(options));
-        this.Register("circle", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Circle(options));
-        this.Register("bar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Bar(options));
-        this.Register("midBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.MidBar(options));
-        this.Register("multiBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.MultiBar(options));
+        this.Register("textCircle", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.TextCircle(options));
+        this.Register("circle", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.Circle(options));
+        this.Register("bar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.Bar(options));
+        this.Register("midBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.MidBar(options));
+        this.Register("multiBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.MultiBar(options));
     }
 
     public void Clear() {
@@ -1980,18 +2031,16 @@ public class Template {
     }
 
     public void Register(string key, TextCallback callback) {
-        this.methods[key] = (DrawingSurface ds, string text, Dictionary<string, string> options) => ds.Text(callback(), options);
-    }
-
-    public void RenderText(DrawingSurface ds, string text, Dictionary<string, string> options) {
-        ds.Text(text, options);
+        // TODO: precalc
+        this.methods[key] = (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.Text(callback(), options);
     }
 
     public Dictionary<string, bool> PreRender(string outputName, string templateStrings) {
         return this.PreRender(outputName, templateStrings.Split(splitLine, StringSplitOptions.None));
     }
 
-    public Dictionary<string, bool> PreRender(string outputName, string[] templateStrings) {
+    // TODO: only string & yield
+    private Dictionary<string, bool> PreRender(string outputName, string[] templateStrings) {
         this.templateVars.Clear();
         List<Node> nodeList = new List<Node>();
 
@@ -2012,15 +2061,15 @@ public class Template {
 
                 System.Text.RegularExpressions.Match m = this.cmdSplitter.Match(this.token.value);
                 if (m.Success) {
-                    var opts = this.StringToDict(m.Groups["params"].Value);
+                    var opts = this.StringToOptions(m.Groups["params"].Value);
                     if (m.Groups["newline"].Value != "") {
-                        opts["noNewline"] = "true";
+                        opts.custom["noNewline"] = "true";
                         autoNewline = false;
                     }
                     text = (m.Groups["text"].Value == "" ? null : m.Groups["text"].Value);
                     if (text != null) {
                         text = System.Text.RegularExpressions.Regex.Replace(text, @"\\([\{\}])", "$1");
-                        opts["text"] = text;
+                        opts.text = text;
                     }
                     this.AddTemplateTokens(m.Groups["name"].Value);
                     nodeList.Add(new Node(m.Groups["name"].Value, text, opts));
@@ -2063,6 +2112,11 @@ public class Template {
                 continue;
             }
 
+            if (node.action == "text") {
+                ds.AddTextSprite((MySprite)node.sprite);
+                continue;
+            }
+
             if (this.methods.TryGetValue(node.action, out callback)) {
                 callback(ds, node.text, node.options);
             } else {
@@ -2073,14 +2127,47 @@ public class Template {
         ds.Draw();
     }
 
-    public Dictionary<string, string> StringToDict(string options = "") {
+    public DrawingSurface.Options StringToOptions(string options = "") {
+        DrawingSurface.Options opts = new DrawingSurface.Options();
         if (options == "") {
-            return new Dictionary<string, string>();
+            return opts;
         }
 
-        return options.Split(splitSemi, StringSplitOptions.RemoveEmptyEntries)
-            .Select(value => value.Split('='))
+        Dictionary<string, string> parsed = options.Split(splitSemi, StringSplitOptions.RemoveEmptyEntries)
+            .Select(v => v.Split('='))
             .ToDictionary(pair => pair.Length > 1 ? pair[0] : "unknown", pair => pair.Length > 1 ? pair[1] : pair[0]);
+
+        string value;
+        if (parsed.Pop("width", out value)) { opts.width = Util.ParseFloat(value); }
+        if (parsed.Pop("height", out value)) { opts.height = Util.ParseFloat(value); }
+        if (parsed.Pop("outline", out value)) { opts.outline = Util.ParseBool(value); }
+        if (parsed.Pop("bgColour", out value)) { opts.bgColour = DrawingSurface.StringToColour(value); }
+        if (parsed.Pop("colour", out value)) { opts.colour = DrawingSurface.StringToColour(value); }
+        if (parsed.Pop("fillColour", out value)) { opts.fillColour = DrawingSurface.StringToColour(value); }
+        if (parsed.Pop("textColour", out value)) { opts.textColour = DrawingSurface.StringToColour(value); }
+        if (parsed.Pop("height", out value)) { opts.height = Util.ParseFloat(value); }
+        if (parsed.Pop("high", out value)) { opts.high = Util.ParseFloat(value); }
+        if (parsed.Pop("low", out value)) { opts.low = Util.ParseFloat(value); }
+        if (parsed.Pop("net", out value)) { opts.net = Util.ParseFloat(value); }
+        if (parsed.Pop("pad", out value)) { opts.pad = Util.ParseFloat(value); }
+        if (parsed.Pop("pct", out value)) { opts.pct = Util.ParseFloat(value); }
+        if (parsed.Pop("scale", out value)) { opts.scale = Util.ParseFloat(value); }
+        if (parsed.Pop("size", out value)) { opts.size = Util.ParseFloat(value); }
+        if (parsed.Pop("width", out value)) { opts.width = Util.ParseFloat(value); }
+        if (parsed.Pop("text", out value)) { opts.text = value; }
+        if (parsed.Pop("align", out value)) { opts.align = DrawingSurface.stringToAlignment.Get(value); }
+        if (parsed.Pop("colours", out value)) {
+            opts.colours = value.Split(DrawingSurface.underscoreSep)
+                .Select(col => DrawingSurface.StringToColour(col) ?? Color.White).ToList();
+        }
+        if (parsed.Pop("values", out value)) {
+            opts.values = value.Split(DrawingSurface.underscoreSep)
+                .Select(pct => Util.ParseFloat(pct, 0f)).ToList();
+        }
+
+        opts.custom = parsed;
+
+        return opts;
     }
 
     public void Echo(string text) {
@@ -2238,5 +2325,14 @@ public static class Dict {
         }
 
         return sb.Append("}").ToString();
+    }
+
+    public static bool Pop<TKey, TValue>(this Dictionary<TKey, TValue> dict, TKey key, out TValue result) {
+        if (dict.TryGetValue(key, out result)) {
+            dict.Remove(key);
+
+            return true;
+        };
+        return false;
     }
 /* UTIL */

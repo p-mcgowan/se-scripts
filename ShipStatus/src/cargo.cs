@@ -5,7 +5,7 @@ CargoStatus cargoStatus;
 
 public class CargoStatus {
     public Program program;
-    public IEnumerable<IMyTerminalBlock> cargoBlocks;
+    public List<IMyTerminalBlock> cargoBlocks;
     public Dictionary<string, VRage.MyFixedPoint> cargoItemCounts;
     public List<MyInventoryItem> inventoryItems;
     public System.Text.RegularExpressions.Regex itemRegex;
@@ -29,6 +29,7 @@ public class CargoStatus {
 
         this.cargoItemCounts = new Dictionary<string, VRage.MyFixedPoint>();
         this.inventoryItems = new List<MyInventoryItem>();
+        this.cargoBlocks = new List<IMyTerminalBlock>();
         this.itemText = "";
         this.pct = 0f;
 
@@ -39,7 +40,6 @@ public class CargoStatus {
         this.Clear();
 
         if (this.program.config.Enabled("cargo")) {
-            this.GetBlocks();
             this.RegisterTemplateVars();
         }
     }
@@ -47,6 +47,7 @@ public class CargoStatus {
     public void Clear() {
         this.cargoItemCounts.Clear();
         this.inventoryItems.Clear();
+        this.cargoBlocks.Clear();
     }
 
     public void RegisterTemplateVars() {
@@ -65,13 +66,13 @@ public class CargoStatus {
         this.template.Register("cargo.items", this.RenderItems);
     }
 
-    public void RenderPct(DrawingSurface ds, string text, Dictionary<string, string> options) {
+    public void RenderPct(DrawingSurface ds, string text, DrawingSurface.Options options) {
         string colourName = this.pct > 85 ? "dimred" : this.pct > 60 ? "dimyellow" : "dimgreen";
         Color? colour = DrawingSurface.stringToColour.Get(colourName);
         ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct));
     }
 
-    public void RenderItems(DrawingSurface ds, string text, Dictionary<string, string> options) {
+    public void RenderItems(DrawingSurface ds, string text, DrawingSurface.Options options) {
         if (ds.width / (ds.charSizeInPx.X + 1f) < 40) {
             foreach (var item in this.cargoItemCounts) {
                 var fmtd = Util.FormatNumber(item.Value);
@@ -100,12 +101,13 @@ public class CargoStatus {
         ds.Newline(reverse: true);
     }
 
-    public void GetBlocks() {
-        this.cargoBlocks = this.program.allBlocks.Where(c =>
-            (this.program.config.Enabled("getAllGrids") || c.IsSameConstructAs(this.program.Me)) &&
-            (c is IMyCargoContainer || c is IMyShipDrill || c is IMyShipConnector || c is IMyAssembler || c is IMyRefinery)
-        );
+    public void GetBlock(IMyTerminalBlock block) {
+        if (block is IMyCargoContainer || block is IMyShipDrill || block is IMyShipConnector || block is IMyAssembler || block is IMyRefinery) {
+            this.cargoBlocks.Add(block);
+        }
     }
+
+    public void GotBLocks() {}
 
     public void Refresh() {
         if (this.cargoBlocks == null) {

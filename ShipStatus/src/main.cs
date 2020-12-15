@@ -156,6 +156,7 @@ public bool ParseCustomData() {
     string surfaceName;
     IMyTextSurface surface;
     drawables.Clear();
+    bool hasNumberedSurface;
 
     blocks.Clear();
     GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);
@@ -164,13 +165,16 @@ public bool ParseCustomData() {
         for (int i = 0; i < block.SurfaceCount; i++) {
             name = ((IMyTerminalBlock)block).CustomName;
             surfaceName = $"{name} <{i}>";
-            if (!strings.Contains(name) && !strings.Contains(surfaceName)) {
+
+            hasNumberedSurface = strings.Contains(surfaceName);
+            if (!strings.Contains(name) && !hasNumberedSurface) {
                 continue;
             }
 
             surface = block.GetSurface(i);
-            drawables.Add(surfaceName, new DrawingSurface(surface, this, $"{name} <{i}>"));
-            if (i == 0 && block.SurfaceCount == 1) {
+            if (hasNumberedSurface) {
+                drawables.Add(surfaceName, new DrawingSurface(surface, this, $"{name} <{i}>"));
+            } else {
                 drawables.Add(name, new DrawingSurface(surface, this, name));
             }
         }
@@ -225,13 +229,34 @@ public bool RecheckFailed() {
         return !Configure();
     }
 
-    if (i % (update100sPerBlockCheck + 1) == 0) {
+    if (i == 1 || i % (update100sPerBlockCheck + 1) == 0) {
+        cargoStatus.Clear();
+        airlock.Clear();
+        blockHealth.Clear();
+        powerDetails.Clear();
+        productionDetails.Clear();
+
         GridTerminalSystem.GetBlocks(allBlocks);
-        cargoStatus.GetBlocks();
-        airlock.GetBlocks();
-        blockHealth.GetBlocks();
-        powerDetails.GetBlocks();
-        productionDetails.GetBlocks();
+        foreach (IMyTerminalBlock block in allBlocks) {
+            if (!Util.BlockValid(block)) {
+                continue;
+            }
+            if (!config.Enabled("getAllGrids") && !block.IsSameConstructAs(Me)) {
+                continue;
+            }
+
+            powerDetails.GetBlock(block);
+            cargoStatus.GetBlock(block);
+            blockHealth.GetBlock(block);
+            productionDetails.GetBlock(block);
+            airlock.GetBlock(block);
+        }
+
+        cargoStatus.GotBLocks();
+        airlock.GotBLocks();
+        blockHealth.GotBLocks();
+        powerDetails.GotBLocks();
+        productionDetails.GotBLocks();
     }
 
     return false;

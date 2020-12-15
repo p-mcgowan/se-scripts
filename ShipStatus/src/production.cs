@@ -47,7 +47,6 @@ public class ProductionDetails {
         this.Clear();
 
         if (this.program.config.Enabled("power")) {
-            this.GetBlocks();
             this.RegisterTemplateVars();
         }
     }
@@ -69,7 +68,7 @@ public class ProductionDetails {
         }
 
         this.template.Register("production.status", () => this.status);
-        this.template.Register("production.blocks",  (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+        this.template.Register("production.blocks",  (DrawingSurface ds, string text, DrawingSurface.Options options) => {
             bool first = true;
             foreach (KeyValuePair<ProductionBlock, string> blk in this.blockStatus) {
                 if (!first) {
@@ -77,7 +76,7 @@ public class ProductionDetails {
                 }
                 string status = blk.Key.Status();
                 string blockName = $"{blk.Key.block.CustomName}: {status} {(blk.Key.IsIdle() ? blk.Key.IdleTime() : "")}";
-                Color? colour = ds.GetColourOpt(this.statusDotColour.Get(status));
+                Color? colour = DrawingSurface.StringToColour(this.statusDotColour.Get(status));
                 ds.TextCircle(colour, outline: false).Text(blockName);
 
                 foreach (string str in blk.Value.Split(this.splitNewline, StringSplitOptions.RemoveEmptyEntries)) {
@@ -88,19 +87,13 @@ public class ProductionDetails {
         });
     }
 
-    public void GetBlocks() {
-        this.productionBlocks.Clear();
-        foreach (IMyTerminalBlock block in this.program.allBlocks) {
-            if (block == null || !Util.BlockValid(block)) {
-                continue;
-            }
-            if (!this.program.config.Enabled("getAllGrids") && !block.IsSameConstructAs(this.program.Me)) {
-                continue;
-            }
-            if ((block is IMyAssembler || block is IMyRefinery) && !block.CustomName.Contains(this.productionIgnoreString)) {
-                this.productionBlocks.Add(new ProductionBlock(this.program, block as IMyProductionBlock));
-            }
+    public void GetBlock(IMyTerminalBlock block) {
+        if ((block is IMyAssembler || block is IMyRefinery) && !block.CustomName.Contains(this.productionIgnoreString)) {
+            this.productionBlocks.Add(new ProductionBlock(this.program, block as IMyProductionBlock));
         }
+    }
+
+    public void GotBLocks() {
         this.productionBlocks = this.productionBlocks.OrderBy(b => b.block.CustomName).ToList();
     }
 

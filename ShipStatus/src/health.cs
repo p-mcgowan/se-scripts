@@ -7,13 +7,14 @@ class BlockHealth {
     public Program program;
     public Template template;
     public System.Text.RegularExpressions.Regex ignoreHealth;
-    public IEnumerable<IMyTerminalBlock> blocks;
+    public List<IMyTerminalBlock> blocks;
     public Dictionary<string, string> damaged;
     public string status;
 
     public BlockHealth(Program program, Template template) {
         this.program = program;
         this.template = template;
+        this.blocks = new List<IMyTerminalBlock>();
         this.damaged = new Dictionary<string, string>();
 
         this.Reset();
@@ -23,7 +24,6 @@ class BlockHealth {
         this.Clear();
 
         if (this.program.config.Enabled("health")) {
-            this.GetBlocks();
             this.RegisterTemplateVars();
 
             string ignore = this.program.config.Get("healthIgnore");
@@ -34,6 +34,7 @@ class BlockHealth {
     }
 
     public void Clear() {
+        this.blocks.Clear();
         this.damaged.Clear();
     }
 
@@ -44,7 +45,7 @@ class BlockHealth {
 
         this.template.Register("health.status", () => this.status);
         this.template.Register("health.blocks",
-            (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+            (DrawingSurface ds, string text, DrawingSurface.Options options) => {
                 foreach (KeyValuePair<string, string> block in this.damaged) {
                     ds.Text($"{block.Key} [{block.Value}]").Newline();
                 }
@@ -65,9 +66,11 @@ class BlockHealth {
         return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
     }
 
-    public void GetBlocks() {
-        this.blocks = this.program.allBlocks.Where(b => this.program.config.Enabled("getAllGrids") || b.IsSameConstructAs(this.program.Me));
+    public void GetBlock(IMyTerminalBlock block) {
+        this.blocks.Add(block);
     }
+
+    public void GotBLocks() {}
 
     public void Refresh() {
         if (this.blocks == null) {

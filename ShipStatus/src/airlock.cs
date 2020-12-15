@@ -31,8 +31,6 @@ public class Airlock {
         this.include = Util.Regex(this.doorMatch);
         this.exclude = Util.Regex(this.doorExclude);
         this.timeOpen = Util.ParseFloat(this.program.config.Get("airlockOpenTime"), 750f);
-
-        this.GetBlocks();
     }
 
     public void Clear() {
@@ -49,21 +47,13 @@ public class Airlock {
         }
     }
 
-    public void GetBlocks() {
-        if (!this.program.config.Enabled("airlock")) {
-            return;
-        }
-        this.Clear();
-
+    public void GetBlock(IMyTerminalBlock block) {
         // Get all door blocks
-        foreach (var block in this.program.allBlocks.Where(door => door is IMyDoor && door.IsSameConstructAs(this.program.Me))) {
-            if (!Util.BlockValid(block)) {
-                continue;
-            }
+        if (block is IMyDoor) {
             var match = this.include.Match(block.CustomName);
             var ignore = this.exclude.Match(block.CustomName);
             if (!match.Success || ignore.Success) {
-                continue;
+                return;
             }
             var key = match.Groups[1].ToString();
             if (!this.locationToAirlockMap.ContainsKey(key)) {
@@ -72,6 +62,9 @@ public class Airlock {
             this.locationToAirlockMap[key].Add(block as IMyFunctionalBlock);
         }
 
+    }
+
+    public void GotBLocks() {
         bool doAllDoors = this.program.config.Enabled("airlockAllDoors");
         foreach (var keyval in this.locationToAirlockMap) {
             if (!doAllDoors && keyval.Value.Count < 2) {

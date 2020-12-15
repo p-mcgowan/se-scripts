@@ -6,10 +6,12 @@ PowerDetails powerDetails;
 public class PowerDetails {
     public Program program;
     public Template template;
-    public IEnumerable<IMyTerminalBlock> blocks;
+    public List<IMyTerminalBlock> powerProducerBlocks;
+    public List<IMyTerminalBlock> jumpDriveBlocks;
     public List<MyInventoryItem> items;
     public List<float> ioFloats;
     public List<Color> ioColours;
+    public Dictionary<string, Color> ioLegendNames;
 
     public int jumpDrives;
     public float jumpMax;
@@ -70,6 +72,9 @@ public class PowerDetails {
             this.solarsColour,
             new Color(this.solarsColour, 0.01f)
         };
+        this.powerProducerBlocks = new List<IMyTerminalBlock>();
+        this.jumpDriveBlocks = new List<IMyTerminalBlock>();
+        this.ioLegendNames = new Dictionary<string, Color>();
 
         this.Reset();
     }
@@ -78,7 +83,6 @@ public class PowerDetails {
         this.Clear();
 
         if (this.program.config.Enabled("power")) {
-            this.GetBlocks();
             this.RegisterTemplateVars();
         }
     }
@@ -113,13 +117,12 @@ public class PowerDetails {
         this.template.Register("power.turbineOutputMax", () => String.Format("{0:0.##}", this.turbineOutputMax));
         this.template.Register("power.turbineOutputMW", () => String.Format("{0:0.##}", this.turbineOutputMW));
         this.template.Register("power.turbines", () => this.turbines.ToString());
-        this.template.Register("power.jumpBar", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+        this.template.Register("power.jumpBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
             if (this.jumpDrives == 0) {
                 return;
             }
-            float pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
-            options["text"] = text ?? Util.PctString(pct);
-            options["pct"] = pct.ToString();
+            options.pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
+            options.text = text ?? Util.PctString(options.pct);
             ds.Bar(options);
         });
         this.template.Register("power.batteryBar", this.BatteryBar);
@@ -130,26 +133,44 @@ public class PowerDetails {
             return String.Format("{0:0.00} / {1:0.00} MWh ({2})", io, max, Util.PctString(Math.Abs(io) / max));
         });
         this.template.Register("power.ioBar", this.IoBar);
-        this.template.Register("power.ioLegend", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
-            text = text ?? "Reactor / H2 Engine / Battery / Wind / Solar";
+        this.template.Register("power.ioLegend", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+            this.ioLegendNames.Clear();
+            if (this.reactors > 0) {
+                this.ioLegendNames["Reactor"] = this.reactorColour;
+            }
+            if (this.hEngines > 0) {
+                this.ioLegendNames["H2 Engine"] = this.hEnginesColour;
+            }
+            if (this.batteries > 0) {
+                this.ioLegendNames["Battery"] = this.batteriesColour;
+            }
+            if (this.turbines > 0) {
+                this.ioLegendNames["Wind"] = this.turbinesColour;
+            }
+            if (this.solars > 0) {
+                this.ioLegendNames["Solar"] = this.solarsColour;
+            }
             ds.sb.Clear();
-            ds.sb.Append(text);
+            ds.sb.Append(string.Join(" / ", this.ioLegendNames.Keys));
             Vector2 size = Vector2.Divide(ds.surface.MeasureStringInPixels(ds.sb, ds.surface.Font, ds.surface.FontSize), 2);
             ds.sb.Clear();
             ds.sb.Append("O");
             ds.SetCursor(ds.width / 2 - size.X, null);
-            ds
-                .Text("Reactor", colour: this.reactorColour).Text(" / ")
-                .Text("H2 Engine", colour: this.hEnginesColour).Text(" / ")
-                .Text("Battery", colour: this.batteriesColour).Text(" / ")
-                .Text("Wind", colour: this.turbinesColour).Text(" / ")
-                .Text("Solar", colour: this.solarsColour);
+
+            bool first = true;
+            foreach (var kv in this.ioLegendNames) {
+                if (!first) {
+                    ds.Text(" / ");
+                }
+                ds.Text(kv.Key, colour: kv.Value);
+                first = false;
+            }
         });
-        this.template.Register("power.reactorString", (DrawingSurface ds, string text, Dictionary<string, string> options) => {
+        this.template.Register("power.reactorString", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
             if (this.reactors == 0) {
                 return;
             }
-            string msg = text ?? options.Get("text", "Reactors: ");
+            string msg = text ?? options.text ?? "Reactors: ";
             ds.Text($"{msg}{this.reactors}, Output: {this.reactorOutputMW} MW, Ur: {this.reactorUranium}");
         });
     }
@@ -183,16 +204,19 @@ public class PowerDetails {
         this.hEngineOutputMW = 0f;
         this.hEngineOutputDisabled = 0f;
         this.hEngineOutputMax = 0f;
+        this.powerProducerBlocks.Clear();
+        this.jumpDriveBlocks.Clear();
     }
 
-    public void GetBlocks() {
-        this.blocks = this.program.allBlocks.Where(b => {
-            if (!this.program.config.Enabled("getAllGrids") && !b.IsSameConstructAs(this.program.Me)) {
-                return false;
-            }
-            return b is IMyPowerProducer || b is IMyJumpDrive;
-        });
+    public void GetBlock(IMyTerminalBlock block) {
+        if (block is IMyPowerProducer) {
+            this.powerProducerBlocks.Add(block);
+        } else if (block is IMyJumpDrive) {
+            this.jumpDriveBlocks.Add(block);
+        }
     }
+
+    public void GotBLocks() {}
 
     public float GetPercent(float current, float max) {
         if (max == 0) {
@@ -222,16 +246,21 @@ public class PowerDetails {
     }
 
     public void Refresh() {
-        this.Clear();
-
-        foreach (IMyTerminalBlock block in this.blocks) {
-            if (!Util.BlockValid(block)) {
+        foreach (IMyJumpDrive jumpDrive in this.jumpDriveBlocks) {
+            if (!Util.BlockValid(jumpDrive)) {
                 continue;
             }
-            string typeString = block.BlockDefinition.TypeIdString;
-            IMyPowerProducer powerBlock = block as IMyPowerProducer;
+            this.jumpDrives += 1;
+            this.jumpCurrent += jumpDrive.CurrentStoredPower;
+            this.jumpMax += jumpDrive.MaxStoredPower;
+        }
+
+        foreach (IMyPowerProducer powerBlock in this.powerProducerBlocks) {
+            if (!Util.BlockValid(powerBlock)) {
+                continue;
+            }
+            string typeString = powerBlock.BlockDefinition.TypeIdString;
             IMyBatteryBlock battery = powerBlock as IMyBatteryBlock;
-            IMyJumpDrive jumpDrive = block as IMyJumpDrive;
 
             if (battery != null) {
                 this.batteries++;
@@ -280,22 +309,17 @@ public class PowerDetails {
                 if (!powerBlock.Enabled) {
                     this.turbineOutputDisabled += powerBlock.MaxOutput;
                 }
-            } else if (jumpDrive != null) {
-                this.jumpDrives += 1;
-                this.jumpCurrent += jumpDrive.CurrentStoredPower;
-                this.jumpMax += jumpDrive.MaxStoredPower;
-                continue;
             }
         }
     }
 
-    public void BatteryBar(DrawingSurface ds, string text, Dictionary<string, string> options) {
+    public void BatteryBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
         if (this.batteries == 0) {
             return;
         }
         float io = this.batteryInput - this.batteryOutput;
 
-        float net = this.batteryCurrent;
+        options.net = this.batteryCurrent;
         float remainingMins = io == 0f ? 0 : (this.batteryMax - this.batteryCurrent) * 60 / Math.Abs(io);
         string pct = Util.PctString(this.batteryCurrent / this.batteryMax);
         if (this.batteryCurrent / this.batteryMax >= 0.9999f) {
@@ -305,25 +329,20 @@ public class PowerDetails {
         }
         string msg = $"{pct}";
         if (io < 0) {
-            net = (this.batteryCurrent - this.batteryMax);
+            options.net = (this.batteryCurrent - this.batteryMax);
             remainingMins = this.batteryCurrent * 60 / Math.Abs(io);
             msg = $"{pct}";
         }
         double minsLeft = Math.Round(remainingMins);
-        text = text ?? $"{msg} ({(minsLeft <= 60 ? $"{minsLeft} min" : String.Format("{0:0.00} hours", minsLeft / 60))})";
+        options.text = text ?? options.text ?? $"{msg} ({(minsLeft <= 60 ? $"{minsLeft} min" : String.Format("{0:0.00} hours", minsLeft / 60))})";
 
-        float high = this.batteryMax;
-        float low = high;
-
-        options["net"] = net.ToString();
-        options["low"] = low.ToString();
-        options["high"] = high.ToString();
-        options["text"] = text;
+        options.high = this.batteryMax;
+        options.low = options.high;
 
         ds.MidBar(options);
     }
 
-    public void IoBar(DrawingSurface ds, string text, Dictionary<string, string> options) {
+    public void IoBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
         float max = this.CurrentOutput() + this.DisabledMaxOutput();
 
         this.ioFloats.Clear();
