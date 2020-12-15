@@ -120,4 +120,13 @@ public static class Dict {
 
         return sb.Append("}").ToString();
     }
+
+    public static bool Pop<TKey, TValue>(this Dictionary<TKey, TValue> dict, TKey key, out TValue result) {
+        if (dict.TryGetValue(key, out result)) {
+            dict.Remove(key);
+
+            return true;
+        };
+        return false;
+    }
 /* UTIL */
