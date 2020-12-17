@@ -17,6 +17,7 @@ public class DrawingSurface {
         public float scale = 1f;
         public float size = 0f;
         public float width = 0f;
+        public float textPadding = -1f;
         public List<Color> colours = new List<Color>();
         public List<float> values = new List<float>();
         public string text = null;

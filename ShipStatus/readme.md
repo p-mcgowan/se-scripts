@@ -182,6 +182,7 @@ production.status|none|Overall production status (power saving, enabled, halted)
 You can also register any render method you want, and use any of the values in each of the status programs (Cargo, Production, etc..).
 
 Also available from the [templating script](https://github.com/p-mcgowan/se-scripts/tree/master/template):  
+config  
 bar  
 circle  
 midBar  

@@ -149,6 +149,14 @@ public class Template {
         this.methods[key] = (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.Text(callback(), options);
     }
 
+    public void ConfigureScreen(DrawingSurface ds, DrawingSurface.Options options) {
+        ds.surface.Font = options.custom.Get("font", ds.surface.Font);
+        ds.surface.FontSize = options.size == 0f ? ds.surface.FontSize : options.size;
+        ds.surface.TextPadding = options.textPadding == 0.1f ? ds.surface.TextPadding : options.textPadding;
+        ds.surface.ScriptForegroundColor = options.colour ?? ds.surface.ScriptForegroundColor;
+        ds.surface.ScriptBackgroundColor = options.bgColour ?? ds.surface.ScriptBackgroundColor;
+    }
+
     public Dictionary<string, bool> PreRender(string outputName, string templateStrings) {
         return this.PreRender(outputName, templateStrings.Split(splitLine, StringSplitOptions.None));
     }
@@ -185,8 +193,12 @@ public class Template {
                         text = System.Text.RegularExpressions.Regex.Replace(text, @"\\([\{\}])", "$1");
                         opts.text = text;
                     }
-                    this.AddTemplateTokens(m.Groups["name"].Value);
-                    nodeList.Add(new Node(m.Groups["name"].Value, text, opts));
+                    string action = m.Groups["name"].Value;
+                    this.AddTemplateTokens(action);
+                    nodeList.Add(new Node(action, text, opts));
+                    if (action == "config") {
+                        autoNewline = false;
+                    }
                 } else {
                     this.AddTemplateTokens(this.token.value);
                     nodeList.Add(new Node(this.token.value));
@@ -220,6 +232,8 @@ public class Template {
         }
 
         DsCallback callback = null;
+        int i = 0;
+        int removeNode = -1;
         foreach (Node node in nodeList) {
             if (node.action == "newline") {
                 ds.Newline();
@@ -231,14 +245,24 @@ public class Template {
                 continue;
             }
 
+            if (node.action == "config") {
+                this.ConfigureScreen(ds, node.options);
+                removeNode = i;
+                continue;
+            }
+
             if (this.methods.TryGetValue(node.action, out callback)) {
                 callback(ds, node.text, node.options);
             } else {
                 ds.Text($"{{{node.action}}}");
             }
+            i++;
         }
-
         ds.Draw();
+
+        if (removeNode >= 0) {
+            nodeList.RemoveAt(removeNode);
+        }
     }
 
     public DrawingSurface.Options StringToOptions(string options = "") {
@@ -269,6 +293,7 @@ public class Template {
         if (parsed.Pop("size", out value)) { opts.size = Util.ParseFloat(value); }
         if (parsed.Pop("width", out value)) { opts.width = Util.ParseFloat(value); }
         if (parsed.Pop("text", out value)) { opts.text = value; }
+        if (parsed.Pop("textPading", out value)) { opts.textPadding = Util.ParseFloat(value); }
         if (parsed.Pop("align", out value)) { opts.align = DrawingSurface.stringToAlignment.Get(value); }
         if (parsed.Pop("colours", out value)) {
             opts.colours = value.Split(DrawingSurface.underscoreSep)
@@ -337,6 +362,7 @@ public class DrawingSurface {
         public float scale = 1f;
         public float size = 0f;
         public float width = 0f;
+        public float textPadding = -1f;
         public List<Color> colours = new List<Color>();
         public List<float> values = new List<float>();
         public string text = null;

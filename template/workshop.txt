@@ -61,46 +61,50 @@ The template will render the image above (all in the Main demo method).
 
 [h1]Api listing[/h1]
 The template includes these built in methods:
-[code]
-text - basic text rendering
-arguments:
-  text: string of text
-  colour: <colour argument> (see below)
-  textAlignment: "center", "left", "right"
-  scale: a numeric scale factor
 
-textCircle - a small circle inline with text
-  colour: <colour argument>
-  outline: if true, will not fill the circle
+[table]
+[tr][th]template var name[/th][th]Options[/th][th]Description[/th][/tr]
+[tr][td]text[/td][td]text: string of text
+colour: <colour argument> (see below)
+textAlignment: "center", "left", "right"
+scale: a numeric scale factor[/td][td]basic text rendering[/td][/tr]
+[tr][td]textCircle[/td][td]colour: <colour argument>
+outline: if true, will not fill the circle[/td][td]a small circle inline with text[/td][/tr]
+[tr][td]circle[/td][td]size: numeric size in pixels
+colour: <colour argument>
+outline: if true, will not fill the circle[/td][td]a basic circle shape[/td][/tr]
+[tr][td]bar[/td][td]pct: percent value from 0 to 1 (eg 0.24)
+width: width in pixels (default to width of screen or space left on line)
+height: height in pixels (defaults to text height)
+fillColour: <colour argument>
+text: string of text
+textColour: <colour argument>
+bgColour: <colour argument>
+textAlignment: "center", "left", "right"
+pad: percentage padding (defaults to 0.1)[/td][td]a percent bar[/td][/tr]
+[tr][td]midBar[/td][td]net: plus or minus number
+low: positive lowest value (will be used with net / low)
+high: positive highest value (will be used with net / high)
+width: width in pixels (default to width of screen or space left on line)
+height: height in pixels (defaults to text height)
+pad: percentage padding (defaults to 0.1)
+bgColour: <colour argument>[/td][td]a bar which accepts low, high, and a signed value, where negative will show red and positive will show green[/td][/tr]
+[tr][td]multiBar[/td][td]values: a list of floats, separated by underscores (eg `0.1_0.4_0.2`)
+colours: a list of <colour argument>, separated by underscores (eg `red_yellow_0,0,0,0.5`)
+width: width in pixels (default to width of screen or space left on line)
+height: height in pixels (defaults to text height)
+text: text content
+textColour: <colour argument>,
+bgColour: <colour argument>,
+[/td][td]Similar to bar, but showing multiple levels of colours[/td][/tr]
+[tr][td]config[/td][td]font: set the font
+size: set the font size
+textPadding: set the padding
+colour: set the text colour
+bgColour: set the background colour[/td][td]Configure the display (only runs once)[/td][/tr]
+[/table]
 
-circle - a basic circle shape
-  size: numeric size in pixels
-  colour: <colour argument>
-  outline: if true, will not fill the circle
-
-bar - a percent bar
-  pct: percent value from 0 to 1 (eg 0.24)
-  width: width in pixels (default to width of screen or space left on line)
-  height: height in pixels (defaults to text height)
-  fillColour: <colour argument>
-  text: string of text
-  textColour: <colour argument>
-  bgColour: <colour argument>
-  textAlignment: "center", "left", "right"
-  pad: percentage padding (defaults to 0.1)
-
-midBar - a bar which accepts low, high, and a signed value, where negative will show red and positive will show green
-arguments:
-  net: plus or minus number
-  low: positive lowest value (will be used with net / low)
-  high: positive highest value (will be used with net / high)
-  width: width in pixels (default to width of screen or space left on line)
-  height: height in pixels (defaults to text height)
-  pad: percentage padding (defaults to 0.1)
-  bgColour: <colour argument>
-
-<colour argument>:  Either a string colour name, or RGB or RGBA values
+<colour argument>; Either a string colour name, or RGB or RGBA values
 eg: "red", "255,0,0,200"
 supported colour names:
 black blue brown cyan dimgray gray green orange pink purple red tan transparent white yellow dimgreen dimyellow dimorange dimred
-[/code]

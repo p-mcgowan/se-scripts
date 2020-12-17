@@ -79,6 +79,7 @@ public class DrawingSurface {
         public float scale = 1f;
         public float size = 0f;
         public float width = 0f;
+        public float textPadding = -1f;
         public List<Color> colours = new List<Color>();
         public List<float> values = new List<float>();
         public string text = null;
@@ -97,7 +98,6 @@ public class DrawingSurface {
     public Vector2 cursor;
     public Vector2 savedCursor;
     public StringBuilder sb;
-    public readonly StringBuilder sizeBuilder;
     public Vector2 charSizeInPx;
     public bool drawing;
     public Vector2 padding;
@@ -106,9 +106,10 @@ public class DrawingSurface {
     public string name;
     public int ySpace;
     public Color colourGrey = new Color(40, 40, 40);
-    public static char[] commaSep = { ',' };
-    public char[] underscoreSep = { '_' };
+    public readonly StringBuilder sizeBuilder;
 
+    public static char[] underscoreSep = { '_' };
+    public static char[] commaSep = { ',' };
     public static Dictionary<string, Color> stringToColour = new Dictionary<string, Color>() {
         { "black", Color.Black },
         { "blue", Color.Blue },

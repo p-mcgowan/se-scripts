@@ -69,7 +69,7 @@ public class CargoStatus {
     public void RenderPct(DrawingSurface ds, string text, DrawingSurface.Options options) {
         string colourName = this.pct > 85 ? "dimred" : this.pct > 60 ? "dimyellow" : "dimgreen";
         Color? colour = DrawingSurface.stringToColour.Get(colourName);
-        ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct));
+        ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct), textColour: options.textColour);
     }
 
     public void RenderItems(DrawingSurface ds, string text, DrawingSurface.Options options) {
