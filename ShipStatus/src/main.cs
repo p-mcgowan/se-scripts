@@ -56,6 +56,10 @@ List<string> strings = new List<string>();
 MyIni ini = new MyIni();
 Template template;
 Config config = new Config();
+Dictionary<string, string> templates = new Dictionary<string, string>();
+IEnumerator<string> stateMachine;
+int i = 0;
+int update100sPerBlockCheck = 3;
 
 public class Config {
     public Dictionary<string, string> settings;
@@ -82,6 +86,7 @@ public class Config {
         return this.settings.Get(name) == "true";
     }
 }
+
 
 public bool ParseCustomData() {
     MyIniParseResult result;
@@ -144,11 +149,7 @@ public bool ParseCustomData() {
 
         if (!tpl.IsEmpty) {
             Echo($"added output for {s}");
-            Dictionary<string, bool> tokens = template.PreRender(s, tpl.ToString());
-
-            foreach (var kv in tokens) {
-                config.Set(kv.Key, config.Get(kv.Key, "true")); // don't override globals
-            }
+            templates[s] = tpl.ToString();
         }
     }
 
@@ -193,17 +194,14 @@ public bool Configure() {
         return false;
     }
 
-    powerDetails.Reset();
-    cargoStatus.Reset();
-    blockHealth.Reset();
-    productionDetails.Reset();
-    airlock.Reset();
-
     Runtime.UpdateFrequency = UpdateFrequency.Update100;
     // airlocks on 10
     if (config.Enabled("airlock")) {
         Runtime.UpdateFrequency |= UpdateFrequency.Update10;
     }
+
+    stateMachine = RunStuffOverTime();
+    Runtime.UpdateFrequency |= UpdateFrequency.Once;
 
     return true;
 }
@@ -222,10 +220,8 @@ public Program() {
     }
 }
 
-int i = 0;
-int update100sPerBlockCheck = 3;
 public bool RecheckFailed() {
-    if (++i % update100sPerBlockCheck == 0 && config.customData != Me.CustomData) {
+    if (i % update100sPerBlockCheck == 0 && config.customData != Me.CustomData) {
         return !Configure();
     }
 
@@ -262,33 +258,91 @@ public bool RecheckFailed() {
     return false;
 }
 
-public void Main(string argument, UpdateType updateSource) {
-    if ((updateSource & UpdateType.Update10) == UpdateType.Update10 && config.Enabled("airlock")) {
-        airlock.CheckAirlocks();
-        if ((updateSource & UpdateType.Update100) != UpdateType.Update100) {
-            return;
-        }
+public void Main(string argument, UpdateType updateType) {
+    if ((updateType & UpdateType.Once) == UpdateType.Once) {
+        RunStateMachine();
+        return;
     }
 
-    if (RecheckFailed()) {
-        return;
+    if ((updateType & UpdateType.Update10) == UpdateType.Update10 && config.Enabled("airlock")) {
+        airlock.CheckAirlocks();
+    }
+
+    if ((updateType & UpdateType.Update100) == UpdateType.Update100) {
+        if (RecheckFailed()) {
+            Runtime.UpdateFrequency &= UpdateFrequency.None;
+            Echo("Failed to parse custom data");
+            return;
+        }
+
+        i++;
+        if (stateMachine == null) {
+            stateMachine = RunStuffOverTime();
+            Runtime.UpdateFrequency |= UpdateFrequency.Once;
+        }
+    }
+}
+
+public void RunStateMachine() {
+    if (stateMachine != null) {
+        bool hasMoreSteps = stateMachine.MoveNext();
+
+        if (hasMoreSteps) {
+            Runtime.UpdateFrequency |= UpdateFrequency.Once;
+        } else {
+            stateMachine.Dispose();
+            stateMachine = null;
+            Runtime.UpdateFrequency &= ~UpdateFrequency.Once;
+        }
+    }
+}
+
+public IEnumerator<string> RunStuffOverTime()  {
+    string tpl;
+    while (templates.Any()) {
+        string s = templates.Keys.Last();
+        templates.Pop(templates.Keys.Last(), out tpl);
+
+        Dictionary<string, bool> tokens = template.PreRender(s, tpl.ToString());
+
+        foreach (var kv in tokens) {
+            config.Set(kv.Key, config.Get(kv.Key, "true")); // don't override globals
+        }
+
+        yield return $"templates {s}";
+
+        if (templates.Count == 0) {
+            powerDetails.Reset();
+            cargoStatus.Reset();
+            blockHealth.Reset();
+            productionDetails.Reset();
+            airlock.Reset();
+        }
     }
 
     if (config.Enabled("power")) {
         powerDetails.Refresh();
+        yield return "powerDetails";
     }
     if (config.Enabled("cargo")) {
         cargoStatus.Refresh();
+        yield return "cargoStatus";
     }
     if (config.Enabled("health")) {
         blockHealth.Refresh();
+        yield return "blockHealth";
     }
     if (config.Enabled("production")) {
         productionDetails.Refresh();
+        yield return "productionDetails";
     }
 
-    foreach (var kv in drawables) {
-        template.Render(kv.Value);
+    for (int j = 0; j < drawables.Count; ++j) {
+        var dw = drawables.ElementAt(j);
+        template.Render(dw.Value, "LCD Panel");
+        yield return $"render {dw.Key}";
     }
+
+    yield break;
 }
 /* MAIN */

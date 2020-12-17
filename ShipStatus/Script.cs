@@ -56,6 +56,10 @@ List<string> strings = new List<string>();
 MyIni ini = new MyIni();
 Template template;
 Config config = new Config();
+Dictionary<string, string> templates = new Dictionary<string, string>();
+IEnumerator<string> stateMachine;
+int i = 0;
+int update100sPerBlockCheck = 3;
 
 public class Config {
     public Dictionary<string, string> settings;
@@ -82,6 +86,7 @@ public class Config {
         return this.settings.Get(name) == "true";
     }
 }
+
 
 public bool ParseCustomData() {
     MyIniParseResult result;
@@ -144,11 +149,7 @@ public bool ParseCustomData() {
 
         if (!tpl.IsEmpty) {
             Echo($"added output for {s}");
-            Dictionary<string, bool> tokens = template.PreRender(s, tpl.ToString());
-
-            foreach (var kv in tokens) {
-                config.Set(kv.Key, config.Get(kv.Key, "true")); // don't override globals
-            }
+            templates[s] = tpl.ToString();
         }
     }
 
@@ -193,17 +194,14 @@ public bool Configure() {
         return false;
     }
 
-    powerDetails.Reset();
-    cargoStatus.Reset();
-    blockHealth.Reset();
-    productionDetails.Reset();
-    airlock.Reset();
-
     Runtime.UpdateFrequency = UpdateFrequency.Update100;
     // airlocks on 10
     if (config.Enabled("airlock")) {
         Runtime.UpdateFrequency |= UpdateFrequency.Update10;
     }
+
+    stateMachine = RunStuffOverTime();
+    Runtime.UpdateFrequency |= UpdateFrequency.Once;
 
     return true;
 }
@@ -222,10 +220,8 @@ public Program() {
     }
 }
 
-int i = 0;
-int update100sPerBlockCheck = 3;
 public bool RecheckFailed() {
-    if (++i % update100sPerBlockCheck == 0 && config.customData != Me.CustomData) {
+    if (i % update100sPerBlockCheck == 0 && config.customData != Me.CustomData) {
         return !Configure();
     }
 
@@ -262,1101 +258,94 @@ public bool RecheckFailed() {
     return false;
 }
 
-public void Main(string argument, UpdateType updateSource) {
-    if ((updateSource & UpdateType.Update10) == UpdateType.Update10 && config.Enabled("airlock")) {
-        airlock.CheckAirlocks();
-        if ((updateSource & UpdateType.Update100) != UpdateType.Update100) {
-            return;
-        }
+public void Main(string argument, UpdateType updateType) {
+    if ((updateType & UpdateType.Once) == UpdateType.Once) {
+        RunStateMachine();
+        return;
     }
 
-    if (RecheckFailed()) {
-        return;
+    if ((updateType & UpdateType.Update10) == UpdateType.Update10 && config.Enabled("airlock")) {
+        airlock.CheckAirlocks();
+    }
+
+    if ((updateType & UpdateType.Update100) == UpdateType.Update100) {
+        if (RecheckFailed()) {
+            Runtime.UpdateFrequency &= UpdateFrequency.None;
+            Echo("Failed to parse custom data");
+            return;
+        }
+
+        i++;
+        if (stateMachine == null) {
+            stateMachine = RunStuffOverTime();
+            Runtime.UpdateFrequency |= UpdateFrequency.Once;
+        }
+    }
+}
+
+public void RunStateMachine() {
+    if (stateMachine != null) {
+        bool hasMoreSteps = stateMachine.MoveNext();
+
+        if (hasMoreSteps) {
+            Runtime.UpdateFrequency |= UpdateFrequency.Once;
+        } else {
+            stateMachine.Dispose();
+            stateMachine = null;
+            Runtime.UpdateFrequency &= ~UpdateFrequency.Once;
+        }
+    }
+}
+
+public IEnumerator<string> RunStuffOverTime()  {
+    string tpl;
+    while (templates.Any()) {
+        string s = templates.Keys.Last();
+        templates.Pop(templates.Keys.Last(), out tpl);
+
+        Dictionary<string, bool> tokens = template.PreRender(s, tpl.ToString());
+
+        foreach (var kv in tokens) {
+            config.Set(kv.Key, config.Get(kv.Key, "true")); // don't override globals
+        }
+
+        yield return $"templates {s}";
+
+        if (templates.Count == 0) {
+            powerDetails.Reset();
+            cargoStatus.Reset();
+            blockHealth.Reset();
+            productionDetails.Reset();
+            airlock.Reset();
+        }
     }
 
     if (config.Enabled("power")) {
         powerDetails.Refresh();
+        yield return "powerDetails";
     }
     if (config.Enabled("cargo")) {
         cargoStatus.Refresh();
+        yield return "cargoStatus";
     }
     if (config.Enabled("health")) {
         blockHealth.Refresh();
+        yield return "blockHealth";
     }
     if (config.Enabled("production")) {
         productionDetails.Refresh();
+        yield return "productionDetails";
     }
 
-    foreach (var kv in drawables) {
-        template.Render(kv.Value);
+    for (int j = 0; j < drawables.Count; ++j) {
+        var dw = drawables.ElementAt(j);
+        template.Render(dw.Value, "LCD Panel");
+        yield return $"render {dw.Key}";
     }
+
+    yield break;
 }
 /* MAIN */
-/*
- * AIRLOCK
- */
-Airlock airlock;
-
-public class Airlock {
-    public Program program;
-    public Dictionary<string, AirlockDoors> airlocks;
-    public Dictionary<string, List<IMyFunctionalBlock>> locationToAirlockMap;
-    public System.Text.RegularExpressions.Regex include;
-    public System.Text.RegularExpressions.Regex exclude;
-
-    // The name to match (Default will match regular doors). The capture group "(.*)" is used when grouping airlock doors.
-    public string doorMatch = "Door(.*)";
-    public string doorExclude = "Hangar";  // The exclusion tag (can be anything).
-    public double timeOpen = 720f;  // Duration before auto close (milliseconds)
-
-    public Airlock(Program program) {
-        this.program = program;
-        this.airlocks = new Dictionary<string, AirlockDoors>();
-        this.locationToAirlockMap = new Dictionary<string, List<IMyFunctionalBlock>>();
-
-        this.Reset();
-    }
-
-    public void Reset() {
-        this.Clear();
-
-        this.doorMatch = this.program.config.Get("airlockDoorMatch", "Door(.*)");
-        this.doorExclude = this.program.config.Get("airlockDoorExclude", "Hangar");
-        this.include = Util.Regex(this.doorMatch);
-        this.exclude = Util.Regex(this.doorExclude);
-        this.timeOpen = Util.ParseFloat(this.program.config.Get("airlockOpenTime"), 750f);
-    }
-
-    public void Clear() {
-        this.airlocks.Clear();
-        this.locationToAirlockMap.Clear();
-    }
-
-    public void CheckAirlocks() {
-        if (!this.program.config.Enabled("airlock")) {
-            return;
-        }
-        foreach (var al in this.airlocks) {
-            al.Value.Check();
-        }
-    }
-
-    public void GetBlock(IMyTerminalBlock block) {
-        // Get all door blocks
-        if (block is IMyDoor) {
-            var match = this.include.Match(block.CustomName);
-            var ignore = this.exclude.Match(block.CustomName);
-            if (!match.Success || ignore.Success) {
-                return;
-            }
-            var key = match.Groups[1].ToString();
-            if (!this.locationToAirlockMap.ContainsKey(key)) {
-                this.locationToAirlockMap.Add(key, new List<IMyFunctionalBlock>());
-            }
-            this.locationToAirlockMap[key].Add(block as IMyFunctionalBlock);
-        }
-
-    }
-
-    public void GotBLocks() {
-        bool doAllDoors = this.program.config.Enabled("airlockAllDoors");
-        foreach (var keyval in this.locationToAirlockMap) {
-            if (!doAllDoors && keyval.Value.Count < 2) {
-                continue;
-            }
-            this.airlocks.Add(keyval.Key, new AirlockDoors(keyval.Value, this.program));
-        }
-    }
-}
-
-public class AirlockDoors {
-    public Program program;
-    private List<IMyFunctionalBlock> blocks;
-    private List<IMyFunctionalBlock> areClosed;
-    private List<IMyFunctionalBlock> areOpen;
-    private double openTimer;
-    public double timeOpen;
-
-    public AirlockDoors(List<IMyFunctionalBlock> doors, Program program, double timeOpen = 750f) {
-        this.program = program;
-        this.blocks = new List<IMyFunctionalBlock>(doors);
-        this.areClosed = new List<IMyFunctionalBlock>();
-        this.areOpen = new List<IMyFunctionalBlock>();
-        this.openTimer = timeOpen;
-        this.timeOpen = timeOpen;
-    }
-
-    private bool IsOpen(IMyFunctionalBlock door) {
-        return (door as IMyDoor).OpenRatio > 0;
-    }
-
-    private void Lock(List<IMyFunctionalBlock> doors = null) {
-        doors = doors ?? this.blocks;
-        foreach (var door in doors) {
-            (door as IMyDoor).Enabled = false;
-        }
-    }
-
-    private void Unlock(List<IMyFunctionalBlock> doors = null) {
-        doors = doors ?? this.blocks;
-        foreach (var door in doors) {
-            (door as IMyDoor).Enabled = true;
-        }
-    }
-
-    private void OpenClose(string action, IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
-        (door1 as IMyDoor).ApplyAction(action);
-        if (door2 != null) {
-            (door2 as IMyDoor).ApplyAction(action);
-        }
-    }
-
-    private void Open(IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
-        this.OpenClose("Open_On", door1, door2);
-    }
-
-    private void OpenAll() {
-        foreach (var door in this.blocks) {
-            this.OpenClose("Open_On", door);
-        }
-    }
-
-    private void Close(IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
-        this.OpenClose("Open_Off", door1, door2);
-    }
-
-    private void CloseAll() {
-        foreach (var door in this.blocks) {
-            this.OpenClose("Open_Off", door);
-        }
-    }
-
-    public bool Check() {
-        int openCount = 0;
-        this.areClosed.Clear();
-        this.areOpen.Clear();
-
-        foreach (var door in this.blocks) {
-            if (!Util.BlockValid(door)) {
-                continue;
-            }
-            if (this.IsOpen(door)) {
-                openCount++;
-                this.areOpen.Add(door);
-            } else {
-                this.areClosed.Add(door);
-            }
-        }
-
-        if (areOpen.Count > 0) {
-            this.openTimer -= this.program.Runtime.TimeSinceLastRun.TotalMilliseconds;
-            if (this.openTimer < 0) {
-                this.CloseAll();
-            } else {
-                this.Lock(this.areClosed);
-                this.Unlock(this.areOpen);
-            }
-        } else {
-            this.Unlock();
-            this.openTimer = this.timeOpen;
-        }
-
-        return true;
-    }
-}
-/* AIRLOCK */
-/*
- * CARGO
- */
-CargoStatus cargoStatus;
-
-public class CargoStatus {
-    public Program program;
-    public List<IMyTerminalBlock> cargoBlocks;
-    public Dictionary<string, VRage.MyFixedPoint> cargoItemCounts;
-    public List<MyInventoryItem> inventoryItems;
-    public System.Text.RegularExpressions.Regex itemRegex;
-    public System.Text.RegularExpressions.Regex ingotRegex;
-    public System.Text.RegularExpressions.Regex oreRegex;
-    public VRage.MyFixedPoint max;
-    public VRage.MyFixedPoint vol;
-    public Template template;
-    public List<float> widths;
-
-    public string itemText;
-    public float pct;
-
-    public CargoStatus(Program program, Template template = null) {
-        this.program = program;
-        this.template = template;
-        this.itemRegex = Util.Regex(".*/");
-        this.ingotRegex = Util.Regex("Ingot/");
-        this.oreRegex = Util.Regex("Ore/(?!Ice)");
-        this.widths = new List<float>() { 0, 0, 0, 0 };
-
-        this.cargoItemCounts = new Dictionary<string, VRage.MyFixedPoint>();
-        this.inventoryItems = new List<MyInventoryItem>();
-        this.cargoBlocks = new List<IMyTerminalBlock>();
-        this.itemText = "";
-        this.pct = 0f;
-
-        this.Reset();
-    }
-
-    public void Reset() {
-        this.Clear();
-
-        if (this.program.config.Enabled("cargo")) {
-            this.RegisterTemplateVars();
-        }
-    }
-
-    public void Clear() {
-        this.cargoItemCounts.Clear();
-        this.inventoryItems.Clear();
-        this.cargoBlocks.Clear();
-    }
-
-    public void RegisterTemplateVars() {
-        if (this.template == null) {
-            return;
-        }
-
-        this.template.Register("cargo.stored", () => $"{Util.FormatNumber(1000 * this.vol)} L");
-        this.template.Register("cargo.cap", () => $"{Util.FormatNumber(1000 * this.max)} L");
-        this.template.Register("cargo.fullString", () => {
-            string capFmt = Util.GetFormatNumberStr(1000 * this.max);
-
-            return $"{Util.FormatNumber(1000 * this.vol, capFmt)} / {Util.FormatNumber(1000 * this.max, capFmt)} L";
-        });
-        this.template.Register("cargo.bar", this.RenderPct);
-        this.template.Register("cargo.items", this.RenderItems);
-    }
-
-    public void RenderPct(DrawingSurface ds, string text, DrawingSurface.Options options) {
-        string colourName = this.pct > 85 ? "dimred" : this.pct > 60 ? "dimyellow" : "dimgreen";
-        Color? colour = DrawingSurface.stringToColour.Get(colourName);
-        ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct));
-    }
-
-    public void RenderItems(DrawingSurface ds, string text, DrawingSurface.Options options) {
-        if (ds.width / (ds.charSizeInPx.X + 1f) < 40) {
-            foreach (var item in this.cargoItemCounts) {
-                var fmtd = Util.FormatNumber(item.Value);
-                ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(fmtd, textAlignment: TextAlignment.RIGHT).Newline();
-            }
-        } else {
-            this.widths[0] = 0;
-            this.widths[1] = ds.width / 2 - 1.5f * ds.charSizeInPx.X;
-            this.widths[2] = ds.width / 2 + 1.5f * ds.charSizeInPx.X;
-            this.widths[3] = ds.width;
-
-            int i = 0;
-            foreach (var item in this.cargoItemCounts) {
-                var fmtd = Util.FormatNumber(item.Value);
-                ds
-                    .SetCursor(this.widths[(i++ % 4)], null)
-                    .Text($"{item.Key}")
-                    .SetCursor(this.widths[(i++ % 4)], null)
-                    .Text(fmtd, textAlignment: TextAlignment.RIGHT);
-
-                if ((i % 4) == 0 || i >= this.cargoItemCounts.Count * 2) {
-                    ds.Newline();
-                }
-            }
-        }
-        ds.Newline(reverse: true);
-    }
-
-    public void GetBlock(IMyTerminalBlock block) {
-        if (block is IMyCargoContainer || block is IMyShipDrill || block is IMyShipConnector || block is IMyAssembler || block is IMyRefinery) {
-            this.cargoBlocks.Add(block);
-        }
-    }
-
-    public void GotBLocks() {}
-
-    public void Refresh() {
-        if (this.cargoBlocks == null) {
-            return;
-        }
-
-        this.cargoItemCounts.Clear();
-        this.inventoryItems.Clear();
-        this.max = 0;
-        this.vol = 0;
-        this.pct = 0f;
-        string fullName = "";
-        string itemName = "";
-
-        foreach (var c in this.cargoBlocks) {
-            if (!Util.BlockValid(c)) {
-                continue;
-            }
-            var inv = c.GetInventory(0);
-            this.vol += inv.CurrentVolume;
-            this.max += inv.MaxVolume;
-
-            this.inventoryItems.Clear();
-            inv.GetItems(this.inventoryItems);
-            for (var i = 0; i < this.inventoryItems.Count; i++) {
-                fullName = this.inventoryItems[i].Type.ToString();
-                itemName = this.itemRegex.Replace(fullName, "");
-                if (this.ingotRegex.IsMatch(fullName)) {
-                    itemName += " Ingot";
-                } else if (this.oreRegex.IsMatch(fullName)) {
-                    itemName += " Ore";
-                }
-
-                var itemQty = this.inventoryItems[i].Amount;
-                if (!this.cargoItemCounts.ContainsKey(itemName)) {
-                    this.cargoItemCounts.Add(itemName, itemQty);
-                } else {
-                    this.cargoItemCounts[itemName] = this.cargoItemCounts[itemName] + itemQty;
-                }
-            }
-        }
-
-        if (this.max != 0) {
-            this.pct = (float)this.vol / (float)this.max;
-        }
-
-        return;
-    }
-}
-/* CARGO */
-/*
- * POWER
- */
-PowerDetails powerDetails;
-
-public class PowerDetails {
-    public Program program;
-    public Template template;
-    public List<IMyTerminalBlock> powerProducerBlocks;
-    public List<IMyTerminalBlock> jumpDriveBlocks;
-    public List<MyInventoryItem> items;
-    public List<float> ioFloats;
-    public List<Color> ioColours;
-    public Dictionary<string, Color> ioLegendNames;
-
-    public int jumpDrives;
-    public float jumpMax;
-    public float jumpCurrent;
-
-    public int batteries;
-    public float batteryMax;
-    public float batteryCurrent;
-    public float batteryInput;
-    public float batteryOutput;
-    public float batteryOutputDisabled;
-    public float batteryOutputMax;
-    public float batteryInputMax;
-
-    public int reactors;
-    public float reactorOutputMW;
-    public float reactorOutputMax;
-    public float reactorOutputDisabled;
-    public MyFixedPoint reactorUranium;
-
-    public int solars;
-    public float solarOutputMW;
-    public float solarOutputDisabled;
-    public float solarOutputMax;
-
-    public int turbines;
-    public float turbineOutputMW;
-    public float turbineOutputDisabled;
-    public float turbineOutputMax;
-
-    public int hEngines;
-    public float hEngineOutputMW;
-    public float hEngineOutputDisabled;
-    public float hEngineOutputMax;
-
-    public float battChargeMax = 12f;
-
-    public Color reactorColour = Color.Lighten(Color.Blue, 0.05);
-    public Color hEnginesColour = DrawingSurface.stringToColour["dimred"];
-    public Color batteriesColour = DrawingSurface.stringToColour["dimgreen"];
-    public Color turbinesColour = DrawingSurface.stringToColour["dimyellow"];
-    public Color solarsColour = Color.Darken(Color.Cyan, 0.6);
-
-    public PowerDetails(Program program, Template template = null) {
-        this.program = program;
-        this.template = template;
-        this.items = new List<MyInventoryItem>();
-        this.ioFloats = new List<float>();
-        this.ioColours = new List<Color>() {
-            this.reactorColour,
-            new Color(this.reactorColour, 0.01f),
-            this.hEnginesColour,
-            new Color(this.hEnginesColour, 0.01f),
-            this.batteriesColour,
-            new Color(this.batteriesColour, 0.01f),
-            this.turbinesColour,
-            new Color(this.turbinesColour, 0.01f),
-            this.solarsColour,
-            new Color(this.solarsColour, 0.01f)
-        };
-        this.powerProducerBlocks = new List<IMyTerminalBlock>();
-        this.jumpDriveBlocks = new List<IMyTerminalBlock>();
-        this.ioLegendNames = new Dictionary<string, Color>();
-
-        this.Reset();
-    }
-
-    public void Reset() {
-        this.Clear();
-
-        if (this.program.config.Enabled("power")) {
-            this.RegisterTemplateVars();
-        }
-    }
-
-    public void RegisterTemplateVars() {
-        if (this.template == null) {
-            return;
-        }
-        this.template.Register("power.batteries", () => this.batteries.ToString());
-        this.template.Register("power.batteryCurrent", () => String.Format("{0:0.##}", this.batteryCurrent));
-        this.template.Register("power.batteryInput", () => String.Format("{0:0.##}", this.batteryInput));
-        this.template.Register("power.batteryInputMax", () => String.Format("{0:0.##}", this.batteryInputMax));
-        this.template.Register("power.batteryMax", () => String.Format("{0:0.##}", this.batteryMax));
-        this.template.Register("power.batteryOutput", () => String.Format("{0:0.##}", this.batteryOutput));
-        this.template.Register("power.batteryOutputMax", () => String.Format("{0:0.##}", this.batteryOutputMax));
-        this.template.Register("power.engineOutputMax", () => String.Format("{0:0.##}", this.hEngineOutputMax));
-        this.template.Register("power.engineOutputMW", () => String.Format("{0:0.##}", this.hEngineOutputMW));
-        this.template.Register("power.engines", () => this.hEngines.ToString());
-        this.template.Register("power.input", () => String.Format("{0:0.##}", this.CurrentInput()));
-        this.template.Register("power.jumpCurrent", () => String.Format("{0:0.##}", this.jumpCurrent));
-        this.template.Register("power.jumpDrives", () => this.jumpDrives.ToString());
-        this.template.Register("power.jumpMax", () => String.Format("{0:0.##}", this.jumpMax));
-        this.template.Register("power.maxOutput", () => String.Format("{0:0.##}", this.MaxOutput()));
-        this.template.Register("power.output", () => String.Format("{0:0.##}", this.CurrentOutput()));
-        this.template.Register("power.reactorOutputMax", () => String.Format("{0:0.##}", this.reactorOutputMax));
-        this.template.Register("power.reactorOutputMW", () => String.Format("{0:0.##}", this.reactorOutputMW));
-        this.template.Register("power.reactors", () => this.reactors.ToString());
-        this.template.Register("power.reactorUr", () => Util.FormatNumber(this.reactorUranium));
-        this.template.Register("power.solarOutputMax", () => String.Format("{0:0.##}", this.solarOutputMax));
-        this.template.Register("power.solarOutputMW", () => String.Format("{0:0.##}", this.solarOutputMW));
-        this.template.Register("power.solars", () => this.solars.ToString());
-        this.template.Register("power.turbineOutputMax", () => String.Format("{0:0.##}", this.turbineOutputMax));
-        this.template.Register("power.turbineOutputMW", () => String.Format("{0:0.##}", this.turbineOutputMW));
-        this.template.Register("power.turbines", () => this.turbines.ToString());
-        this.template.Register("power.jumpBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
-            if (this.jumpDrives == 0) {
-                return;
-            }
-            options.pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
-            options.text = text ?? Util.PctString(options.pct);
-            ds.Bar(options);
-        });
-        this.template.Register("power.batteryBar", this.BatteryBar);
-        this.template.Register("power.ioString", () => {
-            float io = this.CurrentInput() - this.CurrentOutput();
-            float max = this.MaxOutput();
-
-            return String.Format("{0:0.00} / {1:0.00} MWh ({2})", io, max, Util.PctString(Math.Abs(io) / max));
-        });
-        this.template.Register("power.ioBar", this.IoBar);
-        this.template.Register("power.ioLegend", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
-            this.ioLegendNames.Clear();
-            if (this.reactors > 0) {
-                this.ioLegendNames["Reactor"] = this.reactorColour;
-            }
-            if (this.hEngines > 0) {
-                this.ioLegendNames["H2 Engine"] = this.hEnginesColour;
-            }
-            if (this.batteries > 0) {
-                this.ioLegendNames["Battery"] = this.batteriesColour;
-            }
-            if (this.turbines > 0) {
-                this.ioLegendNames["Wind"] = this.turbinesColour;
-            }
-            if (this.solars > 0) {
-                this.ioLegendNames["Solar"] = this.solarsColour;
-            }
-            ds.sb.Clear();
-            ds.sb.Append(string.Join(" / ", this.ioLegendNames.Keys));
-            Vector2 size = Vector2.Divide(ds.surface.MeasureStringInPixels(ds.sb, ds.surface.Font, ds.surface.FontSize), 2);
-            ds.sb.Clear();
-            ds.sb.Append("O");
-            ds.SetCursor(ds.width / 2 - size.X, null);
-
-            bool first = true;
-            foreach (var kv in this.ioLegendNames) {
-                if (!first) {
-                    ds.Text(" / ");
-                }
-                ds.Text(kv.Key, colour: kv.Value);
-                first = false;
-            }
-        });
-        this.template.Register("power.reactorString", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
-            if (this.reactors == 0) {
-                return;
-            }
-            string msg = text ?? options.text ?? "Reactors: ";
-            ds.Text($"{msg}{this.reactors}, Output: {this.reactorOutputMW} MW, Ur: {this.reactorUranium}");
-        });
-    }
-
-    public void Clear() {
-        this.jumpDrives = 0;
-        this.jumpMax = 0f;
-        this.jumpCurrent = 0f;
-        this.batteries = 0;
-        this.batteryMax = 0f;
-        this.batteryCurrent = 0f;
-        this.batteryInput = 0f;
-        this.batteryOutput = 0f;
-        this.batteryOutputDisabled = 0f;
-        this.batteryOutputMax = 0f;
-        this.batteryInputMax = 0f;
-        this.reactors = 0;
-        this.reactorOutputMW = 0f;
-        this.reactorOutputDisabled = 0f;
-        this.reactorOutputMax = 0f;
-        this.reactorUranium = 0;
-        this.solars = 0;
-        this.solarOutputMW = 0f;
-        this.solarOutputDisabled = 0f;
-        this.solarOutputMax = 0f;
-        this.turbines = 0;
-        this.turbineOutputMW = 0f;
-        this.turbineOutputDisabled = 0f;
-        this.turbineOutputMax = 0f;
-        this.hEngines = 0;
-        this.hEngineOutputMW = 0f;
-        this.hEngineOutputDisabled = 0f;
-        this.hEngineOutputMax = 0f;
-        this.powerProducerBlocks.Clear();
-        this.jumpDriveBlocks.Clear();
-    }
-
-    public void GetBlock(IMyTerminalBlock block) {
-        if (block is IMyPowerProducer) {
-            this.powerProducerBlocks.Add(block);
-        } else if (block is IMyJumpDrive) {
-            this.jumpDriveBlocks.Add(block);
-        }
-    }
-
-    public void GotBLocks() {}
-
-    public float GetPercent(float current, float max) {
-        if (max == 0) {
-            return 0f;
-        }
-        return current / max;
-    }
-
-    public float MaxOutput() {
-        return this.hEngineOutputMax + this.reactorOutputMax + this.solarOutputMax + this.turbineOutputMax + (battChargeMax * this.batteries);
-    }
-
-    public float MaxInput() {
-        return (battChargeMax * this.batteries);
-    }
-
-    public float CurrentInput() {
-        return this.batteryInput;
-    }
-
-    public float CurrentOutput() {
-        return this.reactorOutputMW + this.solarOutputMW + this.turbineOutputMW + this.hEngineOutputMW + this.batteryOutput;
-    }
-
-    public float DisabledMaxOutput() {
-        return this.batteryOutputDisabled + this.reactorOutputDisabled + this.solarOutputDisabled + this.turbineOutputDisabled + this.hEngineOutputDisabled;
-    }
-
-    public void Refresh() {
-        foreach (IMyJumpDrive jumpDrive in this.jumpDriveBlocks) {
-            if (!Util.BlockValid(jumpDrive)) {
-                continue;
-            }
-            this.jumpDrives += 1;
-            this.jumpCurrent += jumpDrive.CurrentStoredPower;
-            this.jumpMax += jumpDrive.MaxStoredPower;
-        }
-
-        foreach (IMyPowerProducer powerBlock in this.powerProducerBlocks) {
-            if (!Util.BlockValid(powerBlock)) {
-                continue;
-            }
-            string typeString = powerBlock.BlockDefinition.TypeIdString;
-            IMyBatteryBlock battery = powerBlock as IMyBatteryBlock;
-
-            if (battery != null) {
-                this.batteries++;
-                this.batteryCurrent += battery.CurrentStoredPower;
-                this.batteryMax += battery.MaxStoredPower;
-                this.batteryInput += battery.CurrentInput;
-                this.batteryOutput += battery.CurrentOutput;
-                this.batteryOutputMax += battery.MaxOutput;
-                this.batteryOutputMax += battery.MaxInput;
-                if (!battery.Enabled || battery.ChargeMode == ChargeMode.Recharge) {
-                    this.batteryOutputDisabled += battChargeMax;
-                }
-            } else if (powerBlock is IMyReactor) {
-                this.reactors++;
-                this.reactorOutputMW += powerBlock.CurrentOutput;
-                this.reactorOutputMax += powerBlock.MaxOutput;
-
-                if (!powerBlock.Enabled) {
-                    this.reactorOutputDisabled += powerBlock.MaxOutput;
-                }
-
-                this.items.Clear();
-                var inv = powerBlock.GetInventory(0);
-                inv.GetItems(this.items);
-                for (var i = 0; i < items.Count; i++) {
-                    this.reactorUranium += items[i].Amount;
-                }
-            } else if (powerBlock is IMySolarPanel) {
-                this.solars++;
-                this.solarOutputMW += powerBlock.CurrentOutput;
-                this.solarOutputMax += powerBlock.MaxOutput;
-                if (!powerBlock.Enabled) {
-                    this.solarOutputDisabled += powerBlock.MaxOutput;
-                }
-            } else if (typeString == "MyObjectBuilder_HydrogenEngine") {
-                this.hEngines++;
-                this.hEngineOutputMW += powerBlock.CurrentOutput;
-                this.hEngineOutputMax += powerBlock.MaxOutput;
-                if (!powerBlock.Enabled) {
-                    this.hEngineOutputDisabled += powerBlock.MaxOutput;
-                }
-            } else if (typeString == "MyObjectBuilder_WindTurbine") {
-                this.turbines++;
-                this.turbineOutputMW += powerBlock.CurrentOutput;
-                this.turbineOutputMax += powerBlock.MaxOutput;
-                if (!powerBlock.Enabled) {
-                    this.turbineOutputDisabled += powerBlock.MaxOutput;
-                }
-            }
-        }
-    }
-
-    public void BatteryBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
-        if (this.batteries == 0) {
-            return;
-        }
-        float io = this.batteryInput - this.batteryOutput;
-
-        options.net = this.batteryCurrent;
-        float remainingMins = io == 0f ? 0 : (this.batteryMax - this.batteryCurrent) * 60 / Math.Abs(io);
-        string pct = Util.PctString(this.batteryCurrent / this.batteryMax);
-        if (this.batteryCurrent / this.batteryMax >= 0.9999f) {
-            pct = "100 %";
-            io = 0;
-            remainingMins = 0;
-        }
-        string msg = $"{pct}";
-        if (io < 0) {
-            options.net = (this.batteryCurrent - this.batteryMax);
-            remainingMins = this.batteryCurrent * 60 / Math.Abs(io);
-            msg = $"{pct}";
-        }
-        double minsLeft = Math.Round(remainingMins);
-        options.text = text ?? options.text ?? $"{msg} ({(minsLeft <= 60 ? $"{minsLeft} min" : String.Format("{0:0.00} hours", minsLeft / 60))})";
-
-        options.high = this.batteryMax;
-        options.low = options.high;
-
-        ds.MidBar(options);
-    }
-
-    public void IoBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
-        float max = this.CurrentOutput() + this.DisabledMaxOutput();
-
-        this.ioFloats.Clear();
-        this.ioFloats.Add(this.reactorOutputMW / max);
-        this.ioFloats.Add(this.reactorOutputDisabled / max);
-        this.ioFloats.Add(this.hEngineOutputMW / max);
-        this.ioFloats.Add(this.hEngineOutputDisabled / max);
-        this.ioFloats.Add(this.batteryOutput / max);
-        this.ioFloats.Add(this.batteryOutputDisabled / max);
-        this.ioFloats.Add(this.turbineOutputMW / max);
-        this.ioFloats.Add(this.turbineOutputDisabled / max);
-        this.ioFloats.Add(this.solarOutputMW / max);
-        this.ioFloats.Add(this.solarOutputDisabled / max);
-
-        ds.MultiBar(this.ioFloats, this.ioColours, text: text, textAlignment: TextAlignment.LEFT);
-    }
-}
-/* POWER */
-/*
- * BLOCK_HEALTH
- */
-BlockHealth blockHealth;
-
-class BlockHealth {
-    public Program program;
-    public Template template;
-    public System.Text.RegularExpressions.Regex ignoreHealth;
-    public List<IMyTerminalBlock> blocks;
-    public Dictionary<string, string> damaged;
-    public string status;
-
-    public BlockHealth(Program program, Template template) {
-        this.program = program;
-        this.template = template;
-        this.blocks = new List<IMyTerminalBlock>();
-        this.damaged = new Dictionary<string, string>();
-
-        this.Reset();
-    }
-
-    public void Reset() {
-        this.Clear();
-
-        if (this.program.config.Enabled("health")) {
-            this.RegisterTemplateVars();
-
-            string ignore = this.program.config.Get("healthIgnore");
-            if (ignore != "" && ignore != null) {
-                this.ignoreHealth = Util.Regex(System.Text.RegularExpressions.Regex.Replace(ignore, @"\s*,\s*", "|"));
-            }
-        }
-    }
-
-    public void Clear() {
-        this.blocks.Clear();
-        this.damaged.Clear();
-    }
-
-    public void RegisterTemplateVars() {
-        if (this.template == null) {
-            return;
-        }
-
-        this.template.Register("health.status", () => this.status);
-        this.template.Register("health.blocks",
-            (DrawingSurface ds, string text, DrawingSurface.Options options) => {
-                foreach (KeyValuePair<string, string> block in this.damaged) {
-                    ds.Text($"{block.Key} [{block.Value}]").Newline();
-                }
-                ds.Newline(reverse: true);
-            }
-        );
-    }
-
-    public float GetHealth(IMyTerminalBlock block) {
-        IMySlimBlock slimblock = block.CubeGrid.GetCubeBlock(block.Position);
-        if (slimblock == null) {
-            return 1f;
-        }
-        float MaxIntegrity = slimblock.MaxIntegrity;
-        float BuildIntegrity = slimblock.BuildIntegrity;
-        float CurrentDamage = slimblock.CurrentDamage;
-
-        return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
-    }
-
-    public void GetBlock(IMyTerminalBlock block) {
-        this.blocks.Add(block);
-    }
-
-    public void GotBLocks() {}
-
-    public void Refresh() {
-        if (this.blocks == null) {
-            return;
-        }
-
-        this.damaged.Clear();
-        bool showOnHud = this.program.config.Enabled("healthOnHud");
-
-        foreach (var b in this.blocks) {
-            if (!Util.BlockValid(b)) {
-                continue;
-            }
-            if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
-                continue;
-            }
-
-            var health = this.GetHealth(b);
-            if (health != 1f) {
-                this.damaged[b.CustomName] = Util.PctString(health);
-            }
-            if (showOnHud) {
-                b.ShowOnHUD = health != 1f;
-            }
-        }
-
-        this.status = $"{(this.damaged.Count == 0 ? "No damage" : "Damage")} detected";
-    }
-}
-/* BLOCK_HEALTH */
-/*
- * PRODUCTION
- */
-public ProductionDetails productionDetails;
-
-public class ProductionDetails {
-    public Program program;
-    public Template template;
-    public List<MyProductionItem> productionItems;
-    public List<ProductionBlock> productionBlocks;
-    public List<IMyProductionBlock> blocks;
-    public Dictionary<ProductionBlock, string> blockStatus;
-    public Dictionary<string, string> statusDotColour;
-    public Dictionary<string, VRage.MyFixedPoint> queueItems;
-    public double productionCheckFreqMs = 2 * 60 * 1000;
-    public double productionOnWaitMs = 5 * 1000;
-    public double productionOutTimeMs = 3 * 1000;
-    public string productionIgnoreString = "[x]";
-    public string status;
-    public StringBuilder queueBuilder;
-    public double idleTime = 0;
-    public double timeDisabled = 0;
-    public bool checking = false;
-    public double lastCheck = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
-    public char[] splitNewline;
-
-    public ProductionDetails(Program program, Template template) {
-        this.program = program;
-        this.template = template;
-        this.blocks = new List<IMyProductionBlock>();
-        this.productionItems = new List<MyProductionItem>();
-        this.productionBlocks = new List<ProductionBlock>();
-        this.blockStatus = new Dictionary<ProductionBlock, string>();
-        this.queueItems = new Dictionary<string, VRage.MyFixedPoint>();
-        this.statusDotColour = new Dictionary<string, string>() {
-            { "Idle", "dimgreen" },
-            { "Working", "dimyellow" },
-            { "Blocked", "dimred" }
-        };
-        this.queueBuilder = new StringBuilder();
-        this.splitNewline = new[] { '\n' };
-
-        this.Reset();
-    }
-
-    public void Reset() {
-        this.Clear();
-
-        if (this.program.config.Enabled("power")) {
-            this.RegisterTemplateVars();
-        }
-    }
-
-    public void Clear() {
-        this.blocks.Clear();
-        this.productionItems.Clear();
-        this.productionBlocks.Clear();
-        this.blockStatus.Clear();
-        this.queueItems.Clear();
-        this.idleTime = 0;
-        this.timeDisabled = 0;
-        this.checking = false;
-    }
-
-    public void RegisterTemplateVars() {
-        if (this.template == null) {
-            return;
-        }
-
-        this.template.Register("production.status", () => this.status);
-        this.template.Register("production.blocks",  (DrawingSurface ds, string text, DrawingSurface.Options options) => {
-            bool first = true;
-            foreach (KeyValuePair<ProductionBlock, string> blk in this.blockStatus) {
-                if (!first) {
-                    ds.Newline();
-                }
-                string status = blk.Key.Status();
-                string blockName = $"{blk.Key.block.CustomName}: {status} {(blk.Key.IsIdle() ? blk.Key.IdleTime() : "")}";
-                Color? colour = DrawingSurface.StringToColour(this.statusDotColour.Get(status));
-                ds.TextCircle(colour, outline: false).Text(blockName);
-
-                foreach (string str in blk.Value.Split(this.splitNewline, StringSplitOptions.RemoveEmptyEntries)) {
-                    ds.Newline().Text(str);
-                }
-                first = false;
-            }
-        });
-    }
-
-    public void GetBlock(IMyTerminalBlock block) {
-        if ((block is IMyAssembler || block is IMyRefinery) && !block.CustomName.Contains(this.productionIgnoreString)) {
-            this.productionBlocks.Add(new ProductionBlock(this.program, block as IMyProductionBlock));
-        }
-    }
-
-    public void GotBLocks() {
-        this.productionBlocks = this.productionBlocks.OrderBy(b => b.block.CustomName).ToList();
-    }
-
-    public void Refresh() {
-        if (!this.productionBlocks.Any()) {
-            return;
-        }
-
-        string itemName;
-        bool allIdle = true;
-        int assemblers = 0;
-        int refineries = 0;
-
-        this.blockStatus.Clear();
-        this.status = "";
-
-        foreach (var block in this.productionBlocks) {
-            if (block == null || !Util.BlockValid(block.block)) {
-                continue;
-            }
-            bool idle = block.IsIdle();
-            if (block.block.DefinitionDisplayNameText.ToString() != "Survival kit") {
-                allIdle = allIdle && idle;
-            }
-            if (idle) {
-                if (block.block is IMyAssembler) {
-                    assemblers++;
-                } else {
-                    refineries++;
-                }
-            }
-
-            this.queueItems.Clear();
-
-            if (!block.IsIdle()) {
-                block.GetQueue(this.productionItems);
-                foreach (MyProductionItem i in this.productionItems) {
-                    itemName = Util.ToItemName(i);
-                    if (!this.queueItems.ContainsKey(itemName)) {
-                        this.queueItems.Add(itemName, i.Amount);
-                    } else {
-                        this.queueItems[itemName] = this.queueItems[itemName] + i.Amount;
-                    }
-                }
-            }
-
-            this.queueBuilder.Clear();
-            foreach (var kv in this.queueItems) {
-                this.queueBuilder.Append($"  {Util.FormatNumber(kv.Value)} x {kv.Key}\n");
-            }
-
-            this.blockStatus.Add(block, this.queueBuilder.ToString());
-        }
-
-        double timeNow = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
-
-        if (allIdle) {
-            idleTime = (idleTime == 0 ? timeNow : idleTime);
-
-            if (timeDisabled == 0) {
-                foreach (var block in this.productionBlocks) {
-                    block.Enabled = false;
-                }
-                timeDisabled = timeNow;
-            } else {
-                if (!checking) {
-                    if (timeNow - lastCheck > this.productionCheckFreqMs)  {
-                        // We disabled them over this.productionCheckFreqMs ago, and need to check them
-                        foreach (var block in this.productionBlocks) {
-                            block.Enabled = true;
-                        }
-                        checking = true;
-                        lastCheck = timeNow;
-                        this.status = $"Power saving mode {Util.TimeFormat(timeNow - idleTime)} (checking)";
-                    }
-                } else {
-                    if (timeNow - lastCheck > this.productionOnWaitMs) {
-                        // We waited 5 seconds and they are still not producing
-                        foreach (var block in this.productionBlocks) {
-                            block.Enabled = false;
-                        }
-                        checking = false;
-                        lastCheck = timeNow;
-                    } else {
-                        this.status = $"Power saving mode {Util.TimeFormat(timeNow - idleTime)} (checking)";
-                    }
-                }
-            }
-            if (this.status == "") {
-                this.status = $"Power saving mode {Util.TimeFormat(timeNow - idleTime)} " +
-                    $"(check in {Util.TimeFormat(this.productionCheckFreqMs - (timeNow - lastCheck), true)})";
-            }
-        } else {
-            if (this.productionBlocks.Where(b => b.Status() == "Blocked").Any()) {
-                this.status = "Production Enabled (Halted)";
-            } else {
-                this.status = "Production Enabled";
-            }
-
-            // If any assemblers are on, make sure they are all on (in case working together)
-            if (assemblers > 0) {
-                foreach (var block in this.productionBlocks.Where(b => b.block is IMyAssembler).ToList()) {
-                    block.Enabled = true;
-                }
-            }
-
-            idleTime = 0;
-            timeDisabled = 0;
-            checking = false;
-        }
-    }
-}
-
-public class ProductionBlock {
-    public Program program;
-    public double idleTime;
-    public IMyProductionBlock block;
-    public bool Enabled {
-        get { return block.Enabled; }
-        set {
-            if (block.DefinitionDisplayNameText.ToString() == "Survival kit") {
-                return;
-            }
-            block.Enabled = value;
-        }
-    }
-
-    public ProductionBlock(Program program, IMyProductionBlock block) {
-        this.idleTime = -1;
-        this.block = block;
-        this.program = program;
-    }
-
-    public void GetQueue(List<MyProductionItem> productionItems) {
-        productionItems.Clear();
-        block.GetQueue(productionItems);
-    }
-
-    public bool IsIdle() {
-        string status = this.Status();
-        if (status == "Idle") {
-            this.idleTime = (this.idleTime == -1) ? this.Now() : this.idleTime;
-            return true;
-        } else if (status == "Blocked" && !block.Enabled) {
-            block.Enabled = true;
-        }
-        this.idleTime = -1;
-        return false;
-    }
-
-    public string IdleTime() {
-        return Util.TimeFormat(this.Now() - this.idleTime);
-    }
-
-    public string Status() {
-        if (this.block.IsQueueEmpty && !this.block.IsProducing) {
-            return "Idle";
-        } else if (this.block.IsProducing) {
-            return "Working";
-        } else if (!this.block.IsQueueEmpty && !this.block.IsProducing) {
-            return "Blocked";
-        }
-        return "???";
-    }
-
-    public double Now() {
-        return DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
-    }
-}
-/* PRODUCTION */
 /*
  * GRAPHICS
  */
@@ -1959,6 +948,109 @@ public class DrawingSurface {
     }
 }
 /* GRAPHICS */
+/*
+ * BLOCK_HEALTH
+ */
+BlockHealth blockHealth;
+
+class BlockHealth {
+    public Program program;
+    public Template template;
+    public System.Text.RegularExpressions.Regex ignoreHealth;
+    public List<IMyTerminalBlock> blocks;
+    public Dictionary<string, string> damaged;
+    public string status;
+
+    public BlockHealth(Program program, Template template) {
+        this.program = program;
+        this.template = template;
+        this.blocks = new List<IMyTerminalBlock>();
+        this.damaged = new Dictionary<string, string>();
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        if (this.program.config.Enabled("health")) {
+            this.RegisterTemplateVars();
+
+            string ignore = this.program.config.Get("healthIgnore");
+            if (ignore != "" && ignore != null) {
+                this.ignoreHealth = Util.Regex(System.Text.RegularExpressions.Regex.Replace(ignore, @"\s*,\s*", "|"));
+            }
+        }
+    }
+
+    public void Clear() {
+        this.blocks.Clear();
+        this.damaged.Clear();
+    }
+
+    public void RegisterTemplateVars() {
+        if (this.template == null) {
+            return;
+        }
+
+        this.template.Register("health.status", () => this.status);
+        this.template.Register("health.blocks",
+            (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+                foreach (KeyValuePair<string, string> block in this.damaged) {
+                    ds.Text($"{block.Key} [{block.Value}]").Newline();
+                }
+                ds.Newline(reverse: true);
+            }
+        );
+    }
+
+    public float GetHealth(IMyTerminalBlock block) {
+        IMySlimBlock slimblock = block.CubeGrid.GetCubeBlock(block.Position);
+        if (slimblock == null) {
+            return 1f;
+        }
+        float MaxIntegrity = slimblock.MaxIntegrity;
+        float BuildIntegrity = slimblock.BuildIntegrity;
+        float CurrentDamage = slimblock.CurrentDamage;
+
+        return (BuildIntegrity - CurrentDamage) / MaxIntegrity;
+    }
+
+    public void GetBlock(IMyTerminalBlock block) {
+        this.blocks.Add(block);
+    }
+
+    public void GotBLocks() {}
+
+    public void Refresh() {
+        if (this.blocks == null) {
+            return;
+        }
+
+        this.damaged.Clear();
+        bool showOnHud = this.program.config.Enabled("healthOnHud");
+
+        foreach (var b in this.blocks) {
+            if (!Util.BlockValid(b)) {
+                continue;
+            }
+            if (this.ignoreHealth != null && this.ignoreHealth.IsMatch(b.CustomName)) {
+                continue;
+            }
+
+            var health = this.GetHealth(b);
+            if (health != 1f) {
+                this.damaged[b.CustomName] = Util.PctString(health);
+            }
+            if (showOnHud) {
+                b.ShowOnHUD = health != 1f;
+            }
+        }
+
+        this.status = $"{(this.damaged.Count == 0 ? "No damage" : "Damage")} detected";
+    }
+}
+/* BLOCK_HEALTH */
 public class Template {
     public class Token {
         public bool isText = true;
@@ -2204,6 +1296,968 @@ public class Template {
         }
     }
 }
+/*
+ * AIRLOCK
+ */
+Airlock airlock;
+
+public class Airlock {
+    public Program program;
+    public Dictionary<string, AirlockDoors> airlocks;
+    public Dictionary<string, List<IMyFunctionalBlock>> locationToAirlockMap;
+    public System.Text.RegularExpressions.Regex include;
+    public System.Text.RegularExpressions.Regex exclude;
+
+    // The name to match (Default will match regular doors). The capture group "(.*)" is used when grouping airlock doors.
+    public string doorMatch = "Door(.*)";
+    public string doorExclude = "Hangar";  // The exclusion tag (can be anything).
+    public double timeOpen = 720f;  // Duration before auto close (milliseconds)
+
+    public Airlock(Program program) {
+        this.program = program;
+        this.airlocks = new Dictionary<string, AirlockDoors>();
+        this.locationToAirlockMap = new Dictionary<string, List<IMyFunctionalBlock>>();
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        this.doorMatch = this.program.config.Get("airlockDoorMatch", "Door(.*)");
+        this.doorExclude = this.program.config.Get("airlockDoorExclude", "Hangar");
+        this.include = Util.Regex(this.doorMatch);
+        this.exclude = Util.Regex(this.doorExclude);
+        this.timeOpen = Util.ParseFloat(this.program.config.Get("airlockOpenTime"), 750f);
+    }
+
+    public void Clear() {
+        this.airlocks.Clear();
+        this.locationToAirlockMap.Clear();
+    }
+
+    public void CheckAirlocks() {
+        if (!this.program.config.Enabled("airlock")) {
+            return;
+        }
+        foreach (var al in this.airlocks) {
+            al.Value.Check();
+        }
+    }
+
+    public void GetBlock(IMyTerminalBlock block) {
+        // Get all door blocks
+        if (block is IMyDoor) {
+            var match = this.include.Match(block.CustomName);
+            var ignore = this.exclude.Match(block.CustomName);
+            if (!match.Success || ignore.Success) {
+                return;
+            }
+            var key = match.Groups[1].ToString();
+            if (!this.locationToAirlockMap.ContainsKey(key)) {
+                this.locationToAirlockMap.Add(key, new List<IMyFunctionalBlock>());
+            }
+            this.locationToAirlockMap[key].Add(block as IMyFunctionalBlock);
+        }
+
+    }
+
+    public void GotBLocks() {
+        bool doAllDoors = this.program.config.Enabled("airlockAllDoors");
+        foreach (var keyval in this.locationToAirlockMap) {
+            if (!doAllDoors && keyval.Value.Count < 2) {
+                continue;
+            }
+            this.airlocks.Add(keyval.Key, new AirlockDoors(keyval.Value, this.program));
+        }
+    }
+}
+
+public class AirlockDoors {
+    public Program program;
+    private List<IMyFunctionalBlock> blocks;
+    private List<IMyFunctionalBlock> areClosed;
+    private List<IMyFunctionalBlock> areOpen;
+    private double openTimer;
+    public double timeOpen;
+
+    public AirlockDoors(List<IMyFunctionalBlock> doors, Program program, double timeOpen = 750f) {
+        this.program = program;
+        this.blocks = new List<IMyFunctionalBlock>(doors);
+        this.areClosed = new List<IMyFunctionalBlock>();
+        this.areOpen = new List<IMyFunctionalBlock>();
+        this.openTimer = timeOpen;
+        this.timeOpen = timeOpen;
+    }
+
+    private bool IsOpen(IMyFunctionalBlock door) {
+        return (door as IMyDoor).OpenRatio > 0;
+    }
+
+    private void Lock(List<IMyFunctionalBlock> doors = null) {
+        doors = doors ?? this.blocks;
+        foreach (var door in doors) {
+            (door as IMyDoor).Enabled = false;
+        }
+    }
+
+    private void Unlock(List<IMyFunctionalBlock> doors = null) {
+        doors = doors ?? this.blocks;
+        foreach (var door in doors) {
+            (door as IMyDoor).Enabled = true;
+        }
+    }
+
+    private void OpenClose(string action, IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
+        (door1 as IMyDoor).ApplyAction(action);
+        if (door2 != null) {
+            (door2 as IMyDoor).ApplyAction(action);
+        }
+    }
+
+    private void Open(IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
+        this.OpenClose("Open_On", door1, door2);
+    }
+
+    private void OpenAll() {
+        foreach (var door in this.blocks) {
+            this.OpenClose("Open_On", door);
+        }
+    }
+
+    private void Close(IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
+        this.OpenClose("Open_Off", door1, door2);
+    }
+
+    private void CloseAll() {
+        foreach (var door in this.blocks) {
+            this.OpenClose("Open_Off", door);
+        }
+    }
+
+    public bool Check() {
+        int openCount = 0;
+        this.areClosed.Clear();
+        this.areOpen.Clear();
+
+        foreach (var door in this.blocks) {
+            if (!Util.BlockValid(door)) {
+                continue;
+            }
+            if (this.IsOpen(door)) {
+                openCount++;
+                this.areOpen.Add(door);
+            } else {
+                this.areClosed.Add(door);
+            }
+        }
+
+        if (areOpen.Count > 0) {
+            this.openTimer -= this.program.Runtime.TimeSinceLastRun.TotalMilliseconds;
+            if (this.openTimer < 0) {
+                this.CloseAll();
+            } else {
+                this.Lock(this.areClosed);
+                this.Unlock(this.areOpen);
+            }
+        } else {
+            this.Unlock();
+            this.openTimer = this.timeOpen;
+        }
+
+        return true;
+    }
+}
+/* AIRLOCK */
+/*
+ * POWER
+ */
+PowerDetails powerDetails;
+
+public class PowerDetails {
+    public Program program;
+    public Template template;
+    public List<IMyTerminalBlock> powerProducerBlocks;
+    public List<IMyTerminalBlock> jumpDriveBlocks;
+    public List<MyInventoryItem> items;
+    public List<float> ioFloats;
+    public List<Color> ioColours;
+    public Dictionary<string, Color> ioLegendNames;
+
+    public int jumpDrives;
+    public float jumpMax;
+    public float jumpCurrent;
+
+    public int batteries;
+    public float batteryMax;
+    public float batteryCurrent;
+    public float batteryInput;
+    public float batteryOutput;
+    public float batteryOutputDisabled;
+    public float batteryOutputMax;
+    public float batteryInputMax;
+
+    public int reactors;
+    public float reactorOutputMW;
+    public float reactorOutputMax;
+    public float reactorOutputDisabled;
+    public MyFixedPoint reactorUranium;
+
+    public int solars;
+    public float solarOutputMW;
+    public float solarOutputDisabled;
+    public float solarOutputMax;
+
+    public int turbines;
+    public float turbineOutputMW;
+    public float turbineOutputDisabled;
+    public float turbineOutputMax;
+
+    public int hEngines;
+    public float hEngineOutputMW;
+    public float hEngineOutputDisabled;
+    public float hEngineOutputMax;
+
+    public float battChargeMax = 12f;
+
+    public Color reactorColour = Color.Lighten(Color.Blue, 0.05);
+    public Color hEnginesColour = DrawingSurface.stringToColour["dimred"];
+    public Color batteriesColour = DrawingSurface.stringToColour["dimgreen"];
+    public Color turbinesColour = DrawingSurface.stringToColour["dimyellow"];
+    public Color solarsColour = Color.Darken(Color.Cyan, 0.6);
+
+    public PowerDetails(Program program, Template template = null) {
+        this.program = program;
+        this.template = template;
+        this.items = new List<MyInventoryItem>();
+        this.ioFloats = new List<float>();
+        this.ioColours = new List<Color>() {
+            this.reactorColour,
+            new Color(this.reactorColour, 0.01f),
+            this.hEnginesColour,
+            new Color(this.hEnginesColour, 0.01f),
+            this.batteriesColour,
+            new Color(this.batteriesColour, 0.01f),
+            this.turbinesColour,
+            new Color(this.turbinesColour, 0.01f),
+            this.solarsColour,
+            new Color(this.solarsColour, 0.01f)
+        };
+        this.powerProducerBlocks = new List<IMyTerminalBlock>();
+        this.jumpDriveBlocks = new List<IMyTerminalBlock>();
+        this.ioLegendNames = new Dictionary<string, Color>();
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        if (this.program.config.Enabled("power")) {
+            this.RegisterTemplateVars();
+        }
+    }
+
+    public void RegisterTemplateVars() {
+        if (this.template == null) {
+            return;
+        }
+        this.template.Register("power.batteries", () => this.batteries.ToString());
+        this.template.Register("power.batteryCurrent", () => String.Format("{0:0.##}", this.batteryCurrent));
+        this.template.Register("power.batteryInput", () => String.Format("{0:0.##}", this.batteryInput));
+        this.template.Register("power.batteryInputMax", () => String.Format("{0:0.##}", this.batteryInputMax));
+        this.template.Register("power.batteryMax", () => String.Format("{0:0.##}", this.batteryMax));
+        this.template.Register("power.batteryOutput", () => String.Format("{0:0.##}", this.batteryOutput));
+        this.template.Register("power.batteryOutputMax", () => String.Format("{0:0.##}", this.batteryOutputMax));
+        this.template.Register("power.engineOutputMax", () => String.Format("{0:0.##}", this.hEngineOutputMax));
+        this.template.Register("power.engineOutputMW", () => String.Format("{0:0.##}", this.hEngineOutputMW));
+        this.template.Register("power.engines", () => this.hEngines.ToString());
+        this.template.Register("power.input", () => String.Format("{0:0.##}", this.CurrentInput()));
+        this.template.Register("power.jumpCurrent", () => String.Format("{0:0.##}", this.jumpCurrent));
+        this.template.Register("power.jumpDrives", () => this.jumpDrives.ToString());
+        this.template.Register("power.jumpMax", () => String.Format("{0:0.##}", this.jumpMax));
+        this.template.Register("power.maxOutput", () => String.Format("{0:0.##}", this.MaxOutput()));
+        this.template.Register("power.output", () => String.Format("{0:0.##}", this.CurrentOutput()));
+        this.template.Register("power.reactorOutputMax", () => String.Format("{0:0.##}", this.reactorOutputMax));
+        this.template.Register("power.reactorOutputMW", () => String.Format("{0:0.##}", this.reactorOutputMW));
+        this.template.Register("power.reactors", () => this.reactors.ToString());
+        this.template.Register("power.reactorUr", () => Util.FormatNumber(this.reactorUranium));
+        this.template.Register("power.solarOutputMax", () => String.Format("{0:0.##}", this.solarOutputMax));
+        this.template.Register("power.solarOutputMW", () => String.Format("{0:0.##}", this.solarOutputMW));
+        this.template.Register("power.solars", () => this.solars.ToString());
+        this.template.Register("power.turbineOutputMax", () => String.Format("{0:0.##}", this.turbineOutputMax));
+        this.template.Register("power.turbineOutputMW", () => String.Format("{0:0.##}", this.turbineOutputMW));
+        this.template.Register("power.turbines", () => this.turbines.ToString());
+        this.template.Register("power.jumpBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+            if (this.jumpDrives == 0) {
+                return;
+            }
+            options.pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
+            options.text = text ?? Util.PctString(options.pct);
+            ds.Bar(options);
+        });
+        this.template.Register("power.batteryBar", this.BatteryBar);
+        this.template.Register("power.ioString", () => {
+            float io = this.CurrentInput() - this.CurrentOutput();
+            float max = this.MaxOutput();
+
+            return String.Format("{0:0.00} / {1:0.00} MWh ({2})", io, max, Util.PctString(Math.Abs(io) / max));
+        });
+        this.template.Register("power.ioBar", this.IoBar);
+        this.template.Register("power.ioLegend", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+            this.ioLegendNames.Clear();
+            if (this.reactors > 0) {
+                this.ioLegendNames["Reactor"] = this.reactorColour;
+            }
+            if (this.hEngines > 0) {
+                this.ioLegendNames["H2 Engine"] = this.hEnginesColour;
+            }
+            if (this.batteries > 0) {
+                this.ioLegendNames["Battery"] = this.batteriesColour;
+            }
+            if (this.turbines > 0) {
+                this.ioLegendNames["Wind"] = this.turbinesColour;
+            }
+            if (this.solars > 0) {
+                this.ioLegendNames["Solar"] = this.solarsColour;
+            }
+            ds.sb.Clear();
+            ds.sb.Append(string.Join(" / ", this.ioLegendNames.Keys));
+            Vector2 size = Vector2.Divide(ds.surface.MeasureStringInPixels(ds.sb, ds.surface.Font, ds.surface.FontSize), 2);
+            ds.sb.Clear();
+            ds.sb.Append("O");
+            ds.SetCursor(ds.width / 2 - size.X, null);
+
+            bool first = true;
+            foreach (var kv in this.ioLegendNames) {
+                if (!first) {
+                    ds.Text(" / ");
+                }
+                ds.Text(kv.Key, colour: kv.Value);
+                first = false;
+            }
+        });
+        this.template.Register("power.reactorString", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+            if (this.reactors == 0) {
+                return;
+            }
+            string msg = text ?? options.text ?? "Reactors: ";
+            ds.Text($"{msg}{this.reactors}, Output: {this.reactorOutputMW} MW, Ur: {this.reactorUranium}");
+        });
+    }
+
+    public void Clear() {
+        this.jumpDrives = 0;
+        this.jumpMax = 0f;
+        this.jumpCurrent = 0f;
+        this.batteries = 0;
+        this.batteryMax = 0f;
+        this.batteryCurrent = 0f;
+        this.batteryInput = 0f;
+        this.batteryOutput = 0f;
+        this.batteryOutputDisabled = 0f;
+        this.batteryOutputMax = 0f;
+        this.batteryInputMax = 0f;
+        this.reactors = 0;
+        this.reactorOutputMW = 0f;
+        this.reactorOutputDisabled = 0f;
+        this.reactorOutputMax = 0f;
+        this.reactorUranium = 0;
+        this.solars = 0;
+        this.solarOutputMW = 0f;
+        this.solarOutputDisabled = 0f;
+        this.solarOutputMax = 0f;
+        this.turbines = 0;
+        this.turbineOutputMW = 0f;
+        this.turbineOutputDisabled = 0f;
+        this.turbineOutputMax = 0f;
+        this.hEngines = 0;
+        this.hEngineOutputMW = 0f;
+        this.hEngineOutputDisabled = 0f;
+        this.hEngineOutputMax = 0f;
+        this.powerProducerBlocks.Clear();
+        this.jumpDriveBlocks.Clear();
+    }
+
+    public void GetBlock(IMyTerminalBlock block) {
+        if (block is IMyPowerProducer) {
+            this.powerProducerBlocks.Add(block);
+        } else if (block is IMyJumpDrive) {
+            this.jumpDriveBlocks.Add(block);
+        }
+    }
+
+    public void GotBLocks() {}
+
+    public float GetPercent(float current, float max) {
+        if (max == 0) {
+            return 0f;
+        }
+        return current / max;
+    }
+
+    public float MaxOutput() {
+        return this.hEngineOutputMax + this.reactorOutputMax + this.solarOutputMax + this.turbineOutputMax + (battChargeMax * this.batteries);
+    }
+
+    public float MaxInput() {
+        return (battChargeMax * this.batteries);
+    }
+
+    public float CurrentInput() {
+        return this.batteryInput;
+    }
+
+    public float CurrentOutput() {
+        return this.reactorOutputMW + this.solarOutputMW + this.turbineOutputMW + this.hEngineOutputMW + this.batteryOutput;
+    }
+
+    public float DisabledMaxOutput() {
+        return this.batteryOutputDisabled + this.reactorOutputDisabled + this.solarOutputDisabled + this.turbineOutputDisabled + this.hEngineOutputDisabled;
+    }
+
+    public void Refresh() {
+        foreach (IMyJumpDrive jumpDrive in this.jumpDriveBlocks) {
+            if (!Util.BlockValid(jumpDrive)) {
+                continue;
+            }
+            this.jumpDrives += 1;
+            this.jumpCurrent += jumpDrive.CurrentStoredPower;
+            this.jumpMax += jumpDrive.MaxStoredPower;
+        }
+
+        foreach (IMyPowerProducer powerBlock in this.powerProducerBlocks) {
+            if (!Util.BlockValid(powerBlock)) {
+                continue;
+            }
+            string typeString = powerBlock.BlockDefinition.TypeIdString;
+            IMyBatteryBlock battery = powerBlock as IMyBatteryBlock;
+
+            if (battery != null) {
+                this.batteries++;
+                this.batteryCurrent += battery.CurrentStoredPower;
+                this.batteryMax += battery.MaxStoredPower;
+                this.batteryInput += battery.CurrentInput;
+                this.batteryOutput += battery.CurrentOutput;
+                this.batteryOutputMax += battery.MaxOutput;
+                this.batteryOutputMax += battery.MaxInput;
+                if (!battery.Enabled || battery.ChargeMode == ChargeMode.Recharge) {
+                    this.batteryOutputDisabled += battChargeMax;
+                }
+            } else if (powerBlock is IMyReactor) {
+                this.reactors++;
+                this.reactorOutputMW += powerBlock.CurrentOutput;
+                this.reactorOutputMax += powerBlock.MaxOutput;
+
+                if (!powerBlock.Enabled) {
+                    this.reactorOutputDisabled += powerBlock.MaxOutput;
+                }
+
+                this.items.Clear();
+                var inv = powerBlock.GetInventory(0);
+                inv.GetItems(this.items);
+                for (var i = 0; i < items.Count; i++) {
+                    this.reactorUranium += items[i].Amount;
+                }
+            } else if (powerBlock is IMySolarPanel) {
+                this.solars++;
+                this.solarOutputMW += powerBlock.CurrentOutput;
+                this.solarOutputMax += powerBlock.MaxOutput;
+                if (!powerBlock.Enabled) {
+                    this.solarOutputDisabled += powerBlock.MaxOutput;
+                }
+            } else if (typeString == "MyObjectBuilder_HydrogenEngine") {
+                this.hEngines++;
+                this.hEngineOutputMW += powerBlock.CurrentOutput;
+                this.hEngineOutputMax += powerBlock.MaxOutput;
+                if (!powerBlock.Enabled) {
+                    this.hEngineOutputDisabled += powerBlock.MaxOutput;
+                }
+            } else if (typeString == "MyObjectBuilder_WindTurbine") {
+                this.turbines++;
+                this.turbineOutputMW += powerBlock.CurrentOutput;
+                this.turbineOutputMax += powerBlock.MaxOutput;
+                if (!powerBlock.Enabled) {
+                    this.turbineOutputDisabled += powerBlock.MaxOutput;
+                }
+            }
+        }
+    }
+
+    public void BatteryBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        if (this.batteries == 0) {
+            return;
+        }
+        float io = this.batteryInput - this.batteryOutput;
+
+        options.net = this.batteryCurrent;
+        float remainingMins = io == 0f ? 0 : (this.batteryMax - this.batteryCurrent) * 60 / Math.Abs(io);
+        string pct = Util.PctString(this.batteryCurrent / this.batteryMax);
+        if (this.batteryCurrent / this.batteryMax >= 0.9999f) {
+            pct = "100 %";
+            io = 0;
+            remainingMins = 0;
+        }
+        string msg = $"{pct}";
+        if (io < 0) {
+            options.net = (this.batteryCurrent - this.batteryMax);
+            remainingMins = this.batteryCurrent * 60 / Math.Abs(io);
+            msg = $"{pct}";
+        }
+        double minsLeft = Math.Round(remainingMins);
+        options.text = text ?? options.text ?? $"{msg} ({(minsLeft <= 60 ? $"{minsLeft} min" : String.Format("{0:0.00} hours", minsLeft / 60))})";
+
+        options.high = this.batteryMax;
+        options.low = options.high;
+
+        ds.MidBar(options);
+    }
+
+    public void IoBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        float max = this.CurrentOutput() + this.DisabledMaxOutput();
+
+        this.ioFloats.Clear();
+        this.ioFloats.Add(this.reactorOutputMW / max);
+        this.ioFloats.Add(this.reactorOutputDisabled / max);
+        this.ioFloats.Add(this.hEngineOutputMW / max);
+        this.ioFloats.Add(this.hEngineOutputDisabled / max);
+        this.ioFloats.Add(this.batteryOutput / max);
+        this.ioFloats.Add(this.batteryOutputDisabled / max);
+        this.ioFloats.Add(this.turbineOutputMW / max);
+        this.ioFloats.Add(this.turbineOutputDisabled / max);
+        this.ioFloats.Add(this.solarOutputMW / max);
+        this.ioFloats.Add(this.solarOutputDisabled / max);
+
+        ds.MultiBar(this.ioFloats, this.ioColours, text: text, textAlignment: TextAlignment.LEFT);
+    }
+}
+/* POWER */
+/*
+ * CARGO
+ */
+CargoStatus cargoStatus;
+
+public class CargoStatus {
+    public Program program;
+    public List<IMyTerminalBlock> cargoBlocks;
+    public Dictionary<string, VRage.MyFixedPoint> cargoItemCounts;
+    public List<MyInventoryItem> inventoryItems;
+    public System.Text.RegularExpressions.Regex itemRegex;
+    public System.Text.RegularExpressions.Regex ingotRegex;
+    public System.Text.RegularExpressions.Regex oreRegex;
+    public VRage.MyFixedPoint max;
+    public VRage.MyFixedPoint vol;
+    public Template template;
+    public List<float> widths;
+
+    public string itemText;
+    public float pct;
+
+    public CargoStatus(Program program, Template template = null) {
+        this.program = program;
+        this.template = template;
+        this.itemRegex = Util.Regex(".*/");
+        this.ingotRegex = Util.Regex("Ingot/");
+        this.oreRegex = Util.Regex("Ore/(?!Ice)");
+        this.widths = new List<float>() { 0, 0, 0, 0 };
+
+        this.cargoItemCounts = new Dictionary<string, VRage.MyFixedPoint>();
+        this.inventoryItems = new List<MyInventoryItem>();
+        this.cargoBlocks = new List<IMyTerminalBlock>();
+        this.itemText = "";
+        this.pct = 0f;
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        if (this.program.config.Enabled("cargo")) {
+            this.RegisterTemplateVars();
+        }
+    }
+
+    public void Clear() {
+        this.cargoItemCounts.Clear();
+        this.inventoryItems.Clear();
+        this.cargoBlocks.Clear();
+    }
+
+    public void RegisterTemplateVars() {
+        if (this.template == null) {
+            return;
+        }
+
+        this.template.Register("cargo.stored", () => $"{Util.FormatNumber(1000 * this.vol)} L");
+        this.template.Register("cargo.cap", () => $"{Util.FormatNumber(1000 * this.max)} L");
+        this.template.Register("cargo.fullString", () => {
+            string capFmt = Util.GetFormatNumberStr(1000 * this.max);
+
+            return $"{Util.FormatNumber(1000 * this.vol, capFmt)} / {Util.FormatNumber(1000 * this.max, capFmt)} L";
+        });
+        this.template.Register("cargo.bar", this.RenderPct);
+        this.template.Register("cargo.items", this.RenderItems);
+    }
+
+    public void RenderPct(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        string colourName = this.pct > 85 ? "dimred" : this.pct > 60 ? "dimyellow" : "dimgreen";
+        Color? colour = DrawingSurface.stringToColour.Get(colourName);
+        ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct));
+    }
+
+    public void RenderItems(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        if (ds.width / (ds.charSizeInPx.X + 1f) < 40) {
+            foreach (var item in this.cargoItemCounts) {
+                var fmtd = Util.FormatNumber(item.Value);
+                ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(fmtd, textAlignment: TextAlignment.RIGHT).Newline();
+            }
+        } else {
+            this.widths[0] = 0;
+            this.widths[1] = ds.width / 2 - 1.5f * ds.charSizeInPx.X;
+            this.widths[2] = ds.width / 2 + 1.5f * ds.charSizeInPx.X;
+            this.widths[3] = ds.width;
+
+            int i = 0;
+            foreach (var item in this.cargoItemCounts) {
+                var fmtd = Util.FormatNumber(item.Value);
+                ds
+                    .SetCursor(this.widths[(i++ % 4)], null)
+                    .Text($"{item.Key}")
+                    .SetCursor(this.widths[(i++ % 4)], null)
+                    .Text(fmtd, textAlignment: TextAlignment.RIGHT);
+
+                if ((i % 4) == 0 || i >= this.cargoItemCounts.Count * 2) {
+                    ds.Newline();
+                }
+            }
+        }
+        ds.Newline(reverse: true);
+    }
+
+    public void GetBlock(IMyTerminalBlock block) {
+        if (block is IMyCargoContainer || block is IMyShipDrill || block is IMyShipConnector || block is IMyAssembler || block is IMyRefinery) {
+            this.cargoBlocks.Add(block);
+        }
+    }
+
+    public void GotBLocks() {}
+
+    public void Refresh() {
+        if (this.cargoBlocks == null) {
+            return;
+        }
+
+        this.cargoItemCounts.Clear();
+        this.inventoryItems.Clear();
+        this.max = 0;
+        this.vol = 0;
+        this.pct = 0f;
+        string fullName = "";
+        string itemName = "";
+
+        foreach (var c in this.cargoBlocks) {
+            if (!Util.BlockValid(c)) {
+                continue;
+            }
+            var inv = c.GetInventory(0);
+            this.vol += inv.CurrentVolume;
+            this.max += inv.MaxVolume;
+
+            this.inventoryItems.Clear();
+            inv.GetItems(this.inventoryItems);
+            for (var i = 0; i < this.inventoryItems.Count; i++) {
+                fullName = this.inventoryItems[i].Type.ToString();
+                itemName = this.itemRegex.Replace(fullName, "");
+                if (this.ingotRegex.IsMatch(fullName)) {
+                    itemName += " Ingot";
+                } else if (this.oreRegex.IsMatch(fullName)) {
+                    itemName += " Ore";
+                }
+
+                var itemQty = this.inventoryItems[i].Amount;
+                if (!this.cargoItemCounts.ContainsKey(itemName)) {
+                    this.cargoItemCounts.Add(itemName, itemQty);
+                } else {
+                    this.cargoItemCounts[itemName] = this.cargoItemCounts[itemName] + itemQty;
+                }
+            }
+        }
+
+        if (this.max != 0) {
+            this.pct = (float)this.vol / (float)this.max;
+        }
+
+        return;
+    }
+}
+/* CARGO */
+/*
+ * PRODUCTION
+ */
+public ProductionDetails productionDetails;
+
+public class ProductionDetails {
+    public Program program;
+    public Template template;
+    public List<MyProductionItem> productionItems;
+    public List<ProductionBlock> productionBlocks;
+    public List<IMyProductionBlock> blocks;
+    public Dictionary<ProductionBlock, string> blockStatus;
+    public Dictionary<string, string> statusDotColour;
+    public Dictionary<string, VRage.MyFixedPoint> queueItems;
+    public double productionCheckFreqMs = 2 * 60 * 1000;
+    public double productionOnWaitMs = 5 * 1000;
+    public double productionOutTimeMs = 3 * 1000;
+    public string productionIgnoreString = "[x]";
+    public string status;
+    public StringBuilder queueBuilder;
+    public double idleTime = 0;
+    public double timeDisabled = 0;
+    public bool checking = false;
+    public double lastCheck = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
+    public char[] splitNewline;
+
+    public ProductionDetails(Program program, Template template) {
+        this.program = program;
+        this.template = template;
+        this.blocks = new List<IMyProductionBlock>();
+        this.productionItems = new List<MyProductionItem>();
+        this.productionBlocks = new List<ProductionBlock>();
+        this.blockStatus = new Dictionary<ProductionBlock, string>();
+        this.queueItems = new Dictionary<string, VRage.MyFixedPoint>();
+        this.statusDotColour = new Dictionary<string, string>() {
+            { "Idle", "dimgreen" },
+            { "Working", "dimyellow" },
+            { "Blocked", "dimred" }
+        };
+        this.queueBuilder = new StringBuilder();
+        this.splitNewline = new[] { '\n' };
+
+        this.Reset();
+    }
+
+    public void Reset() {
+        this.Clear();
+
+        if (this.program.config.Enabled("power")) {
+            this.RegisterTemplateVars();
+        }
+    }
+
+    public void Clear() {
+        this.blocks.Clear();
+        this.productionItems.Clear();
+        this.productionBlocks.Clear();
+        this.blockStatus.Clear();
+        this.queueItems.Clear();
+        this.idleTime = 0;
+        this.timeDisabled = 0;
+        this.checking = false;
+    }
+
+    public void RegisterTemplateVars() {
+        if (this.template == null) {
+            return;
+        }
+
+        this.template.Register("production.status", () => this.status);
+        this.template.Register("production.blocks",  (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+            bool first = true;
+            foreach (KeyValuePair<ProductionBlock, string> blk in this.blockStatus) {
+                if (!first) {
+                    ds.Newline();
+                }
+                string status = blk.Key.Status();
+                string blockName = $"{blk.Key.block.CustomName}: {status} {(blk.Key.IsIdle() ? blk.Key.IdleTime() : "")}";
+                Color? colour = DrawingSurface.StringToColour(this.statusDotColour.Get(status));
+                ds.TextCircle(colour, outline: false).Text(blockName);
+
+                foreach (string str in blk.Value.Split(this.splitNewline, StringSplitOptions.RemoveEmptyEntries)) {
+                    ds.Newline().Text(str);
+                }
+                first = false;
+            }
+        });
+    }
+
+    public void GetBlock(IMyTerminalBlock block) {
+        if ((block is IMyAssembler || block is IMyRefinery) && !block.CustomName.Contains(this.productionIgnoreString)) {
+            this.productionBlocks.Add(new ProductionBlock(this.program, block as IMyProductionBlock));
+        }
+    }
+
+    public void GotBLocks() {
+        this.productionBlocks = this.productionBlocks.OrderBy(b => b.block.CustomName).ToList();
+    }
+
+    public void Refresh() {
+        if (!this.productionBlocks.Any()) {
+            return;
+        }
+
+        string itemName;
+        bool allIdle = true;
+        int assemblers = 0;
+        int refineries = 0;
+
+        this.blockStatus.Clear();
+        this.status = "";
+
+        foreach (var block in this.productionBlocks) {
+            if (block == null || !Util.BlockValid(block.block)) {
+                continue;
+            }
+            bool idle = block.IsIdle();
+            if (block.block.DefinitionDisplayNameText.ToString() != "Survival kit") {
+                allIdle = allIdle && idle;
+            }
+            if (idle) {
+                if (block.block is IMyAssembler) {
+                    assemblers++;
+                } else {
+                    refineries++;
+                }
+            }
+
+            this.queueItems.Clear();
+
+            if (!block.IsIdle()) {
+                block.GetQueue(this.productionItems);
+                foreach (MyProductionItem i in this.productionItems) {
+                    itemName = Util.ToItemName(i);
+                    if (!this.queueItems.ContainsKey(itemName)) {
+                        this.queueItems.Add(itemName, i.Amount);
+                    } else {
+                        this.queueItems[itemName] = this.queueItems[itemName] + i.Amount;
+                    }
+                }
+            }
+
+            this.queueBuilder.Clear();
+            foreach (var kv in this.queueItems) {
+                this.queueBuilder.Append($"  {Util.FormatNumber(kv.Value)} x {kv.Key}\n");
+            }
+
+            this.blockStatus.Add(block, this.queueBuilder.ToString());
+        }
+
+        double timeNow = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
+
+        if (allIdle) {
+            idleTime = (idleTime == 0 ? timeNow : idleTime);
+
+            if (timeDisabled == 0) {
+                foreach (var block in this.productionBlocks) {
+                    block.Enabled = false;
+                }
+                timeDisabled = timeNow;
+            } else {
+                if (!checking) {
+                    if (timeNow - lastCheck > this.productionCheckFreqMs)  {
+                        // We disabled them over this.productionCheckFreqMs ago, and need to check them
+                        foreach (var block in this.productionBlocks) {
+                            block.Enabled = true;
+                        }
+                        checking = true;
+                        lastCheck = timeNow;
+                        this.status = $"Power saving mode {Util.TimeFormat(timeNow - idleTime)} (checking)";
+                    }
+                } else {
+                    if (timeNow - lastCheck > this.productionOnWaitMs) {
+                        // We waited 5 seconds and they are still not producing
+                        foreach (var block in this.productionBlocks) {
+                            block.Enabled = false;
+                        }
+                        checking = false;
+                        lastCheck = timeNow;
+                    } else {
+                        this.status = $"Power saving mode {Util.TimeFormat(timeNow - idleTime)} (checking)";
+                    }
+                }
+            }
+            if (this.status == "") {
+                this.status = $"Power saving mode {Util.TimeFormat(timeNow - idleTime)} " +
+                    $"(check in {Util.TimeFormat(this.productionCheckFreqMs - (timeNow - lastCheck), true)})";
+            }
+        } else {
+            if (this.productionBlocks.Where(b => b.Status() == "Blocked").Any()) {
+                this.status = "Production Enabled (Halted)";
+            } else {
+                this.status = "Production Enabled";
+            }
+
+            // If any assemblers are on, make sure they are all on (in case working together)
+            if (assemblers > 0) {
+                foreach (var block in this.productionBlocks.Where(b => b.block is IMyAssembler).ToList()) {
+                    block.Enabled = true;
+                }
+            }
+
+            idleTime = 0;
+            timeDisabled = 0;
+            checking = false;
+        }
+    }
+}
+
+public class ProductionBlock {
+    public Program program;
+    public double idleTime;
+    public IMyProductionBlock block;
+    public bool Enabled {
+        get { return block.Enabled; }
+        set {
+            if (block.DefinitionDisplayNameText.ToString() == "Survival kit") {
+                return;
+            }
+            block.Enabled = value;
+        }
+    }
+
+    public ProductionBlock(Program program, IMyProductionBlock block) {
+        this.idleTime = -1;
+        this.block = block;
+        this.program = program;
+    }
+
+    public void GetQueue(List<MyProductionItem> productionItems) {
+        productionItems.Clear();
+        block.GetQueue(productionItems);
+    }
+
+    public bool IsIdle() {
+        string status = this.Status();
+        if (status == "Idle") {
+            this.idleTime = (this.idleTime == -1) ? this.Now() : this.idleTime;
+            return true;
+        } else if (status == "Blocked" && !block.Enabled) {
+            block.Enabled = true;
+        }
+        this.idleTime = -1;
+        return false;
+    }
+
+    public string IdleTime() {
+        return Util.TimeFormat(this.Now() - this.idleTime);
+    }
+
+    public string Status() {
+        if (this.block.IsQueueEmpty && !this.block.IsProducing) {
+            return "Idle";
+        } else if (this.block.IsProducing) {
+            return "Working";
+        } else if (!this.block.IsQueueEmpty && !this.block.IsProducing) {
+            return "Blocked";
+        }
+        return "???";
+    }
+
+    public double Now() {
+        return DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
+    }
+}
+/* PRODUCTION */
 /*
  * UTIL
  */
