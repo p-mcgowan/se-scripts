@@ -59,7 +59,7 @@ Config config = new Config();
 Dictionary<string, string> templates = new Dictionary<string, string>();
 IEnumerator<string> stateMachine;
 int i = 0;
-int update100sPerBlockCheck = 3;
+int update100sPerBlockCheck = 2;
 
 public class Config {
     public Dictionary<string, string> settings;
@@ -174,9 +174,9 @@ public bool ParseCustomData() {
 
             surface = block.GetSurface(i);
             if (hasNumberedSurface) {
-                drawables.Add(surfaceName, new DrawingSurface(surface, this, $"{name} <{i}>"));
+                drawables.Add(surfaceName, new DrawingSurface(surface, this, surfaceName));
             } else {
-                drawables.Add(name, new DrawingSurface(surface, this, name));
+                drawables.Add(surfaceName, new DrawingSurface(surface, this, name));
             }
         }
     }
@@ -200,6 +200,9 @@ public bool Configure() {
         Runtime.UpdateFrequency |= UpdateFrequency.Update10;
     }
 
+    if (stateMachine != null) {
+        stateMachine.Dispose();
+    }
     stateMachine = RunStuffOverTime();
     Runtime.UpdateFrequency |= UpdateFrequency.Once;
 
@@ -225,7 +228,7 @@ public bool RecheckFailed() {
         return !Configure();
     }
 
-    if (i == 1 || i % (update100sPerBlockCheck + 1) == 0) {
+    if (i <= 1 || i % (update100sPerBlockCheck + 1) == 0) {
         cargoStatus.Clear();
         airlock.Clear();
         blockHealth.Clear();
@@ -339,7 +342,7 @@ public IEnumerator<string> RunStuffOverTime()  {
 
     for (int j = 0; j < drawables.Count; ++j) {
         var dw = drawables.ElementAt(j);
-        template.Render(dw.Value, "LCD Panel");
+        template.Render(dw.Value);
         yield return $"render {dw.Key}";
     }
 
