@@ -13,47 +13,52 @@ public class PowerDetails {
     public List<Color> ioColours;
     public Dictionary<string, Color> ioLegendNames;
 
-    public int jumpDrives;
-    public float jumpMax;
-    public float jumpCurrent;
-
-    public int batteries;
-    public float batteryMax;
     public float batteryCurrent;
     public float batteryInput;
-    public float batteryOutput;
+    public float batteryInputMax;
+    public float batteryMax;
     public float batteryOutputDisabled;
     public float batteryOutputMax;
-    public float batteryInputMax;
-
-    public int reactors;
-    public float reactorOutputMW;
-    public float reactorOutputMax;
-    public float reactorOutputDisabled;
-    public MyFixedPoint reactorUranium;
-
-    public int solars;
-    public float solarOutputMW;
-    public float solarOutputDisabled;
-    public float solarOutputMax;
-
-    public int turbines;
-    public float turbineOutputMW;
-    public float turbineOutputDisabled;
-    public float turbineOutputMax;
-
-    public int hEngines;
-    public float hEngineOutputMW;
+    public float batteryOutputMW;
+    public float batteryPotential;
     public float hEngineOutputDisabled;
     public float hEngineOutputMax;
+    public float hEngineOutputMW;
+    public float hEnginePotential;
+    public float jumpCurrent;
+    public float jumpMax;
+    public float reactorOutputDisabled;
+    public float reactorOutputMax;
+    public float reactorOutputMW;
+    public float reactorPotential;
+    public float solarOutputDisabled;
+    public float solarOutputMax;
+    public float solarOutputMW;
+    public float solarPotential;
+    public float turbineOutputDisabled;
+    public float turbineOutputMax;
+    public float turbineOutputMW;
+    public float turbinePotential;
+    public int batteries;
+    public int batteriesDisabled;
+    public int hEngines;
+    public int hEnginesDisabled;
+    public int jumpDrives;
+    public int reactors;
+    public int reactorsDisabled;
+    public int solars;
+    public int solarsDisabled;
+    public int turbines;
+    public int turbinesDisabled;
+    public MyFixedPoint reactorUranium;
 
     public float battChargeMax = 12f;
 
     public Color reactorColour = Color.Lighten(Color.Blue, 0.05);
     public Color hEnginesColour = DrawingSurface.stringToColour["dimred"];
     public Color batteriesColour = DrawingSurface.stringToColour["dimgreen"];
-    public Color turbinesColour = DrawingSurface.stringToColour["dimyellow"];
-    public Color solarsColour = Color.Darken(Color.Cyan, 0.6);
+    public Color turbinesColour = Color.Darken(DrawingSurface.stringToColour["dimyellow"], 0.1);
+    public Color solarsColour = Color.Darken(Color.Cyan, 0.8);
 
     public PowerDetails(Program program, Template template = null) {
         this.program = program;
@@ -62,15 +67,15 @@ public class PowerDetails {
         this.ioFloats = new List<float>();
         this.ioColours = new List<Color>() {
             this.reactorColour,
-            new Color(this.reactorColour, 0.01f),
+            ColorExtensions.Alpha(this.reactorColour, 0.98f),
             this.hEnginesColour,
-            new Color(this.hEnginesColour, 0.01f),
+            ColorExtensions.Alpha(this.hEnginesColour, 0.98f),
             this.batteriesColour,
-            new Color(this.batteriesColour, 0.01f),
+            ColorExtensions.Alpha(this.batteriesColour, 0.98f),
             this.turbinesColour,
-            new Color(this.turbinesColour, 0.01f),
+            ColorExtensions.Alpha(this.turbinesColour, 0.98f),
             this.solarsColour,
-            new Color(this.solarsColour, 0.01f)
+            ColorExtensions.Alpha(this.solarsColour, 0.98f)
         };
         this.powerProducerBlocks = new List<IMyTerminalBlock>();
         this.jumpDriveBlocks = new List<IMyTerminalBlock>();
@@ -82,6 +87,10 @@ public class PowerDetails {
     public void Reset() {
         this.Clear();
 
+        this.powerProducerBlocks.Clear();
+        this.jumpDriveBlocks.Clear();
+
+        this.program.Echo($"{this.program.config.Enabled("power")}");
         if (this.program.config.Enabled("power")) {
             this.RegisterTemplateVars();
         }
@@ -96,7 +105,7 @@ public class PowerDetails {
         this.template.Register("power.batteryInput", () => String.Format("{0:0.##}", this.batteryInput));
         this.template.Register("power.batteryInputMax", () => String.Format("{0:0.##}", this.batteryInputMax));
         this.template.Register("power.batteryMax", () => String.Format("{0:0.##}", this.batteryMax));
-        this.template.Register("power.batteryOutput", () => String.Format("{0:0.##}", this.batteryOutput));
+        this.template.Register("power.batteryOutput", () => String.Format("{0:0.##}", this.batteryOutputMW));
         this.template.Register("power.batteryOutputMax", () => String.Format("{0:0.##}", this.batteryOutputMax));
         this.template.Register("power.engineOutputMax", () => String.Format("{0:0.##}", this.hEngineOutputMax));
         this.template.Register("power.engineOutputMW", () => String.Format("{0:0.##}", this.hEngineOutputMW));
@@ -152,10 +161,8 @@ public class PowerDetails {
             }
             ds.sb.Clear();
             ds.sb.Append(string.Join(" / ", this.ioLegendNames.Keys));
-            Vector2 size = Vector2.Divide(ds.surface.MeasureStringInPixels(ds.sb, ds.surface.Font, ds.surface.FontSize), 2);
-            ds.sb.Clear();
-            ds.sb.Append("O");
-            ds.SetCursor(ds.width / 2 - size.X, null);
+            Vector2 size = ds.surface.MeasureStringInPixels(ds.sb, ds.surface.Font, ds.surface.FontSize);
+            ds.SetCursor((ds.width - size.X) / 2, null);
 
             bool first = true;
             foreach (var kv in this.ioLegendNames) {
@@ -175,35 +182,49 @@ public class PowerDetails {
         });
     }
 
-    public void Clear() {
-        this.jumpDrives = 0;
-        this.jumpMax = 0f;
-        this.jumpCurrent = 0f;
+    public void ClearTotals() {
         this.batteries = 0;
-        this.batteryMax = 0f;
+        this.batteriesDisabled = 0;
         this.batteryCurrent = 0f;
         this.batteryInput = 0f;
-        this.batteryOutput = 0f;
+        this.batteryInputMax = 0f;
+        this.batteryMax = 0f;
         this.batteryOutputDisabled = 0f;
         this.batteryOutputMax = 0f;
-        this.batteryInputMax = 0f;
-        this.reactors = 0;
-        this.reactorOutputMW = 0f;
-        this.reactorOutputDisabled = 0f;
-        this.reactorOutputMax = 0f;
-        this.reactorUranium = 0;
-        this.solars = 0;
-        this.solarOutputMW = 0f;
-        this.solarOutputDisabled = 0f;
-        this.solarOutputMax = 0f;
-        this.turbines = 0;
-        this.turbineOutputMW = 0f;
-        this.turbineOutputDisabled = 0f;
-        this.turbineOutputMax = 0f;
-        this.hEngines = 0;
-        this.hEngineOutputMW = 0f;
+        this.batteryOutputMW = 0f;
+        this.batteryPotential = 0f;
         this.hEngineOutputDisabled = 0f;
         this.hEngineOutputMax = 0f;
+        this.hEngineOutputMW = 0f;
+        this.hEnginePotential = 0f;
+        this.hEngines = 0;
+        this.hEnginesDisabled = 0;
+        this.jumpCurrent = 0f;
+        this.jumpDrives = 0;
+        this.jumpMax = 0f;
+        this.reactorOutputDisabled = 0f;
+        this.reactorOutputMax = 0f;
+        this.reactorOutputMW = 0f;
+        this.reactorPotential = 0f;
+        this.reactors = 0;
+        this.reactorsDisabled = 0;
+        this.reactorUranium = 0;
+        this.solarOutputDisabled = 0f;
+        this.solarOutputMax = 0f;
+        this.solarOutputMW = 0f;
+        this.solarPotential = 0f;
+        this.solars = 0;
+        this.solarsDisabled = 0;
+        this.turbineOutputDisabled = 0f;
+        this.turbineOutputMax = 0f;
+        this.turbineOutputMW = 0f;
+        this.turbinePotential = 0f;
+        this.turbines = 0;
+        this.turbinesDisabled = 0;
+    }
+
+    public void Clear() {
+        this.ClearTotals();
         this.powerProducerBlocks.Clear();
         this.jumpDriveBlocks.Clear();
     }
@@ -238,7 +259,7 @@ public class PowerDetails {
     }
 
     public float CurrentOutput() {
-        return this.reactorOutputMW + this.solarOutputMW + this.turbineOutputMW + this.hEngineOutputMW + this.batteryOutput;
+        return this.reactorOutputMW + this.solarOutputMW + this.turbineOutputMW + this.hEngineOutputMW + this.batteryOutputMW;
     }
 
     public float DisabledMaxOutput() {
@@ -246,6 +267,8 @@ public class PowerDetails {
     }
 
     public void Refresh() {
+        this.ClearTotals();
+
         foreach (IMyJumpDrive jumpDrive in this.jumpDriveBlocks) {
             if (!Util.BlockValid(jumpDrive)) {
                 continue;
@@ -267,10 +290,11 @@ public class PowerDetails {
                 this.batteryCurrent += battery.CurrentStoredPower;
                 this.batteryMax += battery.MaxStoredPower;
                 this.batteryInput += battery.CurrentInput;
-                this.batteryOutput += battery.CurrentOutput;
+                this.batteryOutputMW += battery.CurrentOutput;
                 this.batteryOutputMax += battery.MaxOutput;
                 this.batteryOutputMax += battery.MaxInput;
                 if (!battery.Enabled || battery.ChargeMode == ChargeMode.Recharge) {
+                    this.batteriesDisabled++;
                     this.batteryOutputDisabled += battChargeMax;
                 }
             } else if (powerBlock is IMyReactor) {
@@ -279,6 +303,7 @@ public class PowerDetails {
                 this.reactorOutputMax += powerBlock.MaxOutput;
 
                 if (!powerBlock.Enabled) {
+                    this.reactorsDisabled++;
                     this.reactorOutputDisabled += powerBlock.MaxOutput;
                 }
 
@@ -293,6 +318,7 @@ public class PowerDetails {
                 this.solarOutputMW += powerBlock.CurrentOutput;
                 this.solarOutputMax += powerBlock.MaxOutput;
                 if (!powerBlock.Enabled) {
+                    this.solarsDisabled++;
                     this.solarOutputDisabled += powerBlock.MaxOutput;
                 }
             } else if (typeString == "MyObjectBuilder_HydrogenEngine") {
@@ -300,6 +326,7 @@ public class PowerDetails {
                 this.hEngineOutputMW += powerBlock.CurrentOutput;
                 this.hEngineOutputMax += powerBlock.MaxOutput;
                 if (!powerBlock.Enabled) {
+                    this.hEnginesDisabled++;
                     this.hEngineOutputDisabled += powerBlock.MaxOutput;
                 }
             } else if (typeString == "MyObjectBuilder_WindTurbine") {
@@ -307,17 +334,24 @@ public class PowerDetails {
                 this.turbineOutputMW += powerBlock.CurrentOutput;
                 this.turbineOutputMax += powerBlock.MaxOutput;
                 if (!powerBlock.Enabled) {
+                    this.turbinesDisabled++;
                     this.turbineOutputDisabled += powerBlock.MaxOutput;
                 }
             }
         }
+
+        this.reactorPotential = (this.reactors - this.reactorsDisabled) == 0 ? 0f : (this.reactorOutputMW / (float)(this.reactors - this.reactorsDisabled)) * (float)this.reactorsDisabled;
+        this.hEnginePotential = (this.hEngines - this.hEnginesDisabled) == 0 ? 0f : (this.hEngineOutputMW / (float)(this.hEngines - this.hEnginesDisabled)) * (float)this.hEnginesDisabled;
+        this.batteryPotential = (this.batteries - this.batteriesDisabled) == 0 ? 0f : (this.batteryOutputMW / (float)(this.batteries - this.batteriesDisabled)) * (float)this.batteriesDisabled;
+        this.turbinePotential = (this.turbines - this.turbinesDisabled) == 0 ? 0f : (this.turbineOutputMW / (float)(this.turbines - this.turbinesDisabled)) * (float)this.turbinesDisabled;
+        this.solarPotential = (this.solars - this.solarsDisabled) == 0 ? 0f : (this.solarOutputMW / (float)(this.solars - this.solarsDisabled)) * (float)this.solarsDisabled;
     }
 
     public void BatteryBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
         if (this.batteries == 0) {
             return;
         }
-        float io = this.batteryInput - this.batteryOutput;
+        float io = this.batteryInput - this.batteryOutputMW;
 
         options.net = this.batteryCurrent;
         float remainingMins = io == 0f ? 0 : (this.batteryMax - this.batteryCurrent) * 60 / Math.Abs(io);
@@ -343,19 +377,19 @@ public class PowerDetails {
     }
 
     public void IoBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
-        float max = this.CurrentOutput() + this.DisabledMaxOutput();
+        float max = this.CurrentOutput() + this.reactorPotential + this.hEnginePotential + this.batteryPotential + this.turbinePotential + this.solarPotential;
 
         this.ioFloats.Clear();
         this.ioFloats.Add(this.reactorOutputMW / max);
-        this.ioFloats.Add(this.reactorOutputDisabled / max);
+        this.ioFloats.Add(this.reactorPotential / max);
         this.ioFloats.Add(this.hEngineOutputMW / max);
-        this.ioFloats.Add(this.hEngineOutputDisabled / max);
-        this.ioFloats.Add(this.batteryOutput / max);
-        this.ioFloats.Add(this.batteryOutputDisabled / max);
+        this.ioFloats.Add(this.hEnginePotential / max);
+        this.ioFloats.Add(this.batteryOutputMW / max);
+        this.ioFloats.Add(this.batteryPotential / max);
         this.ioFloats.Add(this.turbineOutputMW / max);
-        this.ioFloats.Add(this.turbineOutputDisabled / max);
+        this.ioFloats.Add(this.turbinePotential / max);
         this.ioFloats.Add(this.solarOutputMW / max);
-        this.ioFloats.Add(this.solarOutputDisabled / max);
+        this.ioFloats.Add(this.solarPotential / max);
 
         ds.MultiBar(this.ioFloats, this.ioColours, text: text, textAlignment: TextAlignment.LEFT);
     }

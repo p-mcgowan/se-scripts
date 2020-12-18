@@ -59,7 +59,6 @@ Config config = new Config();
 Dictionary<string, string> templates = new Dictionary<string, string>();
 IEnumerator<string> stateMachine;
 int i = 0;
-int update100sPerBlockCheck = 2;
 
 public class Config {
     public Dictionary<string, string> settings;
@@ -223,43 +222,49 @@ public Program() {
     }
 }
 
+public void RefetchBlocks() {
+    cargoStatus.Clear();
+    airlock.Clear();
+    blockHealth.Clear();
+    powerDetails.Clear();
+    productionDetails.Clear();
+
+    GridTerminalSystem.GetBlocks(allBlocks);
+    foreach (IMyTerminalBlock block in allBlocks) {
+        if (!Util.BlockValid(block)) {
+            continue;
+        }
+        if (!config.Enabled("getAllGrids") && !block.IsSameConstructAs(Me)) {
+            continue;
+        }
+
+        powerDetails.GetBlock(block);
+        cargoStatus.GetBlock(block);
+        blockHealth.GetBlock(block);
+        productionDetails.GetBlock(block);
+        airlock.GetBlock(block);
+    }
+
+    cargoStatus.GotBLocks();
+    airlock.GotBLocks();
+    blockHealth.GotBLocks();
+    powerDetails.GotBLocks();
+    productionDetails.GotBLocks();
+}
+
 public bool RecheckFailed() {
-    if (i % update100sPerBlockCheck == 0 && config.customData != Me.CustomData) {
+    if (config.customData != Me.CustomData) {
         return !Configure();
     }
 
-    if (i <= 1 || i % (update100sPerBlockCheck + 1) == 0) {
-        cargoStatus.Clear();
-        airlock.Clear();
-        blockHealth.Clear();
-        powerDetails.Clear();
-        productionDetails.Clear();
-
-        GridTerminalSystem.GetBlocks(allBlocks);
-        foreach (IMyTerminalBlock block in allBlocks) {
-            if (!Util.BlockValid(block)) {
-                continue;
-            }
-            if (!config.Enabled("getAllGrids") && !block.IsSameConstructAs(Me)) {
-                continue;
-            }
-
-            powerDetails.GetBlock(block);
-            cargoStatus.GetBlock(block);
-            blockHealth.GetBlock(block);
-            productionDetails.GetBlock(block);
-            airlock.GetBlock(block);
-        }
-
-        cargoStatus.GotBLocks();
-        airlock.GotBLocks();
-        blockHealth.GotBLocks();
-        powerDetails.GotBLocks();
-        productionDetails.GotBLocks();
+    if (i % 2 == 0) {
+        RefetchBlocks();
     }
 
     return false;
 }
+
+List<string> debug = new List<string>();
 
 public void Main(string argument, UpdateType updateType) {
     if ((updateType & UpdateType.Once) == UpdateType.Once) {
@@ -296,6 +301,8 @@ public void RunStateMachine() {
             stateMachine.Dispose();
             stateMachine = null;
             Runtime.UpdateFrequency &= ~UpdateFrequency.Once;
+            Echo(String.Join("\n", debug.ToArray()));
+            debug.Clear();
         }
     }
 }
@@ -320,7 +327,12 @@ public IEnumerator<string> RunStuffOverTime()  {
             blockHealth.Reset();
             productionDetails.Reset();
             airlock.Reset();
+
+            yield return "reset";
+            RefetchBlocks();
         }
+
+        yield return "updated";
     }
 
     if (config.Enabled("power")) {
