@@ -79,7 +79,7 @@ public class DrawingSurface {
         public float scale = 1f;
         public float size = 0f;
         public float width = 0f;
-        public float textPadding = -1f;
+        public float? textPadding = null;
         public List<Color> colours = new List<Color>();
         public List<float> values = new List<float>();
         public string text = null;
@@ -594,7 +594,7 @@ public class DrawingSurface {
                     Data = "SquareSimple",
                     Position = pos + new Vector2((width * pct) / 2, 0),
                     Size = new Vector2((float)Math.Floor(Math.Sqrt(Math.Pow((width * pct), 2) / 2)), width),
-                    Color = Color.Black,
+                    Color = Color.White,
                     RotationOrScale = this.ToRad(-45f),
                 });
                 this.frame.Add(new MySprite {
