@@ -2,8 +2,6 @@
 
 A configurable ship status display which renders sprites to different surfaces using a very flexible templating engine.
 
-[b]Important[/b] If you installed an earlier version, there was an issue with the static Program constructor that may cause issues in your saves. Update immediately to fix this - if you have issues with your save files, contact me here or on github and I will help to resolve the issue.
-
 Makes use of the following to draw sprites:
 [url=https://github.com/p-mcgowan/se-scripts/tree/master/template]template engine (github)[/url]
 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=2314207999]template engine (workshop)[/url]
@@ -74,6 +72,11 @@ The template vars available by default are:
 
 [table]
 [tr][th]template var[/th][th]options[/th][th]description[/th][/tr]
+[tr][td]config[/td][td]font: set the font
+size: set the font size
+textPadding: set the padding
+colour: set the text colour
+bgColour: set the background colour[/td][td]Configure the display (only runs once)[/td][/tr]
 [tr][td]cargo.bar[/td][td]none[/td][td]A coloured fill bar which goes from green to red based on % full[/td][/tr]
 [tr][td]cargo.cap[/td][td]none[/td][td]The cargo volume capacity[/td][/tr]
 [tr][td]cargo.fullString[/td][td]none[/td][td]A nicely formatted `<current> / <max> L` volume string[/td][/tr]
@@ -127,3 +130,4 @@ midBar
 multiBar
 text
 textCircle
+config

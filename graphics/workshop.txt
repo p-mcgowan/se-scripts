@@ -1,123 +1,110 @@
-[h1]Sprite graphics helper[/h1]
-Add some helper methods to make drawing sprites easier using an intuitive API
-
-Mostly just helper code, but can be used on it's own.
+[h1]Basic template engine for scripts[/h1]
 
 [b]Important[/b] If you installed an earlier version, there was an issue with the static Program constructor that may cause issues in your saves. Update immediately to fix this - if you have issues with your save files, contact me here or on github and I will help to resolve the issue.
 
-The readme [url=https://github.com/p-mcgowan/se-scripts/tree/master/graphics]here[/url] has more info, and will likely be updated more often.
+A basic templating engine which allows you to register callbacks, and replace templates with data on the fly
 
-See the template engine
-[url=https://github.com/p-mcgowan/se-scripts/tree/master/template]template engine (github)[/url]
-[url=https://steamcommunity.com/sharedfiles/filedetails/?id=2314207999]template engine (workshop)[/url]
-and ship status scripts
-[url=https://github.com/p-mcgowan/se-scripts/tree/master/ShipStatus]ShipStatus (github)[/url]
+see the [url=https://github.com/p-mcgowan/se-scripts/tree/master/template]template script on github[/url] for more info - will likely not maintain both readmes...
+
+Makes use of this graphics script:
+[url=https://steamcommunity.com/sharedfiles/filedetails/?id=2314207214]sprite graphics[/url]
+
+And is used in this ship status script (some good examples there):
 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=2314209066]ShipStatus (workshop)[/url]
-for more in-depth info.
 
-[h1]Api[/h1]
+
+[h1]Usage[/h1]
+The Main function shows a demo template, and how to register handlers.
+The engine has a few built in methods such as text, bar, circle, and a few others.
+
+The template variable pattern looks like:
 [code]
-Draw()
-  dispose the frame and render content - if this is not called, nothing will be drawn
-
-SaveCursor()
-  store the current cursor position (for reference later)
-
-SetCursor(float? x, float? y)
-  move the cursor to x, y
-
-Newline(bool resetX = true)
-  move the cursor down by the height of the current font size
-  if reset is false, will not set cursor X to 0 (to the left)
-
-Size(float? size = null)
-  change font size
-
-Text(
-  string text,
-  Color? colour = null,
-  TextAlignment textAlignment = TextAlignment.LEFT,
-  float scale = 1f,
-  Vector2? position = null
-)
-  write the string <text> to the screen. Optionally, coloured, alligned, scaled, or at a certain position
-
-MidBar(
-  float net,
-  float low,
-  float high,
-  float width = 0f,
-  float height = 0f,
-  float pad = 0.1f,
-  Color? bgColour = null
-)
-  using a signed <net> value, show a bar left or right of the midpoint, proportial to low and high
-
-Bar(
-  float pct,
-  float width = 0f,
-  float height = 0f,
-  Color? fillColour = null,
-  Vector2? position = null,
-  string text = null,
-  Color? textColour = null,
-  Color? bgColour = null,
-  TextAlignment textAlignment = TextAlignment.LEFT,
-  float pad = 0.1f
-)
-  draw a progress bar, filled to pct
-
-TextCircle(Color colour, bool outline = false)
-  draw a small circle inline with text
-
-Circle(float size, Color colour, Vector2? position = null, bool outline = false)
-  draw a circle of varying size
+{some-keyword-here}
 [/code]
 
-[h1]Examples[/h1]
-The above image was generated using:
+Which will call the method registered to the keyword "some-keyword-here". For example, [code]{text::This is my message}[/code] will write text to the screen
+
+The full variable pattern is as follows:
 [code]
-var surface = GridTerminalSystem.GetBlockWithName("LCD Panel").GetSurface(0);
-var ds = new DrawingSurface(surface, this, "LCD Panel <0>");
-
-float battCap = 1000f;
-float battStored = 100f;
-
-ds
-    .Text("Jump drives: 1 ").Newline()
-    .Bar(1f, text: "100%").Newline()
-    .Text("Batteries: 3   ").Newline()
-    .Bar(0.7f, text: "70%").Newline()
-    .Text($"Stored energy draining: {Decimal.Round((decimal)Math.Abs(-43f / battStored), 1)}% capacity / h").Newline()
-    .MidBar(-43f, battStored, battCap - battStored).Newline()
-    .Text($"Stored energy increasing: {Decimal.Round((decimal)(76f / (battCap - battStored)), 1)}% capacity / h").Newline()
-    .MidBar(76f, battStored, battCap - battStored).Newline()
-    .Text("Reactors: 3").Newline()
-    .Text("Output: 60 MW, Uranium: 50 kg").Newline()
-    .Newline()
-    .Text("Ship status: No damage detected").Newline()
-    .Newline()
-    .Text("Power saving mode < 1m (check in 1m)").Newline()
-    .TextCircle(Color.Green).Text("Assembler 1: Idle < 1m").Newline()
-    .TextCircle(Color.Green).Text("Assembler 2: Idle < 1m").Newline()
-    .TextCircle(Color.Red).Text("Assembler 3: Blocked < 1m").Newline()
-    .TextCircle(Color.Yellow).Text("Assembler 4: Working < 1m").Newline()
-    .TextCircle(Color.Green, true).Text("(station) Assembler 1: Idle < 1m").Newline()
-    .TextCircle(Color.Green, true).Text("(station) Assembler 2: Idle < 1m").Newline()
-    .TextCircle(Color.Red, true).Text("(station) Assembler 3: Blocked < 1m").Newline()
-    .TextCircle(Color.Yellow, true).Text("(station) Assembler 4: Working < 1m").Newline()
-    .Newline()
-    .Text("Cargo: 4000 kg / 10000 kg").Newline()
-    .Bar(0.4f, text: "40%", fillColour: Color.Green).Newline()
-    .Newline()
-    .Text("Iron Ingot").SetCursor(ds.width, null).Text("24K", textAlignment: TextAlignment.RIGHT).Newline()
-    .Text("Stone Ingot").SetCursor(ds.width, null).Text("7537", textAlignment: TextAlignment.RIGHT).Newline()
-    .Text("Nickel Ingot").SetCursor(ds.width, null).Text("1292", textAlignment: TextAlignment.RIGHT).Newline()
-    .Text("Silicon Ingot").SetCursor(ds.width, null).Text("2153", textAlignment: TextAlignment.RIGHT).Newline()
-    .Text("AutomaticRifleItem").SetCursor(ds.width, null).Text("1", textAlignment: TextAlignment.RIGHT).Newline()
-    .Text("WelderItem").SetCursor(ds.width, null).Text("1", textAlignment: TextAlignment.RIGHT).Newline()
-    .Text("HandDrillItem").SetCursor(ds.width, null).Text("1", textAlignment: TextAlignment.RIGHT).Newline()
-    .Text("AngleGrinderItem").SetCursor(ds.width, null).Text("1", textAlignment: TextAlignment.RIGHT).Newline()
-    .Text("Ice").SetCursor(ds.width, null).Text("1M", textAlignment: TextAlignment.RIGHT).Newline()
-    .Draw();
+{?<name>:<options>:<text>}
 [/code]
+
+The leading "?" will disable the automatic newline the engine inserts (good for conditional spacing).
+<name> is the name of a registered method
+<options> is a list of key=value pairs separated by semicolons (;), which is passed to the callback in a dictionary
+<text> is any raw text to be rendered. Note that above we used [code]{text:: <- double colon here }[/code] to tell the engine that no options were provided
+
+Using the example below:
+
+[code]
+This is a test {no.registered.method}
+This is another line, below is
+a registered method returning Random
+{test.random:min=0;max=10}
+
+---------------------------------
+{?test.spacing}
+---------------------------------
+{text::this line has text}
+---------------------------------
+demo bar: {bar:bgColour=red;textColour=100,100,100;fillColour=blue;pct=0.63:asdf text}
+
+<
+{?test.cdtnl:c=dimyellow:this text will print when random succeeds}
+>
+
+{text:colour=0,0,100:i'm blue, abadee abadaa}
+{text:colour=red:some like it red}
+[/code]
+
+The template will render the image above (all in the Main demo method).
+
+[h1]Api listing[/h1]
+The template includes these built in methods:
+
+[table]
+[tr][th]template var name[/th][th]Options[/th][th]Description[/th][/tr]
+[tr][td]config[/td][td]font: set the font
+size: set the font size
+textPadding: set the padding
+colour: set the text colour
+bgColour: set the background colour[/td][td]Configure the display (only runs once)[/td][/tr]
+[tr][td]text[/td][td]text: string of text
+colour: <colour argument> (see below)
+textAlignment: "center", "left", "right"
+scale: a numeric scale factor[/td][td]basic text rendering[/td][/tr]
+[tr][td]textCircle[/td][td]colour: <colour argument>
+outline: if true, will not fill the circle[/td][td]a small circle inline with text[/td][/tr]
+[tr][td]circle[/td][td]size: numeric size in pixels
+colour: <colour argument>
+outline: if true, will not fill the circle[/td][td]a basic circle shape[/td][/tr]
+[tr][td]bar[/td][td]pct: percent value from 0 to 1 (eg 0.24)
+width: width in pixels (default to width of screen or space left on line)
+height: height in pixels (defaults to text height)
+fillColour: <colour argument>
+text: string of text
+textColour: <colour argument>
+bgColour: <colour argument>
+textAlignment: "center", "left", "right"
+pad: percentage padding (defaults to 0.1)[/td][td]a percent bar[/td][/tr]
+[tr][td]midBar[/td][td]net: plus or minus number
+low: positive lowest value (will be used with net / low)
+high: positive highest value (will be used with net / high)
+width: width in pixels (default to width of screen or space left on line)
+height: height in pixels (defaults to text height)
+pad: percentage padding (defaults to 0.1)
+bgColour: <colour argument>[/td][td]a bar which accepts low, high, and a signed value, where negative will show red and positive will show green[/td][/tr]
+[tr][td]multiBar[/td][td]values: a list of floats, separated by underscores (eg `0.1_0.4_0.2`)
+colours: a list of <colour argument>, separated by underscores (eg `red_yellow_0,0,0,0.5`)
+width: width in pixels (default to width of screen or space left on line)
+height: height in pixels (defaults to text height)
+text: text content
+textColour: <colour argument>,
+bgColour: <colour argument>,
+[/td][td]Similar to bar, but showing multiple levels of colours[/td][/tr]
+[/table]
+
+<colour argument>; Either a string colour name, or RGB or RGBA values
+eg: "red", "255,0,0,200"
+supported colour names:
+black blue brown cyan dimgray gray green orange pink purple red tan transparent white yellow dimgreen dimyellow dimorange dimred
