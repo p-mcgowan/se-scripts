@@ -77,7 +77,7 @@ public class Template {
     public void ConfigureScreen(DrawingSurface ds, DrawingSurface.Options options) {
         ds.surface.Font = options.custom.Get("font", ds.surface.Font);
         ds.surface.FontSize = options.size == 0f ? ds.surface.FontSize : options.size;
-        ds.surface.TextPadding = options.textPadding == 0.1f ? ds.surface.TextPadding : options.textPadding;
+        ds.surface.TextPadding = options.textPadding ?? ds.surface.TextPadding;
         ds.surface.ScriptForegroundColor = options.colour ?? ds.surface.ScriptForegroundColor;
         ds.surface.ScriptBackgroundColor = options.bgColour ?? ds.surface.ScriptBackgroundColor;
     }
