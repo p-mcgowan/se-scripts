@@ -1,6 +1,7 @@
 # Space Engineers Sprite Graphics Library
 
 <img src="images/status1.1.png">
+<img src="images/status1.3.png">
 <img src="images/graphics.png">
 
 ### TOC

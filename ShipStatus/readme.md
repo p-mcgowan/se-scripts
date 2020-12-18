@@ -1,6 +1,7 @@
 # Space Engineers Ship Status Script
 
 <img src="images/ship-status.png">
+<img src="images/status1.3.png">
 <img src="images/status1.1.png">
 
 ### TOC
