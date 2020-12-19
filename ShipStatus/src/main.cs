@@ -49,6 +49,7 @@ output=
 |{cargo.items}
 */
 
+public StringBuilder log = new StringBuilder("");
 Dictionary<string, DrawingSurface> drawables = new Dictionary<string, DrawingSurface>();
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
 List<IMyTerminalBlock> allBlocks = new List<IMyTerminalBlock>();
@@ -139,16 +140,15 @@ public bool ParseCustomData() {
         }
     }
 
-    foreach (string s in strings) {
-        if (s == "global") {
+    foreach (string outname in strings) {
+        if (outname == "global") {
             continue;
         }
 
-        var tpl = ini.Get(s, "output");
+        var tpl = ini.Get(outname, "output");
 
         if (!tpl.IsEmpty) {
-            Echo($"added output for {s}");
-            templates[s] = tpl.ToString();
+            templates[outname] = tpl.ToString();
         }
     }
 
@@ -184,8 +184,6 @@ public bool ParseCustomData() {
 }
 
 public bool Configure() {
-    template.Reset();
-
     if (!ParseCustomData()) {
         Runtime.UpdateFrequency &= UpdateFrequency.None;
         Echo("Failed to parse custom data");
@@ -206,20 +204,6 @@ public bool Configure() {
     Runtime.UpdateFrequency |= UpdateFrequency.Once;
 
     return true;
-}
-
-public Program() {
-    GridTerminalSystem.GetBlocks(allBlocks);
-    template = new Template(this);
-    powerDetails = new PowerDetails(this, template);
-    cargoStatus = new CargoStatus(this, template);
-    blockHealth = new BlockHealth(this, template);
-    productionDetails = new ProductionDetails(this, template);
-    airlock = new Airlock(this);
-
-    if (!Configure()) {
-        return;
-    }
 }
 
 public void RefetchBlocks() {
@@ -253,20 +237,35 @@ public void RefetchBlocks() {
 }
 
 public bool RecheckFailed() {
-    if (config.customData != Me.CustomData) {
+    if (++i % 5 == 0 || String.CompareOrdinal(config.customData, Me.CustomData) != 0) {
         return !Configure();
     }
 
     if (i % 2 == 0) {
         RefetchBlocks();
+        log.Clear();
     }
 
     return false;
 }
 
-List<string> debug = new List<string>();
+public Program() {
+    GridTerminalSystem.GetBlocks(allBlocks);
+    template = new Template(this);
+    powerDetails = new PowerDetails(this, template);
+    cargoStatus = new CargoStatus(this, template);
+    blockHealth = new BlockHealth(this, template);
+    productionDetails = new ProductionDetails(this, template);
+    airlock = new Airlock(this);
+
+    if (!Configure()) {
+        return;
+    }
+}
 
 public void Main(string argument, UpdateType updateType) {
+    Echo(log.ToString());
+
     if ((updateType & UpdateType.Once) == UpdateType.Once) {
         RunStateMachine();
         return;
@@ -283,7 +282,6 @@ public void Main(string argument, UpdateType updateType) {
             return;
         }
 
-        i++;
         if (stateMachine == null) {
             stateMachine = RunStuffOverTime();
             Runtime.UpdateFrequency |= UpdateFrequency.Once;
@@ -301,25 +299,30 @@ public void RunStateMachine() {
             stateMachine.Dispose();
             stateMachine = null;
             Runtime.UpdateFrequency &= ~UpdateFrequency.Once;
-            Echo(String.Join("\n", debug.ToArray()));
-            debug.Clear();
         }
     }
 }
 
 public IEnumerator<string> RunStuffOverTime()  {
-    string tpl;
+    string content;
+    string outputName;
     while (templates.Any()) {
-        string s = templates.Keys.Last();
-        templates.Pop(templates.Keys.Last(), out tpl);
+        outputName = templates.Keys.Last();
+        templates.Pop(templates.Keys.Last(), out content);
 
-        Dictionary<string, bool> tokens = template.PreRender(s, tpl.ToString());
+        Dictionary<string, bool> tokens;
+        if (template.IsPrerendered(outputName, content)) {
+            tokens = template.templateVars[outputName];
+        } else {
+            log.Append($"Adding or updating {outputName}\n");
+            tokens = template.PreRender(outputName, content);
+        }
 
         foreach (var kv in tokens) {
             config.Set(kv.Key, config.Get(kv.Key, "true")); // don't override globals
         }
 
-        yield return $"templates {s}";
+        yield return $"templates {outputName}";
 
         if (templates.Count == 0) {
             powerDetails.Reset();

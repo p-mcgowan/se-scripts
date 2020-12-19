@@ -90,7 +90,6 @@ public class PowerDetails {
         this.powerProducerBlocks.Clear();
         this.jumpDriveBlocks.Clear();
 
-        this.program.Echo($"{this.program.config.Enabled("power")}");
         if (this.program.config.Enabled("power")) {
             this.RegisterTemplateVars();
         }
@@ -137,9 +136,9 @@ public class PowerDetails {
         this.template.Register("power.batteryBar", this.BatteryBar);
         this.template.Register("power.ioString", () => {
             float io = this.CurrentInput() - this.CurrentOutput();
-            float max = this.MaxOutput();
+            float max = io > 0 ? this.MaxInput() : this.MaxOutput();
 
-            return String.Format("{0:0.00} / {1:0.00} MWh ({2})", io, max, Util.PctString(Math.Abs(io) / max));
+            return String.Format("{0:0.00} MW ({1})", io, Util.PctString(max == 0f ? 0f : Math.Abs(io) / max));
         });
         this.template.Register("power.ioBar", this.IoBar);
         this.template.Register("power.ioLegend", (DrawingSurface ds, string text, DrawingSurface.Options options) => {

@@ -49,6 +49,7 @@ output=
 |{cargo.items}
 */
 
+public StringBuilder log = new StringBuilder("");
 Dictionary<string, DrawingSurface> drawables = new Dictionary<string, DrawingSurface>();
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
 List<IMyTerminalBlock> allBlocks = new List<IMyTerminalBlock>();
@@ -139,16 +140,15 @@ public bool ParseCustomData() {
         }
     }
 
-    foreach (string s in strings) {
-        if (s == "global") {
+    foreach (string outname in strings) {
+        if (outname == "global") {
             continue;
         }
 
-        var tpl = ini.Get(s, "output");
+        var tpl = ini.Get(outname, "output");
 
         if (!tpl.IsEmpty) {
-            Echo($"added output for {s}");
-            templates[s] = tpl.ToString();
+            templates[outname] = tpl.ToString();
         }
     }
 
@@ -184,8 +184,6 @@ public bool ParseCustomData() {
 }
 
 public bool Configure() {
-    template.Reset();
-
     if (!ParseCustomData()) {
         Runtime.UpdateFrequency &= UpdateFrequency.None;
         Echo("Failed to parse custom data");
@@ -206,20 +204,6 @@ public bool Configure() {
     Runtime.UpdateFrequency |= UpdateFrequency.Once;
 
     return true;
-}
-
-public Program() {
-    GridTerminalSystem.GetBlocks(allBlocks);
-    template = new Template(this);
-    powerDetails = new PowerDetails(this, template);
-    cargoStatus = new CargoStatus(this, template);
-    blockHealth = new BlockHealth(this, template);
-    productionDetails = new ProductionDetails(this, template);
-    airlock = new Airlock(this);
-
-    if (!Configure()) {
-        return;
-    }
 }
 
 public void RefetchBlocks() {
@@ -253,20 +237,35 @@ public void RefetchBlocks() {
 }
 
 public bool RecheckFailed() {
-    if (config.customData != Me.CustomData) {
+    if (++i % 5 == 0 || String.CompareOrdinal(config.customData, Me.CustomData) != 0) {
         return !Configure();
     }
 
     if (i % 2 == 0) {
         RefetchBlocks();
+        log.Clear();
     }
 
     return false;
 }
 
-List<string> debug = new List<string>();
+public Program() {
+    GridTerminalSystem.GetBlocks(allBlocks);
+    template = new Template(this);
+    powerDetails = new PowerDetails(this, template);
+    cargoStatus = new CargoStatus(this, template);
+    blockHealth = new BlockHealth(this, template);
+    productionDetails = new ProductionDetails(this, template);
+    airlock = new Airlock(this);
+
+    if (!Configure()) {
+        return;
+    }
+}
 
 public void Main(string argument, UpdateType updateType) {
+    Echo(log.ToString());
+
     if ((updateType & UpdateType.Once) == UpdateType.Once) {
         RunStateMachine();
         return;
@@ -283,7 +282,6 @@ public void Main(string argument, UpdateType updateType) {
             return;
         }
 
-        i++;
         if (stateMachine == null) {
             stateMachine = RunStuffOverTime();
             Runtime.UpdateFrequency |= UpdateFrequency.Once;
@@ -301,25 +299,30 @@ public void RunStateMachine() {
             stateMachine.Dispose();
             stateMachine = null;
             Runtime.UpdateFrequency &= ~UpdateFrequency.Once;
-            Echo(String.Join("\n", debug.ToArray()));
-            debug.Clear();
         }
     }
 }
 
 public IEnumerator<string> RunStuffOverTime()  {
-    string tpl;
+    string content;
+    string outputName;
     while (templates.Any()) {
-        string s = templates.Keys.Last();
-        templates.Pop(templates.Keys.Last(), out tpl);
+        outputName = templates.Keys.Last();
+        templates.Pop(templates.Keys.Last(), out content);
 
-        Dictionary<string, bool> tokens = template.PreRender(s, tpl.ToString());
+        Dictionary<string, bool> tokens;
+        if (template.IsPrerendered(outputName, content)) {
+            tokens = template.templateVars[outputName];
+        } else {
+            log.Append($"Adding or updating {outputName}\n");
+            tokens = template.PreRender(outputName, content);
+        }
 
         foreach (var kv in tokens) {
             config.Set(kv.Key, config.Get(kv.Key, "true")); // don't override globals
         }
 
-        yield return $"templates {s}";
+        yield return $"templates {outputName}";
 
         if (templates.Count == 0) {
             powerDetails.Reset();
@@ -889,7 +892,6 @@ public class PowerDetails {
         this.powerProducerBlocks.Clear();
         this.jumpDriveBlocks.Clear();
 
-        this.program.Echo($"{this.program.config.Enabled("power")}");
         if (this.program.config.Enabled("power")) {
             this.RegisterTemplateVars();
         }
@@ -936,9 +938,9 @@ public class PowerDetails {
         this.template.Register("power.batteryBar", this.BatteryBar);
         this.template.Register("power.ioString", () => {
             float io = this.CurrentInput() - this.CurrentOutput();
-            float max = this.MaxOutput();
+            float max = io > 0 ? this.MaxInput() : this.MaxOutput();
 
-            return String.Format("{0:0.00} / {1:0.00} MWh ({2})", io, max, Util.PctString(Math.Abs(io) / max));
+            return String.Format("{0:0.00} MW ({1})", io, Util.PctString(max == 0f ? 0f : Math.Abs(io) / max));
         });
         this.template.Register("power.ioBar", this.IoBar);
         this.template.Register("power.ioLegend", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
@@ -2096,7 +2098,8 @@ public class Template {
     public Token token;
     public Dictionary<string, DsCallback> methods;
     public Dictionary<string, List<Node>> renderNodes;
-    public Dictionary<string, bool> templateVars;
+    public Dictionary<string, Dictionary<string, bool>> templateVars;
+    public Dictionary<string, string> prerenderedTemplates;
 
     public char[] splitSemi = new[] { ';' };
     public char[] splitDot = new[] { '.' };
@@ -2109,7 +2112,8 @@ public class Template {
         this.token = new Token();
         this.methods = new Dictionary<string, DsCallback>();
         this.renderNodes = new Dictionary<string, List<Node>>();
-        this.templateVars = new Dictionary<string, bool>();
+        this.templateVars = new Dictionary<string, Dictionary<string, bool>>();
+        this.prerenderedTemplates = new Dictionary<string, string>();
 
         this.Reset();
     }
@@ -2125,9 +2129,10 @@ public class Template {
     }
 
     public void Clear() {
-        this.methods.Clear();
-        this.renderNodes.Clear();
         this.templateVars.Clear();
+        this.prerenderedTemplates.Clear();
+        this.renderNodes.Clear();
+        this.methods.Clear();
     }
 
     public void Register(string key, DsCallback callback) {
@@ -2147,13 +2152,28 @@ public class Template {
         ds.surface.ScriptBackgroundColor = options.bgColour ?? ds.surface.ScriptBackgroundColor;
     }
 
+    public bool IsPrerendered(string outputName, string templateString) {
+        string value = this.prerenderedTemplates.Get(outputName, null);
+        if (value == "" || value == null) {
+            return false;
+        }
+        if (String.CompareOrdinal(value, templateString) != 0) {
+            return false;
+        }
+        return true;
+    }
+
     public Dictionary<string, bool> PreRender(string outputName, string templateStrings) {
+        this.prerenderedTemplates[outputName] = templateStrings;
         return this.PreRender(outputName, templateStrings.Split(splitLine, StringSplitOptions.None));
     }
 
-    // TODO: only string & yield
     private Dictionary<string, bool> PreRender(string outputName, string[] templateStrings) {
-        this.templateVars.Clear();
+        if (this.templateVars.ContainsKey(outputName)) {
+            this.templateVars[outputName].Clear();
+        } else {
+            this.templateVars[outputName] = new Dictionary<string, bool>();
+        }
         List<Node> nodeList = new List<Node>();
 
         bool autoNewline;
@@ -2184,13 +2204,13 @@ public class Template {
                         opts.text = text;
                     }
                     string action = m.Groups["name"].Value;
-                    this.AddTemplateTokens(action);
+                    this.AddTemplateTokens(this.templateVars[outputName], action);
                     nodeList.Add(new Node(action, text, opts));
                     if (action == "config") {
                         autoNewline = false;
                     }
                 } else {
-                    this.AddTemplateTokens(this.token.value);
+                    this.AddTemplateTokens(this.templateVars[outputName], this.token.value);
                     nodeList.Add(new Node(this.token.value));
                 }
             }
@@ -2202,13 +2222,13 @@ public class Template {
 
         this.renderNodes[outputName] = nodeList;
 
-        return this.templateVars;
+        return this.templateVars[outputName];
     }
 
-    public void AddTemplateTokens(string name) {
+    public void AddTemplateTokens(Dictionary<string, bool> tplVars, string name) {
         string prefix = "";
         foreach (string part in name.Split(splitDot, StringSplitOptions.RemoveEmptyEntries)) {
-            this.templateVars[$"{prefix}{part}"] = true;
+            tplVars[$"{prefix}{part}"] = true;
             prefix = $"{prefix}{part}.";
         }
     }
