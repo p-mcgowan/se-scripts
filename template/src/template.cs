@@ -31,7 +31,8 @@ public class Template {
     public Token token;
     public Dictionary<string, DsCallback> methods;
     public Dictionary<string, List<Node>> renderNodes;
-    public Dictionary<string, bool> templateVars;
+    public Dictionary<string, Dictionary<string, bool>> templateVars;
+    public Dictionary<string, string> prerenderedTemplates;
 
     public char[] splitSemi = new[] { ';' };
     public char[] splitDot = new[] { '.' };
@@ -44,7 +45,8 @@ public class Template {
         this.token = new Token();
         this.methods = new Dictionary<string, DsCallback>();
         this.renderNodes = new Dictionary<string, List<Node>>();
-        this.templateVars = new Dictionary<string, bool>();
+        this.templateVars = new Dictionary<string, Dictionary<string, bool>>();
+        this.prerenderedTemplates = new Dictionary<string, string>();
 
         this.Reset();
     }
@@ -60,9 +62,10 @@ public class Template {
     }
 
     public void Clear() {
-        this.methods.Clear();
-        this.renderNodes.Clear();
         this.templateVars.Clear();
+        this.prerenderedTemplates.Clear();
+        this.renderNodes.Clear();
+        this.methods.Clear();
     }
 
     public void Register(string key, DsCallback callback) {
@@ -82,13 +85,28 @@ public class Template {
         ds.surface.ScriptBackgroundColor = options.bgColour ?? ds.surface.ScriptBackgroundColor;
     }
 
+    public bool IsPrerendered(string outputName, string templateString) {
+        string value = this.prerenderedTemplates.Get(outputName, null);
+        if (value == "" || value == null) {
+            return false;
+        }
+        if (String.CompareOrdinal(value, templateString) != 0) {
+            return false;
+        }
+        return true;
+    }
+
     public Dictionary<string, bool> PreRender(string outputName, string templateStrings) {
+        this.prerenderedTemplates[outputName] = templateStrings;
         return this.PreRender(outputName, templateStrings.Split(splitLine, StringSplitOptions.None));
     }
 
-    // TODO: only string & yield
     private Dictionary<string, bool> PreRender(string outputName, string[] templateStrings) {
-        this.templateVars.Clear();
+        if (this.templateVars.ContainsKey(outputName)) {
+            this.templateVars[outputName].Clear();
+        } else {
+            this.templateVars[outputName] = new Dictionary<string, bool>();
+        }
         List<Node> nodeList = new List<Node>();
 
         bool autoNewline;
@@ -119,13 +137,13 @@ public class Template {
                         opts.text = text;
                     }
                     string action = m.Groups["name"].Value;
-                    this.AddTemplateTokens(action);
+                    this.AddTemplateTokens(this.templateVars[outputName], action);
                     nodeList.Add(new Node(action, text, opts));
                     if (action == "config") {
                         autoNewline = false;
                     }
                 } else {
-                    this.AddTemplateTokens(this.token.value);
+                    this.AddTemplateTokens(this.templateVars[outputName], this.token.value);
                     nodeList.Add(new Node(this.token.value));
                 }
             }
@@ -137,13 +155,13 @@ public class Template {
 
         this.renderNodes[outputName] = nodeList;
 
-        return this.templateVars;
+        return this.templateVars[outputName];
     }
 
-    public void AddTemplateTokens(string name) {
+    public void AddTemplateTokens(Dictionary<string, bool> tplVars, string name) {
         string prefix = "";
         foreach (string part in name.Split(splitDot, StringSplitOptions.RemoveEmptyEntries)) {
-            this.templateVars[$"{prefix}{part}"] = true;
+            tplVars[$"{prefix}{part}"] = true;
             prefix = $"{prefix}{part}.";
         }
     }
