@@ -62,17 +62,17 @@ public class CargoStatus {
 
             return $"{Util.FormatNumber(1000 * this.vol, capFmt)} / {Util.FormatNumber(1000 * this.max, capFmt)} L";
         });
-        this.template.Register("cargo.bar", this.RenderPct);
-        this.template.Register("cargo.items", this.RenderItems);
+        this.template.Register("cargo.bar", this.CargoBar);
+        this.template.Register("cargo.items", this.CargoItems);
     }
 
-    public void RenderPct(DrawingSurface ds, string text, DrawingSurface.Options options) {
-        string colourName = this.pct > 85 ? "dimred" : this.pct > 60 ? "dimyellow" : "dimgreen";
+    public void CargoBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        string colourName = this.pct > 0.85 ? "dimred" : this.pct > 0.60 ? "dimyellow" : "dimgreen";
         Color? colour = DrawingSurface.stringToColour.Get(colourName);
         ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct), textColour: options.textColour);
     }
 
-    public void RenderItems(DrawingSurface ds, string text, DrawingSurface.Options options) {
+    public void CargoItems(DrawingSurface ds, string text, DrawingSurface.Options options) {
         if (ds.width / (ds.charSizeInPx.X + 1f) < 40) {
             foreach (var item in this.cargoItemCounts) {
                 var fmtd = Util.FormatNumber(item.Value);

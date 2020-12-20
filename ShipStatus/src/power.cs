@@ -100,6 +100,7 @@ public class PowerDetails {
             return;
         }
         this.template.Register("power.batteries", () => this.batteries.ToString());
+        this.template.Register("power.batteryBar", this.BatteryBar);
         this.template.Register("power.batteryCurrent", () => String.Format("{0:0.##}", this.batteryCurrent));
         this.template.Register("power.batteryInput", () => String.Format("{0:0.##}", this.batteryInput));
         this.template.Register("power.batteryInputMax", () => String.Format("{0:0.##}", this.batteryInputMax));
@@ -110,6 +111,10 @@ public class PowerDetails {
         this.template.Register("power.engineOutputMW", () => String.Format("{0:0.##}", this.hEngineOutputMW));
         this.template.Register("power.engines", () => this.hEngines.ToString());
         this.template.Register("power.input", () => String.Format("{0:0.##}", this.CurrentInput()));
+        this.template.Register("power.ioBar", this.IoBar);
+        this.template.Register("power.ioLegend", this.IoLegend);
+        this.template.Register("power.ioString", this.IoString);
+        this.template.Register("power.jumpBar", this.JumpBar);
         this.template.Register("power.jumpCurrent", () => String.Format("{0:0.##}", this.jumpCurrent));
         this.template.Register("power.jumpDrives", () => this.jumpDrives.ToString());
         this.template.Register("power.jumpMax", () => String.Format("{0:0.##}", this.jumpMax));
@@ -118,6 +123,7 @@ public class PowerDetails {
         this.template.Register("power.reactorOutputMax", () => String.Format("{0:0.##}", this.reactorOutputMax));
         this.template.Register("power.reactorOutputMW", () => String.Format("{0:0.##}", this.reactorOutputMW));
         this.template.Register("power.reactors", () => this.reactors.ToString());
+        this.template.Register("power.reactorString", this.ReactorString);
         this.template.Register("power.reactorUr", () => Util.FormatNumber(this.reactorUranium));
         this.template.Register("power.solarOutputMax", () => String.Format("{0:0.##}", this.solarOutputMax));
         this.template.Register("power.solarOutputMW", () => String.Format("{0:0.##}", this.solarOutputMW));
@@ -125,60 +131,6 @@ public class PowerDetails {
         this.template.Register("power.turbineOutputMax", () => String.Format("{0:0.##}", this.turbineOutputMax));
         this.template.Register("power.turbineOutputMW", () => String.Format("{0:0.##}", this.turbineOutputMW));
         this.template.Register("power.turbines", () => this.turbines.ToString());
-        this.template.Register("power.jumpBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
-            if (this.jumpDrives == 0) {
-                return;
-            }
-            options.pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
-            options.text = text ?? Util.PctString(options.pct);
-            ds.Bar(options);
-        });
-        this.template.Register("power.batteryBar", this.BatteryBar);
-        this.template.Register("power.ioString", () => {
-            float io = this.CurrentInput() - this.CurrentOutput();
-            float max = io > 0 ? this.MaxInput() : this.MaxOutput();
-
-            return String.Format("{0:0.00} MW ({1})", io, Util.PctString(max == 0f ? 0f : Math.Abs(io) / max));
-        });
-        this.template.Register("power.ioBar", this.IoBar);
-        this.template.Register("power.ioLegend", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
-            this.ioLegendNames.Clear();
-            if (this.reactors > 0) {
-                this.ioLegendNames["Reactor"] = this.reactorColour;
-            }
-            if (this.hEngines > 0) {
-                this.ioLegendNames["H2 Engine"] = this.hEnginesColour;
-            }
-            if (this.batteries > 0) {
-                this.ioLegendNames["Battery"] = this.batteriesColour;
-            }
-            if (this.turbines > 0) {
-                this.ioLegendNames["Wind"] = this.turbinesColour;
-            }
-            if (this.solars > 0) {
-                this.ioLegendNames["Solar"] = this.solarsColour;
-            }
-            ds.sb.Clear();
-            ds.sb.Append(string.Join(" / ", this.ioLegendNames.Keys));
-            Vector2 size = ds.surface.MeasureStringInPixels(ds.sb, ds.surface.Font, ds.surface.FontSize);
-            ds.SetCursor((ds.width - size.X) / 2, null);
-
-            bool first = true;
-            foreach (var kv in this.ioLegendNames) {
-                if (!first) {
-                    ds.Text(" / ");
-                }
-                ds.Text(kv.Key, colour: kv.Value);
-                first = false;
-            }
-        });
-        this.template.Register("power.reactorString", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
-            if (this.reactors == 0) {
-                return;
-            }
-            string msg = text ?? options.text ?? "Reactors: ";
-            ds.Text($"{msg}{this.reactors}, Output: {this.reactorOutputMW} MW, Ur: {this.reactorUranium}");
-        });
     }
 
     public void ClearTotals() {
@@ -367,7 +319,7 @@ public class PowerDetails {
             msg = $"{pct}";
         }
         double minsLeft = Math.Round(remainingMins);
-        options.text = text ?? options.text ?? $"{msg} ({(minsLeft <= 60 ? $"{minsLeft} min" : String.Format("{0:0.00} hours", minsLeft / 60))})";
+        options.text = text ?? $"{msg} ({(minsLeft <= 60 ? $"{minsLeft} min" : String.Format("{0:0.00} hours", minsLeft / 60))})";
 
         options.high = this.batteryMax;
         options.low = options.high;
@@ -391,6 +343,62 @@ public class PowerDetails {
         this.ioFloats.Add(this.solarPotential / max);
 
         ds.MultiBar(this.ioFloats, this.ioColours, text: text, textAlignment: TextAlignment.LEFT);
+    }
+
+    public void IoLegend(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        this.ioLegendNames.Clear();
+        if (this.reactors > 0) {
+            this.ioLegendNames["Reactor"] = this.reactorColour;
+        }
+        if (this.hEngines > 0) {
+            this.ioLegendNames["H2 Engine"] = this.hEnginesColour;
+        }
+        if (this.batteries > 0) {
+            this.ioLegendNames["Battery"] = this.batteriesColour;
+        }
+        if (this.turbines > 0) {
+            this.ioLegendNames["Wind"] = this.turbinesColour;
+        }
+        if (this.solars > 0) {
+            this.ioLegendNames["Solar"] = this.solarsColour;
+        }
+        ds.sb.Clear();
+        ds.sb.Append(string.Join(" / ", this.ioLegendNames.Keys));
+        Vector2 size = ds.surface.MeasureStringInPixels(ds.sb, ds.surface.Font, ds.surface.FontSize);
+        ds.SetCursor((ds.width - size.X) / 2, null);
+
+        bool first = true;
+        foreach (var kv in this.ioLegendNames) {
+            if (!first) {
+                ds.Text(" / ");
+            }
+            ds.Text(kv.Key, colour: kv.Value);
+            first = false;
+        }
+    }
+
+    public void JumpBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        if (this.jumpDrives == 0) {
+            return;
+        }
+        options.pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
+        options.text = text ?? Util.PctString(options.pct);
+        ds.Bar(options);
+    }
+
+    public string IoString() {
+        float io = this.CurrentInput() - this.CurrentOutput();
+        float max = io > 0 ? this.MaxInput() : this.MaxOutput();
+
+        return String.Format("{0:0.00} MW ({1})", io, Util.PctString(max == 0f ? 0f : Math.Abs(io) / max));
+    }
+
+    public void ReactorString(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        if (this.reactors == 0) {
+            return;
+        }
+        string msg = text ?? options.text ?? "Reactors: ";
+        ds.Text($"{msg}{this.reactors}, Output: {this.reactorOutputMW} MW, Ur: {this.reactorUranium}");
     }
 }
 /* POWER */
