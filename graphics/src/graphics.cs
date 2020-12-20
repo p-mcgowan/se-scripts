@@ -88,8 +88,6 @@ public class DrawingSurface {
         this.viewport = new RectangleF(0f, 0f, 0f, 0f);
         this.name = name;
         this.ySpace = ySpace;
-
-        this.InitScreen();
     }
 
     public void InitScreen() {
@@ -365,7 +363,7 @@ public class DrawingSurface {
         text = text ?? Util.PctString(pct);
         if (text != null && text != "") {
             this.cursor.X += net > 0 ? (width / 4) : (3 * width / 4);
-            this.Text(text, textColour ?? Color.Black, textAlignment: TextAlignment.CENTER, scale: 0.9f);
+            this.Text(text, textColour ?? Color.Black, textAlignment: TextAlignment.CENTER, scale: 0.8f);
         } else {
             this.cursor.X += width;
         }
@@ -447,7 +445,7 @@ public class DrawingSurface {
         text = text ?? Util.PctString(pct);
         if (text != null && text != "") {
             this.cursor.X += (width / 2);
-            this.Text(text, textColour ?? Color.Black, textAlignment: textAlignment, scale: 0.9f);
+            this.Text(text, textColour ?? Color.Black, textAlignment: textAlignment, scale: 0.8f);
             this.cursor.X += (width / 2);
         } else {
             this.cursor.X += width;
@@ -549,7 +547,7 @@ public class DrawingSurface {
 
         if (text != null && text != "") {
             this.cursor.X += (width / 2);
-            this.Text(text, textColour ?? Color.Black, textAlignment: textAlignment, scale: 0.9f);
+            this.Text(text, textColour ?? Color.Black, textAlignment: textAlignment, scale: 0.8f);
         } else {
             this.cursor.X += width;
         }

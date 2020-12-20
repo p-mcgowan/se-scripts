@@ -150,8 +150,6 @@ public class DrawingSurface {
         this.viewport = new RectangleF(0f, 0f, 0f, 0f);
         this.name = name;
         this.ySpace = ySpace;
-
-        this.InitScreen();
     }
 
     public void InitScreen() {
@@ -509,7 +507,8 @@ public class DrawingSurface {
         text = text ?? Util.PctString(pct);
         if (text != null && text != "") {
             this.cursor.X += (width / 2);
-            this.Text(text, textColour ?? Color.Black, textAlignment: textAlignment, scale: 0.9f);
+            // float offset =
+            this.Text(text, textColour ?? Color.Black, textAlignment: textAlignment, scale: 0.6f);
             this.cursor.X += (width / 2);
         } else {
             this.cursor.X += width;
