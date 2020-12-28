@@ -128,6 +128,10 @@ public bool ParseCustomData() {
 }
 
 public bool Configure() {
+    if (stateMachine != null) {
+        stateMachine.Dispose();
+    }
+
     if (!ParseCustomData()) {
         Runtime.UpdateFrequency &= UpdateFrequency.None;
         Echo("Failed to parse custom data");
@@ -141,9 +145,6 @@ public bool Configure() {
         Runtime.UpdateFrequency |= UpdateFrequency.Update10;
     }
 
-    if (stateMachine != null) {
-        stateMachine.Dispose();
-    }
     stateMachine = RunStuffOverTime();
     Runtime.UpdateFrequency |= UpdateFrequency.Once;
 
@@ -181,7 +182,7 @@ public void RefetchBlocks() {
 }
 
 public bool RecheckFailed() {
-    if (++i % 5 == 0 || String.CompareOrdinal(config.customData, Me.CustomData) != 0) {
+    if (String.CompareOrdinal(config.customData, Me.CustomData) != 0) {
         return !Configure();
     }
 

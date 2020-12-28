@@ -345,7 +345,8 @@ public class CargoStatus {
     public void CargoBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
         string colourName = this.pct > 0.85 ? "dimred" : this.pct > 0.60 ? "dimyellow" : "dimgreen";
         Color? colour = DrawingSurface.stringToColour.Get(colourName);
-        ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct), textColour: options.textColour);
+        Color? textColour = options.textColour ?? (colourName == "dimyellow" ? Color.Black : Color.White);
+        ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct), textColour: textColour);
     }
 
     public void CargoItems(DrawingSurface ds, string text, DrawingSurface.Options options) {
@@ -564,6 +565,10 @@ public bool ParseCustomData() {
 }
 
 public bool Configure() {
+    if (stateMachine != null) {
+        stateMachine.Dispose();
+    }
+
     if (!ParseCustomData()) {
         Runtime.UpdateFrequency &= UpdateFrequency.None;
         Echo("Failed to parse custom data");
@@ -577,9 +582,6 @@ public bool Configure() {
         Runtime.UpdateFrequency |= UpdateFrequency.Update10;
     }
 
-    if (stateMachine != null) {
-        stateMachine.Dispose();
-    }
     stateMachine = RunStuffOverTime();
     Runtime.UpdateFrequency |= UpdateFrequency.Once;
 
@@ -617,7 +619,7 @@ public void RefetchBlocks() {
 }
 
 public bool RecheckFailed() {
-    if (++i % 5 == 0 || String.CompareOrdinal(config.customData, Me.CustomData) != 0) {
+    if (String.CompareOrdinal(config.customData, Me.CustomData) != 0) {
         return !Configure();
     }
 
