@@ -163,8 +163,6 @@ public class DrawingSurface {
         this.viewport = new RectangleF(0f, 0f, 0f, 0f);
         this.name = name;
         this.ySpace = ySpace;
-
-        this.InitScreen();
     }
 
     public void InitScreen() {
@@ -440,7 +438,7 @@ public class DrawingSurface {
         text = text ?? Util.PctString(pct);
         if (text != null && text != "") {
             this.cursor.X += net > 0 ? (width / 4) : (3 * width / 4);
-            this.Text(text, textColour ?? Color.Black, textAlignment: TextAlignment.CENTER, scale: 0.9f);
+            this.Text(text, textColour ?? this.surface.ScriptForegroundColor, textAlignment: TextAlignment.CENTER, scale: 0.8f);
         } else {
             this.cursor.X += width;
         }
@@ -522,7 +520,7 @@ public class DrawingSurface {
         text = text ?? Util.PctString(pct);
         if (text != null && text != "") {
             this.cursor.X += (width / 2);
-            this.Text(text, textColour ?? Color.Black, textAlignment: textAlignment, scale: 0.9f);
+            this.Text(text, textColour ?? this.surface.ScriptForegroundColor, textAlignment: textAlignment, scale: 0.8f);
             this.cursor.X += (width / 2);
         } else {
             this.cursor.X += width;
@@ -624,7 +622,7 @@ public class DrawingSurface {
 
         if (text != null && text != "") {
             this.cursor.X += (width / 2);
-            this.Text(text, textColour ?? Color.Black, textAlignment: textAlignment, scale: 0.9f);
+            this.Text(text, textColour ?? this.surface.ScriptForegroundColor, textAlignment: textAlignment, scale: 0.8f);
         } else {
             this.cursor.X += width;
         }
@@ -711,6 +709,7 @@ public class Template {
     public Dictionary<string, List<Node>> renderNodes;
     public Dictionary<string, Dictionary<string, bool>> templateVars;
     public Dictionary<string, string> prerenderedTemplates;
+    public List<int> removeNodes;
 
     public char[] splitSemi = new[] { ';' };
     public char[] splitDot = new[] { '.' };
@@ -725,14 +724,13 @@ public class Template {
         this.renderNodes = new Dictionary<string, List<Node>>();
         this.templateVars = new Dictionary<string, Dictionary<string, bool>>();
         this.prerenderedTemplates = new Dictionary<string, string>();
+        this.removeNodes = new List<int>();
 
         this.Reset();
     }
 
     public void Reset() {
         this.Clear();
-        this.templateVars.Clear();
-        this.prerenderedTemplates.Clear();
 
         this.Register("textCircle", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.TextCircle(options));
         this.Register("circle", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.Circle(options));
@@ -742,8 +740,10 @@ public class Template {
     }
 
     public void Clear() {
-        this.methods.Clear();
+        this.templateVars.Clear();
+        this.prerenderedTemplates.Clear();
         this.renderNodes.Clear();
+        this.methods.Clear();
     }
 
     public void Register(string key, DsCallback callback) {
@@ -780,7 +780,6 @@ public class Template {
     }
 
     private Dictionary<string, bool> PreRender(string outputName, string[] templateStrings) {
-        Dictionary<string, bool> tplVars;
         if (this.templateVars.ContainsKey(outputName)) {
             this.templateVars[outputName].Clear();
         } else {
@@ -855,7 +854,7 @@ public class Template {
 
         DsCallback callback = null;
         int i = 0;
-        int removeNode = -1;
+        this.removeNodes.Clear();
         foreach (Node node in nodeList) {
             if (node.action == "newline") {
                 ds.Newline();
@@ -869,7 +868,7 @@ public class Template {
 
             if (node.action == "config") {
                 this.ConfigureScreen(ds, node.options);
-                removeNode = i;
+                removeNodes.Add(i);
                 continue;
             }
 
@@ -882,7 +881,7 @@ public class Template {
         }
         ds.Draw();
 
-        if (removeNode >= 0) {
+        foreach (int removeNode in removeNodes) {
             nodeList.RemoveAt(removeNode);
         }
     }

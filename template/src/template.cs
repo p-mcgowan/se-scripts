@@ -33,6 +33,7 @@ public class Template {
     public Dictionary<string, List<Node>> renderNodes;
     public Dictionary<string, Dictionary<string, bool>> templateVars;
     public Dictionary<string, string> prerenderedTemplates;
+    public List<int> removeNodes;
 
     public char[] splitSemi = new[] { ';' };
     public char[] splitDot = new[] { '.' };
@@ -47,6 +48,7 @@ public class Template {
         this.renderNodes = new Dictionary<string, List<Node>>();
         this.templateVars = new Dictionary<string, Dictionary<string, bool>>();
         this.prerenderedTemplates = new Dictionary<string, string>();
+        this.removeNodes = new List<int>();
 
         this.Reset();
     }
@@ -176,7 +178,7 @@ public class Template {
 
         DsCallback callback = null;
         int i = 0;
-        int removeNode = -1;
+        this.removeNodes.Clear();
         foreach (Node node in nodeList) {
             if (node.action == "newline") {
                 ds.Newline();
@@ -190,7 +192,7 @@ public class Template {
 
             if (node.action == "config") {
                 this.ConfigureScreen(ds, node.options);
-                removeNode = i;
+                removeNodes.Add(i);
                 continue;
             }
 
@@ -203,7 +205,7 @@ public class Template {
         }
         ds.Draw();
 
-        if (removeNode >= 0) {
+        foreach (int removeNode in removeNodes) {
             nodeList.RemoveAt(removeNode);
         }
     }
