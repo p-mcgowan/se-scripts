@@ -59,7 +59,7 @@ Template template;
 Config config = new Config();
 Dictionary<string, string> templates = new Dictionary<string, string>();
 IEnumerator<string> stateMachine;
-int i = 0;
+int tickCount = 1;
 
 public Program() {
     GridTerminalSystem.GetBlocks(allBlocks);
@@ -477,6 +477,8 @@ public bool ParseCustomData() {
     strings.Clear();
     ini.GetSections(strings);
 
+    string themeConfig = "";
+
     if (ini.ContainsSection("global")) {
         string setting = "";
         if (ini.Get("global", "airlock").TryGetString(out setting)) {
@@ -515,6 +517,10 @@ public bool ParseCustomData() {
         if (ini.Get("global", "getAllGrids").TryGetString(out setting)) {
             config.Set("getAllGrids", setting);
         }
+        if (ini.Get("global", "theme").TryGetString(out setting)) {
+            config.Set("theme", setting);
+            themeConfig = $"{{config:{setting}}}";
+        }
     }
 
     foreach (string outname in strings) {
@@ -525,7 +531,8 @@ public bool ParseCustomData() {
         var tpl = ini.Get(outname, "output");
 
         if (!tpl.IsEmpty) {
-            templates[outname] = tpl.ToString();
+            templates[outname] = themeConfig + tpl.ToString();
+            log.Append($"{outname} {templates.Count} {templates.Any()}\n");
         }
     }
 
@@ -556,7 +563,7 @@ public bool ParseCustomData() {
             if (hasNumberedSurface) {
                 drawables[surfaceName] = new DrawingSurface(surface, this, surfaceName);
             } else {
-                drawables[surfaceName] = new DrawingSurface(surface, this, name);
+                drawables[name] = new DrawingSurface(surface, this, name);
             }
         }
     }
@@ -623,7 +630,7 @@ public bool RecheckFailed() {
         return !Configure();
     }
 
-    if (i % 2 == 0) {
+    if ((tickCount++) % 2 == 0) {
         RefetchBlocks();
         log.Clear();
     }
@@ -651,6 +658,7 @@ public void RunStateMachine() {
 public IEnumerator<string> RunStuffOverTime()  {
     string content;
     string outputName;
+
     while (templates.Any()) {
         outputName = templates.Keys.Last();
         templates.Pop(templates.Keys.Last(), out content);
@@ -700,11 +708,23 @@ public IEnumerator<string> RunStuffOverTime()  {
         yield return "productionDetails";
     }
 
+    DrawingSurface.Options themeOpts = null;
+    string theme = config.Get("theme");
+
+    if (theme != null) {
+        themeOpts = template.StringToOptions(theme);
+    }
+
     for (int j = 0; j < drawables.Count; ++j) {
         var dw = drawables.ElementAt(j);
+        if (themeOpts != null) {
+            template.ConfigureScreen(dw.Value, themeOpts);
+        }
         template.Render(dw.Value);
+
         yield return $"render {dw.Key}";
     }
+    config.Set("theme", null);
 
     yield break;
 }
@@ -809,6 +829,11 @@ class BlockHealth {
         }
 
         this.status = $"{(this.damaged.Count == 0 ? "No damage" : "Damage")} detected";
+    }
+
+    public void HealthMap() {
+        // var box = item.Max - item.Min + Vector3I.One;
+        // var itemSprite = new MySprite(SpriteType.TEXTURE, "SquareSimple", _viewport.Center + (new Vector2(item.Min.Z + box.Z/2.0f, item.Min.Y+box.Y/2.0f) * scale), new Vector2(box.Z, box.Y) * scale, color);
     }
 }
 /* BLOCK_HEALTH */
@@ -1847,7 +1872,7 @@ public class DrawingSurface {
         text = text ?? Util.PctString(pct);
         if (text != null && text != "") {
             this.cursor.X += net > 0 ? (width / 4) : (3 * width / 4);
-            this.Text(text, textColour ?? Color.Black, textAlignment: TextAlignment.CENTER, scale: 0.8f);
+            this.Text(text, textColour ?? this.surface.ScriptForegroundColor, textAlignment: TextAlignment.CENTER, scale: 0.8f);
         } else {
             this.cursor.X += width;
         }
@@ -1929,7 +1954,7 @@ public class DrawingSurface {
         text = text ?? Util.PctString(pct);
         if (text != null && text != "") {
             this.cursor.X += (width / 2);
-            this.Text(text, textColour ?? Color.Black, textAlignment: textAlignment, scale: 0.8f);
+            this.Text(text, textColour ?? this.surface.ScriptForegroundColor, textAlignment: textAlignment, scale: 0.8f);
             this.cursor.X += (width / 2);
         } else {
             this.cursor.X += width;
@@ -2031,7 +2056,7 @@ public class DrawingSurface {
 
         if (text != null && text != "") {
             this.cursor.X += (width / 2);
-            this.Text(text, textColour ?? Color.Black, textAlignment: textAlignment, scale: 0.8f);
+            this.Text(text, textColour ?? this.surface.ScriptForegroundColor, textAlignment: textAlignment, scale: 0.8f);
         } else {
             this.cursor.X += width;
         }
@@ -2118,6 +2143,7 @@ public class Template {
     public Dictionary<string, List<Node>> renderNodes;
     public Dictionary<string, Dictionary<string, bool>> templateVars;
     public Dictionary<string, string> prerenderedTemplates;
+    public List<int> removeNodes;
 
     public char[] splitSemi = new[] { ';' };
     public char[] splitDot = new[] { '.' };
@@ -2132,6 +2158,7 @@ public class Template {
         this.renderNodes = new Dictionary<string, List<Node>>();
         this.templateVars = new Dictionary<string, Dictionary<string, bool>>();
         this.prerenderedTemplates = new Dictionary<string, string>();
+        this.removeNodes = new List<int>();
 
         this.Reset();
     }
@@ -2261,7 +2288,7 @@ public class Template {
 
         DsCallback callback = null;
         int i = 0;
-        int removeNode = -1;
+        this.removeNodes.Clear();
         foreach (Node node in nodeList) {
             if (node.action == "newline") {
                 ds.Newline();
@@ -2275,7 +2302,7 @@ public class Template {
 
             if (node.action == "config") {
                 this.ConfigureScreen(ds, node.options);
-                removeNode = i;
+                removeNodes.Add(i);
                 continue;
             }
 
@@ -2288,7 +2315,7 @@ public class Template {
         }
         ds.Draw();
 
-        if (removeNode >= 0) {
+        foreach (int removeNode in removeNodes) {
             nodeList.RemoveAt(removeNode);
         }
     }

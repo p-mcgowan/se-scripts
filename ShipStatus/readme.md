@@ -134,6 +134,24 @@ output=
 |{text:colour=0,60,60:\{power.ioBar\}} (inline): {power.ioBar}
 ```
 
+Global config settings:
+
+setting|value type|description|default
+---|---|---|---
+airlock|true/false|Toggle program airlock|false
+production|true/false|Toggle program production|auto (if in template)
+cargo|true/false|Toggle program cargo|auto (if in template)
+power|true/false|Toggle program power|auto (if in template)
+health|true/false|Toggle program health|auto (if in template)
+airlockOpenTime|integer|Set airlock auto-close time (ms)|750
+airlockAllDoors|true/false|Toggle auto door closing for non-airlock doors|false
+airlockDoorMatch|string|Door pattern to match (regex)|Door(.*)
+airlockDoorExclude|string|Door pattern to exclude|Hangar
+healthIgnore|string|Pattern to ignore (eg Thrust,Wheel)|none
+healthOnHud|true/false|Enable "Show on HUD" for damaged blocks|false
+theme|string|Configure all displays to use a theme (see config template var below)|none
+
+
 The template vars available by default are:
 template var|options|description
 ---|---|---

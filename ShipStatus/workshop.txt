@@ -1,6 +1,7 @@
 [h1]Space Engineers Ship Status Script[/h1]
 
 A configurable ship status display which renders sprites to different surfaces using a very flexible templating engine.
+Includes auto door closing and airlock grouping
 
 Makes use of the following to draw sprites:
 [url=https://github.com/p-mcgowan/se-scripts/tree/master/template]template engine (github)[/url]
@@ -16,58 +17,24 @@ Images generated with ini format CustomData (see [url=https://github.com/malware
 
 [url=https://github.com/p-mcgowan/se-scripts/tree/master/ShipStatus]More info on Github[/url]
 
-[code]
-; CustomData config:
-; the [global] section applies to the whole program, or sets defaults for shared
-;
-; For surface selection, use 'name <number>' eg: 'Cockpit <1>' - by default, the
-; first surface is selected (0)
-;
-; The output section of the config is the template to render to the screen
-
-[global]
-;  global program settings (will overide settings detected in templates)
-;  With the exception of airlocks, you can leave these all false and they will
-;  only be enabled if a template contains a reference to them (eg if a template
-;  has {power.bar}, then power will be enabled unless false here)
-;airlock=true
-;production=false
-;cargo=false
-;power=false
-;health=false
-;  airlock config (defaults are shown)
-;airlockOpenTime=750
-;airlockAllDoors=false
-;airlockDoorMatch=Door(.*)
-;airlockDoorExclude=Hangar
-;  health config (defaults are shown)
-;healthIgnore=
-;healthOnHud=false
-
-[LCD Panel]
-output=
-|Jump drives: {power.jumpDrives}
-|{?power.jumpBar}
-|Batteries: {power.batteries}
-|{power.batteryBar}
-|Reactors: {power.reactors} {power.reactorMw:: MW} {power.reactorUr:: Ur}
-|Solar panels: {power.solars}
-|Wind turbines: {power.turbines}
-|H2 Engines: {power.engines}
-|Energy IO: {power.io}
-|{?power.ioBar}
-|
-|Ship status: {health.status}
-|{health.blocks}
-|{production.status}
-|{production.blocks}
-|
-|Cargo: {cargo.stored} / {cargo.cap}
-|{cargo.bar}
-|{cargo.items}
-[/code]
-
 [h1]Api listing[/h1]
+Global config settings:
+[table]
+[tr][th]setting[/th][th]value type[/th][th]description[/th][th]default[/th][/tr]
+[tr][td]airlock[/td][td]true/false[/td][td]Toggle program airlock[/td][td]false[/td][/tr]
+[tr][td]production[/td][td]true/false[/td][td]Toggle program production[/td][td]auto (if in template)[/td][/tr]
+[tr][td]cargo[/td][td]true/false[/td][td]Toggle program cargo[/td][td]auto (if in template)[/td][/tr]
+[tr][td]power[/td][td]true/false[/td][td]Toggle program power[/td][td]auto (if in template)[/td][/tr]
+[tr][td]health[/td][td]true/false[/td][td]Toggle program health[/td][td]auto (if in template)[/td][/tr]
+[tr][td]airlockOpenTime[/td][td]integer[/td][td]Set airlock auto-close time (ms)[/td][td]750[/td][/tr]
+[tr][td]airlockAllDoors[/td][td]true/false[/td][td]Toggle auto door closing for non-airlock doors[/td][td]false[/td][/tr]
+[tr][td]airlockDoorMatch[/td][td]string[/td][td]Door pattern to match (regex)[/td][td]Door(.*)[/td][/tr]
+[tr][td]airlockDoorExclude[/td][td]string[/td][td]Door pattern to exclude[/td][td]Hangar[/td][/tr]
+[tr][td]healthIgnore[/td][td]string[/td][td]Pattern to ignore (eg Thrust,Wheel)[/td][td]none[/td][/tr]
+[tr][td]healthOnHud[/td][td]true/false[/td][td]Enable "Show on HUD" for damaged blocks[/td][td]false[/td][/tr]
+[tr][td]theme[/td][td]string[/td][td]Configure all displays to use a theme (see config template var below)[/td][td]none[/td][/tr]
+[/table]
+
 The template vars available by default are:
 
 [table]

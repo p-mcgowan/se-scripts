@@ -59,7 +59,7 @@ Template template;
 Config config = new Config();
 Dictionary<string, string> templates = new Dictionary<string, string>();
 IEnumerator<string> stateMachine;
-int i = 0;
+int tickCount = 1;
 
 public Program() {
     GridTerminalSystem.GetBlocks(allBlocks);

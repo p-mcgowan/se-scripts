@@ -99,5 +99,10 @@ class BlockHealth {
 
         this.status = $"{(this.damaged.Count == 0 ? "No damage" : "Damage")} detected";
     }
+
+    public void HealthMap() {
+        // var box = item.Max - item.Min + Vector3I.One;
+        // var itemSprite = new MySprite(SpriteType.TEXTURE, "SquareSimple", _viewport.Center + (new Vector2(item.Min.Z + box.Z/2.0f, item.Min.Y+box.Y/2.0f) * scale), new Vector2(box.Z, box.Y) * scale, color);
+    }
 }
 /* BLOCK_HEALTH */

@@ -40,6 +40,8 @@ public bool ParseCustomData() {
     strings.Clear();
     ini.GetSections(strings);
 
+    string themeConfig = "";
+
     if (ini.ContainsSection("global")) {
         string setting = "";
         if (ini.Get("global", "airlock").TryGetString(out setting)) {
@@ -78,6 +80,10 @@ public bool ParseCustomData() {
         if (ini.Get("global", "getAllGrids").TryGetString(out setting)) {
             config.Set("getAllGrids", setting);
         }
+        if (ini.Get("global", "theme").TryGetString(out setting)) {
+            config.Set("theme", setting);
+            themeConfig = $"{{config:{setting}}}";
+        }
     }
 
     foreach (string outname in strings) {
@@ -88,7 +94,8 @@ public bool ParseCustomData() {
         var tpl = ini.Get(outname, "output");
 
         if (!tpl.IsEmpty) {
-            templates[outname] = tpl.ToString();
+            templates[outname] = themeConfig + tpl.ToString();
+            log.Append($"{outname} {templates.Count} {templates.Any()}\n");
         }
     }
 
@@ -119,7 +126,7 @@ public bool ParseCustomData() {
             if (hasNumberedSurface) {
                 drawables[surfaceName] = new DrawingSurface(surface, this, surfaceName);
             } else {
-                drawables[surfaceName] = new DrawingSurface(surface, this, name);
+                drawables[name] = new DrawingSurface(surface, this, name);
             }
         }
     }
@@ -186,7 +193,7 @@ public bool RecheckFailed() {
         return !Configure();
     }
 
-    if (i % 2 == 0) {
+    if ((tickCount++) % 2 == 0) {
         RefetchBlocks();
         log.Clear();
     }

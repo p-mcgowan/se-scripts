@@ -18,6 +18,7 @@ public void RunStateMachine() {
 public IEnumerator<string> RunStuffOverTime()  {
     string content;
     string outputName;
+
     while (templates.Any()) {
         outputName = templates.Keys.Last();
         templates.Pop(templates.Keys.Last(), out content);
@@ -67,11 +68,23 @@ public IEnumerator<string> RunStuffOverTime()  {
         yield return "productionDetails";
     }
 
+    DrawingSurface.Options themeOpts = null;
+    string theme = config.Get("theme");
+
+    if (theme != null) {
+        themeOpts = template.StringToOptions(theme);
+    }
+
     for (int j = 0; j < drawables.Count; ++j) {
         var dw = drawables.ElementAt(j);
+        if (themeOpts != null) {
+            template.ConfigureScreen(dw.Value, themeOpts);
+        }
         template.Render(dw.Value);
+
         yield return $"render {dw.Key}";
     }
+    config.Set("theme", null);
 
     yield break;
 }
