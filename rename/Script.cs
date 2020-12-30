@@ -4,8 +4,8 @@
  * If oldName is not empty (""), replaces "<oldname> " (note following space) with "<newname> "
  */
 
-string oldName = "oldname";
-string newName = "newname";
+string oldName = "";
+string newName = "";
 // Don't replace anything with this tag
 string ignore = "[dont-replace]";
 // Only replace if oldName present
