@@ -68,7 +68,7 @@ ds
 
 ```
 Draw()
-  dispose the frame and render content - if this is not called after the other operations, nothing will be drawn
+  dispose the frame and render content - if this is not called, nothing will be drawn
 
 SaveCursor()
   store the current cursor position (for reference later)
@@ -92,6 +92,19 @@ Text(
 )
   write the string <text> to the screen. Optionally, coloured, alligned, scaled, or at a certain position
 
+MidBar(
+  float net,
+  float low,
+  float high,
+  float width = 0f,
+  float height = 0f,
+  float pad = 0.1f,
+  Color? bgColour = null,
+  string text = null,
+  Color? textColour = null
+)
+  using a signed <net> value, show a bar left or right of the midpoint, proportial to low and high
+
 Bar(
   float pct,
   float width = 0f,
@@ -106,17 +119,6 @@ Bar(
 )
   draw a progress bar, filled to pct
 
-MidBar(
-  float net,
-  float low,
-  float high,
-  float width = 0f,
-  float height = 0f,
-  float pad = 0.1f,
-  Color? bgColour = null
-)
-  using a signed <net> value, show a bar left or right of the midpoint, proportial to low and high
-
 MultiBar(
   List<float> values,
   List<Color> colours,
@@ -129,7 +131,7 @@ MultiBar(
   TextAlignment textAlignment = TextAlignment.CENTER,
   float pad = 0.1f
 )
-  draws a layered bar-like sprite, with values stacked beside each other
+  Show multiple bar colours in 1 bar. Values should be in percents (eg, 0.1, 0.3, 0.2), and the list of colours will fill in that order.
 
 TextCircle(Color colour, bool outline = false)
   draw a small circle inline with text
