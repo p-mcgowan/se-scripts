@@ -81,6 +81,7 @@ Template var name|Options|Description
 ---|---|---
 config| font: set the font <br/>size: set the font size <br/>textPadding: set the padding <br/>colour: set the text colour <br/>bgColour: set the background colour |Configure the display (only runs once)
 text|text: string of text  <br/>colour: &lt;colour argument> (see below)  <br/>textAlignment: "center", "left", "right"  <br/>scale: a numeric scale factor|basic text rendering
+right|none|Set the alignment to the right for the rest of the line
 textCircle|colour: &lt;colour argument><br/>outline: if true, will not fill the circle|a small circle inline with text
 circle| size: numeric size in pixels<br/>colour: &lt;colour argument><br/>outline: if true, will not fill the circle|a basic circle shape
 bar| pct: percent value from 0 to 1 (eg 0.24)<br/>width: width in pixels (default to width of screen or space left on line)<br/>height: height in pixels (defaults to text height)<br/>fillColour: &lt;colour argument><br/>text: string of text<br/>textColour: &lt;colour argument><br/>bgColour: &lt;colour argument><br/>textAlignment: "center", "left", "right"<br/>pad: percentage padding (defaults to 0.1)|a percent bar

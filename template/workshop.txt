@@ -1,7 +1,5 @@
 [h1]Basic template engine for scripts[/h1]
 
-[b]Important[/b] If you installed an earlier version, there was an issue with the static Program constructor that may cause issues in your saves. Update immediately to fix this - if you have issues with your save files, contact me here or on github and I will help to resolve the issue.
-
 A basic templating engine which allows you to register callbacks, and replace templates with data on the fly
 
 see the [url=https://github.com/p-mcgowan/se-scripts/tree/master/template]template script on github[/url] for more info - will likely not maintain both readmes...
@@ -64,10 +62,16 @@ The template includes these built in methods:
 
 [table]
 [tr][th]template var name[/th][th]Options[/th][th]Description[/th][/tr]
+[tr][td]config[/td][td]font: set the font
+size: set the font size
+textPadding: set the padding
+colour: set the text colour
+bgColour: set the background colour[/td][td]Configure the display (only runs once)[/td][/tr]
 [tr][td]text[/td][td]text: string of text
 colour: <colour argument> (see below)
 textAlignment: "center", "left", "right"
 scale: a numeric scale factor[/td][td]basic text rendering[/td][/tr]
+[tr][td]right[/td][td]none[/td][td]Set the alignment to the right for the rest of the line[/td][/tr]
 [tr][td]textCircle[/td][td]colour: <colour argument>
 outline: if true, will not fill the circle[/td][td]a small circle inline with text[/td][/tr]
 [tr][td]circle[/td][td]size: numeric size in pixels
@@ -97,11 +101,6 @@ text: text content
 textColour: <colour argument>,
 bgColour: <colour argument>,
 [/td][td]Similar to bar, but showing multiple levels of colours[/td][/tr]
-[tr][td]config[/td][td]font: set the font
-size: set the font size
-textPadding: set the padding
-colour: set the text colour
-bgColour: set the background colour[/td][td]Configure the display (only runs once)[/td][/tr]
 [/table]
 
 <colour argument>; Either a string colour name, or RGB or RGBA values
