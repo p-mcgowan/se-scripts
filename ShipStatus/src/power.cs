@@ -398,7 +398,7 @@ public class PowerDetails {
             return;
         }
         string msg = text ?? options.text ?? "Reactors: ";
-        ds.Text($"{msg}{this.reactors}, Output: {this.reactorOutputMW} MW, Ur: {this.reactorUranium}");
+        ds.Text($"{msg}{this.reactors}, Output: {this.reactorOutputMW} MW, Ur: {this.reactorUranium}", options);
     }
 }
 /* POWER */

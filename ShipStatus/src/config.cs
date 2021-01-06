@@ -39,6 +39,8 @@ public bool ParseCustomData() {
     config.customData = Me.CustomData;
     strings.Clear();
     ini.GetSections(strings);
+    template.Reset();
+    templates.Clear();
 
     string themeConfig = "";
 
@@ -82,7 +84,7 @@ public bool ParseCustomData() {
         }
         if (ini.Get("global", "theme").TryGetString(out setting)) {
             config.Set("theme", setting);
-            themeConfig = $"{{config:{setting}}}";
+            themeConfig = $"{{config:{setting}}}\n";
         }
     }
 
@@ -95,7 +97,6 @@ public bool ParseCustomData() {
 
         if (!tpl.IsEmpty) {
             templates[outname] = themeConfig + tpl.ToString();
-            log.Append($"{outname} {templates.Count} {templates.Any()}\n");
         }
     }
 

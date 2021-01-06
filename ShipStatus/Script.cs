@@ -24,7 +24,7 @@
 ;healthIgnore=
 ;healthOnHud=false
 
-[LCD Panel]
+[LCD Panel Status]
 output=
 |Jump drives: {power.jumpDrives}
 |{power.jumpBar}
@@ -44,7 +44,7 @@ output=
 |{production.status}
 |{production.blocks}
 |
-|Cargo: {cargo.stored} / {cargo.cap}
+|Cargo: {cargo.fullString}
 |{cargo.bar}
 |{cargo.items}
 */
@@ -345,7 +345,7 @@ public class CargoStatus {
     public void CargoBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
         string colourName = this.pct > 0.85 ? "dimred" : this.pct > 0.60 ? "dimyellow" : "dimgreen";
         Color? colour = DrawingSurface.stringToColour.Get(colourName);
-        Color? textColour = options.textColour ?? (colourName == "dimyellow" ? Color.Black : Color.White);
+        Color? textColour = options.textColour ?? ds.surface.ScriptForegroundColor;
         ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct), textColour: textColour);
     }
 
@@ -476,6 +476,8 @@ public bool ParseCustomData() {
     config.customData = Me.CustomData;
     strings.Clear();
     ini.GetSections(strings);
+    template.Reset();
+    templates.Clear();
 
     string themeConfig = "";
 
@@ -519,7 +521,7 @@ public bool ParseCustomData() {
         }
         if (ini.Get("global", "theme").TryGetString(out setting)) {
             config.Set("theme", setting);
-            themeConfig = $"{{config:{setting}}}";
+            themeConfig = $"{{config:{setting}}}\n";
         }
     }
 
@@ -532,7 +534,6 @@ public bool ParseCustomData() {
 
         if (!tpl.IsEmpty) {
             templates[outname] = themeConfig + tpl.ToString();
-            log.Append($"{outname} {templates.Count} {templates.Any()}\n");
         }
     }
 
@@ -1237,7 +1238,7 @@ public class PowerDetails {
             return;
         }
         string msg = text ?? options.text ?? "Reactors: ";
-        ds.Text($"{msg}{this.reactors}, Output: {this.reactorOutputMW} MW, Ur: {this.reactorUranium}");
+        ds.Text($"{msg}{this.reactors}, Output: {this.reactorOutputMW} MW, Ur: {this.reactorUranium}", options);
     }
 }
 /* POWER */
@@ -2171,6 +2172,7 @@ public class Template {
         this.Register("bar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.Bar(options));
         this.Register("midBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.MidBar(options));
         this.Register("multiBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.MultiBar(options));
+        this.Register("right", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.SetCursor(ds.width, null));
     }
 
     public void Clear() {

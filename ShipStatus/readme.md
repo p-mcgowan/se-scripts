@@ -7,6 +7,7 @@
 ### TOC
 - [About](#about)
 - [Api listing](#api-listing)
+- [Examples](#examples)
 - [Contributing](#contributing)
 - [Links](#links)
 
@@ -209,6 +210,231 @@ midBar
 multiBar  
 text  
 textCircle  
+
+### Examples
+
+##### Mining ship
+
+<img src="images/miner.png">
+
+```ini
+[global]
+theme=colour:0,60,100;bgColour=10,10,10
+
+[Miner Control Seat <1>]
+output=
+|Ship status: {health.status}
+|
+|{health.blocks}
+
+[Miner Programmable block Cabin <0>]
+output=
+|{config:size=0.5}
+|Jump drives: {power.jumpDrives}
+|{power.jumpBar}
+|Batteries: {power.batteries}
+|{power.batteryBar}
+|Reactors: {power.reactors}, Output: {power.reactorOutputMW} MW  ({power.reactorUr} Ur)
+|Solar panels: {power.solars}, Output: {power.solarOutputMW} MW
+|Energy IO: {power.ioString}
+|{power.ioBar}
+|{power.ioLegend}
+
+[Miner Control Seat <0>]
+output=
+|{config:size=0.5}
+|Cargo: {cargo.stored} / {cargo.cap}
+|{cargo.bar}
+|{cargo.items}
+```
+
+---  
+##### Repair ship
+
+<img src="images/repair-ship.png">
+
+```ini
+[global]
+config=size=0.5;bgColour=15,15,10;colour=200,200,200
+
+[Miniminer Cockpit <0>]
+output=
+|Cargo: {cargo.fullString}
+|{cargo.bar}
+|Reactors: {power.reactors}, Batteries: {power.batteries}
+|{power.batteryBar}
+|Output: {power.reactorOutputMW} MW @ ({power.reactorUr} Ur)
+|Energy IO: {power.ioString}
+|{power.ioBar}
+|{power.ioLegend}
+
+[Miniminer Cockpit <2>]
+output=
+|Ship status: {health.status}
+|{health.blocks}
+
+[Miniminer Cockpit <1>]
+output=
+|{cargo.items}
+```
+
+---  
+##### Random program block surfaces:
+
+<img src="images/pb.png">
+
+```ini
+[global]
+theme=colour=20,40,60;bgColour=black;size=0.6
+
+[Programmable block <0>]
+output=
+|{config:colour=white;bgColour=0,0,255;size=0.5}
+|A problem has been detect and SEOS has been shut down to prevent damage
+|to your programmable block.
+|
+|If this is the first time you've seen this Stop error screen,
+|restart your programmable block. If this screen appears again, follow these steps:
+|
+|Disable or uninstall any SPRT drones, asteroid miners
+|or weld walls. Check your subgrid configuration,
+|and check for any wiggles / wobbles. Run KLANG /R to check
+|for hard drive corruption, and then restart your programmable block.
+|
+|Technical information:
+|*** STOP: 0x00000024 (0xDEADC0DE, OxC0FFEEEE)
+
+[Programmable block <1>]
+output=
+|{config:size=0.5;colour=150,100,0;bgColour=0,10,30}
+|Cargo:
+|{cargo.bar}
+|Jump Drives:
+|{power.jumpBar}
+|Batteries:
+|{power.batteryBar}
+|Power Sources:
+|{power.ioBar}
+|{power.ioLegend}
+```
+
+---  
+##### Cargo info:
+
+<img src="images/cargo.png">
+
+```ini
+[global]
+theme=colour=20,40,60;bgColour=black;size=0.6
+
+[LCD Panel 0:1]
+output=
+|{text:scale=1.5;colour=20,80,60:Ship cargo report:}
+|
+|Capacity: {cargo.cap}
+|Used: {cargo.stored}
+|Formatted: {cargo.fullString}
+|
+|{text:scale=1.5;colour=20,80,60:Cargo Manifest (for port authority):}
+|
+|{cargo.items}
+```
+
+---  
+##### Damage report:
+
+<img src="images/damage.png">
+
+```ini
+[global]
+theme=colour=20,40,60;bgColour=black;size=0.6
+
+[LCD Panel 0:2]
+output=
+|{text:scale=1.5;colour=20,80,60:Damage report:}
+|
+|Summary: {health.status}
+|
+|{text:scale=1.5;colour=20,80,60:List of damaged blocks (if any):}
+|
+|{health.blocks}
+```
+
+---  
+##### Power info:
+
+<img src="images/power.png">
+
+```ini
+[global]
+theme=colour=20,40,60;bgColour=black;size=0.6
+
+[LCD Panel 0:3]
+output=
+|{text:scale=1.5;colour=20,80,60:Energy and power report:}
+|
+|Batteries:     {right}{power.batteries:align=right}
+|H2 engines:    {right}{power.engines:align=right}
+|Jump drives:   {right}{power.jumpDrives:align=right}
+|Reactors:      {right}{power.reactors:align=right}
+|Solar Panels:  {right}{power.solars:align=right}
+|Wind Turbines: {right}{power.turbines:align=right}
+|
+|{text:scale=1.5;colour=20,80,60:Power off the charts:}
+|
+|Battery charge:
+|{power.batteryBar:textColour=black}
+|Jump drive charge:
+|{power.jumpBar:textColour=black}
+|
+|{text:scale=1.5;colour=20,80,60:Power producer distribution:}
+|
+|{power.ioBar}
+|{power.ioLegend}
+|
+|Net power IO and utilization:        {right}{power.ioString:align=right}
+|Total ship power input (MW):         {right}{power.input:align=right}
+|Total ship power output (MW):        {right}{power.output:align=right}
+|Maxiumum power output possible (MW): {right}{power.maxOutput:align=right}
+```
+
+---  
+##### Moar power info:
+
+<img src="images/moar-power.png">
+
+```ini
+[global]
+theme=colour=20,40,60;bgColour=black;size=0.6
+
+[LCD Panel 1:3]
+output=
+|{text:scale=1.5;colour=20,80,60:Moar power:}
+|
+|Batteries current input (MW):           {right}{power.batteryInput:align=right}
+|Batteries max input (MW):               {right}{power.batteryInputMax:align=right}
+|Batteries current charge (MWh):         {right}{power.batteryCurrent:align=right}
+|Batteries max charge (MWh):             {right}{power.batteryMax:align=right}
+|Batteries current output (MW):          {right}{power.batteryOutput:align=right}
+|Batteries max possible output: (MW)     {right}{power.batteryOutputMax:align=right}
+|
+|Hydrogen engine max output (MW):        {right}{power.engineOutputMax:align=right}
+|Hydrogen engine current output (MW):    {right}{power.engineOutputMW:align=right}
+|
+|Jump drives current charge (MWh):       {right}{power.jumpCurrent:align=right}
+|Jump drives max charge (MWh):           {right}{power.jumpMax:align=right}
+|
+|Reactors current output (MW):           {right}{power.reactorOutputMW:align=right}
+|Reactors max possible output (MW):      {right}{power.reactorOutputMax:align=right}
+|Reactors Uranium count (kg):            {right}{power.reactorUr:align=right}
+|Reactors summary:                       {right}{power.reactorString:align=right}
+|
+|Solar panels current output (MW):       {right}{power.solarOutputMW:align=right}
+|Solar panels max possible output (MW):  {right}{power.solarOutputMax:align=right}
+|
+|Wind turbines current output (MW):      {right}{power.turbineOutputMW:align=right}
+|Wind turbines max possible output (MW): {right}{power.turbineOutputMax:align=right}
+```
 
 
 ### Contributing

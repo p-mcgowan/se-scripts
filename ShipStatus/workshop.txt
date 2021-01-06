@@ -13,9 +13,9 @@ Reads from CustomData, parsing a template and a display target section. Easily a
 
 The templates have some built-in functionality, but you can also build your own rendering methods.
 
-Images generated with ini format CustomData (see [url=https://github.com/malware-dev/MDK-SE/wiki/Handling-configuration-and-storage]Malware's MDK[/url]):
+For a list of examples with images, see [url=https://github.com/p-mcgowan/se-scripts/tree/master/ShipStatus#examples]the example page[/url] (wouldn't fit here).
 
-[url=https://github.com/p-mcgowan/se-scripts/tree/master/ShipStatus]More info on Github[/url]
+Images generated with ini format CustomData (see [url=https://github.com/malware-dev/MDK-SE/wiki/Handling-configuration-and-storage]Malware's MDK[/url]):
 
 [h1]Api listing[/h1]
 Global config settings:

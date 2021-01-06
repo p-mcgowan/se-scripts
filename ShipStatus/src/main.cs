@@ -24,7 +24,7 @@
 ;healthIgnore=
 ;healthOnHud=false
 
-[LCD Panel]
+[LCD Panel Status]
 output=
 |Jump drives: {power.jumpDrives}
 |{power.jumpBar}
@@ -44,7 +44,7 @@ output=
 |{production.status}
 |{production.blocks}
 |
-|Cargo: {cargo.stored} / {cargo.cap}
+|Cargo: {cargo.fullString}
 |{cargo.bar}
 |{cargo.items}
 */
