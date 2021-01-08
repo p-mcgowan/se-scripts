@@ -44,9 +44,8 @@ void Main()
 public void RenameList(bool dryRun) {
     var blocks = new List<IMyTerminalBlock>();
     var shouldIgnore = Regex(System.Text.RegularExpressions.Regex.Escape(ignore), System.Text.RegularExpressions.RegexOptions.Compiled);
-    GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(blocks, b => {
-        return !shouldIgnore.IsMatch(b.CustomName);
-    });
+    GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(blocks, b => b.IsSameConstructAs(Me) && !shouldIgnore.IsMatch(b.CustomName));
+
     Dictionary<string, int> nameToCount = new Dictionary<string, int>();
 
     foreach (var b in blocks) {
@@ -81,7 +80,7 @@ public void Main(string arg) {
     }
 
     var blocks = new List<IMyTerminalBlock>();
-    GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(blocks);
+    GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(blocks, b => b.IsSameConstructAs(Me));
     var oldNameReg = Regex(@"" + oldName + "[ ]*", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     var shouldIgnore = Regex(System.Text.RegularExpressions.Regex.Escape(ignore), System.Text.RegularExpressions.RegexOptions.Compiled);
