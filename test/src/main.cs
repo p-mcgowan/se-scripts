@@ -16,6 +16,6 @@ public void Main() {
     // Echo($"{connector.Position}");
     Vector3D pos = connector.GetPosition();
     Vector3D vec = new Vector3D(connector.GetPosition() + 100 * connector.WorldMatrix.Forward);
-    // get block coords and facing
     Me.GetSurface(0).WriteText($"pos: {pos}\n{GpsAt(pos, "conn")}\nvec: {vec}\n{GpsAt(vec, "approach")}");
+    // get block coords and facing
 }
