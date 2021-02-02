@@ -1,5 +1,4 @@
-/*
-; CustomData config:
+const string customDataInit = @"; CustomData config:
 ; the [global] section applies to the whole program, or sets defaults for shared
 ;
 ; For surface selection, use 'name <number>' eg: 'Cockpit <1>' - by default, the
@@ -24,7 +23,7 @@
 ;healthIgnore=
 ;healthOnHud=false
 
-[LCD Panel Status]
+[Programmable block <0>]
 output=
 |Jump drives: {power.jumpDrives}
 |{power.jumpBar}
@@ -47,7 +46,7 @@ output=
 |Cargo: {cargo.fullString}
 |{cargo.bar}
 |{cargo.items}
-*/
+";
 
 public StringBuilder log = new StringBuilder("");
 Dictionary<string, DrawingSurface> drawables = new Dictionary<string, DrawingSurface>();
@@ -73,6 +72,7 @@ public Program() {
     if (!Configure()) {
         return;
     }
+    RefetchBlocks();
 }
 
 public void Main(string argument, UpdateType updateType) {

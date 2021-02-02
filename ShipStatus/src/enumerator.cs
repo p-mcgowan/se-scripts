@@ -19,7 +19,7 @@ public IEnumerator<string> RunStuffOverTime()  {
     string content;
     string outputName;
 
-    while (templates.Any()) {
+    while (templates.Count > 0) {
         outputName = templates.Keys.Last();
         templates.Pop(templates.Keys.Last(), out content);
 

@@ -98,7 +98,7 @@ public class ProductionDetails {
     }
 
     public void Refresh() {
-        if (!this.productionBlocks.Any()) {
+        if (this.productionBlocks.Count == 0) {
             return;
         }
 

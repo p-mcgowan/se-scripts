@@ -27,12 +27,15 @@ public class Config {
     }
 }
 
-
 public bool ParseCustomData() {
     MyIniParseResult result;
     if (!ini.TryParse(Me.CustomData, out result)) {
         Echo($"Failed to parse config:\n{result}");
         return false;
+    }
+
+    if (Me.CustomData == "") {
+        Me.CustomData = customDataInit;
     }
 
     config.Clear();
@@ -41,6 +44,7 @@ public bool ParseCustomData() {
     ini.GetSections(strings);
     template.Reset();
     templates.Clear();
+    config.Set("airlock", "true");
 
     string themeConfig = "";
 

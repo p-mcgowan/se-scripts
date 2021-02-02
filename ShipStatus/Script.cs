@@ -1,5 +1,4 @@
-/*
-; CustomData config:
+const string customDataInit = @"; CustomData config:
 ; the [global] section applies to the whole program, or sets defaults for shared
 ;
 ; For surface selection, use 'name <number>' eg: 'Cockpit <1>' - by default, the
@@ -24,7 +23,7 @@
 ;healthIgnore=
 ;healthOnHud=false
 
-[LCD Panel Status]
+[Programmable block <0>]
 output=
 |Jump drives: {power.jumpDrives}
 |{power.jumpBar}
@@ -47,7 +46,7 @@ output=
 |Cargo: {cargo.fullString}
 |{cargo.bar}
 |{cargo.items}
-*/
+";
 
 public StringBuilder log = new StringBuilder("");
 Dictionary<string, DrawingSurface> drawables = new Dictionary<string, DrawingSurface>();
@@ -73,6 +72,7 @@ public Program() {
     if (!Configure()) {
         return;
     }
+    RefetchBlocks();
 }
 
 public void Main(string argument, UpdateType updateType) {
@@ -464,12 +464,15 @@ public class Config {
     }
 }
 
-
 public bool ParseCustomData() {
     MyIniParseResult result;
     if (!ini.TryParse(Me.CustomData, out result)) {
         Echo($"Failed to parse config:\n{result}");
         return false;
+    }
+
+    if (Me.CustomData == "") {
+        Me.CustomData = customDataInit;
     }
 
     config.Clear();
@@ -478,6 +481,7 @@ public bool ParseCustomData() {
     ini.GetSections(strings);
     template.Reset();
     templates.Clear();
+    config.Set("airlock", "true");
 
     string themeConfig = "";
 
@@ -660,7 +664,7 @@ public IEnumerator<string> RunStuffOverTime()  {
     string content;
     string outputName;
 
-    while (templates.Any()) {
+    while (templates.Count > 0) {
         outputName = templates.Keys.Last();
         templates.Pop(templates.Keys.Last(), out content);
 
@@ -1342,7 +1346,7 @@ public class ProductionDetails {
     }
 
     public void Refresh() {
-        if (!this.productionBlocks.Any()) {
+        if (this.productionBlocks.Count == 0) {
             return;
         }
 
@@ -1622,7 +1626,7 @@ public class DrawingSurface {
         if (colour == "" || colour == null) {
             return null;
         }
-        if (!colour.Contains(',')) {
+        if (!colour.Contains(",")) {
             return DrawingSurface.stringToColour.Get(colour);
         }
 
@@ -2414,6 +2418,8 @@ public static System.Globalization.NumberFormatInfo GetCustomFormat() {
 }
 
 public static class Util {
+    public static StringBuilder sb = new StringBuilder("");
+
     public static System.Text.RegularExpressions.Regex surfaceExtractor =
         Util.Regex(@"\s<(\d+)>$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
@@ -2427,7 +2433,12 @@ public static class Util {
             return "###,,0,K";
         }
 
-        return string.Concat(Enumerable.Repeat("#", $"{n}".Length)) + "0,,#M";
+        sb.Clear();
+        for (int i = $"{n}".Length; i > 0; --i) {
+            sb.Append("#");
+        }
+
+        return $"{sb}0,,#M";
     }
 
     public static string FormatNumber(VRage.MyFixedPoint input, string fmt = null) {
@@ -2450,7 +2461,7 @@ public static class Util {
 
     public static string ToItemName(MyProductionItem i) {
         string id = i.BlueprintId.ToString();
-        if (id.Contains('/')) {
+        if (id.Contains("/")) {
             return id.Split('/')[1];
         }
         return id;
