@@ -112,7 +112,7 @@ public class DrawingSurface {
         if (colour == "" || colour == null) {
             return null;
         }
-        if (!colour.Contains(',')) {
+        if (!colour.Contains(",")) {
             return DrawingSurface.stringToColour.Get(colour);
         }
 

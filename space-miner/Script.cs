@@ -44,7 +44,7 @@ float rotorAngleThresholdRad = 0.05f;
 float rotorSpinSpeedRPM = 1.6f;
 float pistonDrillSpeed = -0.045f;
 float pistonGrindSpeed = -0.5f;
-float pistonUpSpeed = 3f;
+float pistonUpSpeed = 2f;
 float pistonDownFindConnectorSpeed = -0.05f;
 float pistonDistanceThreshold = 0.1f;
 
@@ -193,6 +193,10 @@ public string Drill() {
         }
         return "Drill:realign";
     }
+    if (piston.Velocity == 0f) {
+        piston.Velocity = pistonDrillSpeed;
+        return "Drill:mine";
+    }
 
     return state;
 }
@@ -292,7 +296,7 @@ public bool SensorDetecting() {
     entities.Clear();
     sensor.DetectedEntities(entities);
 
-    return entities.Count() != 0;
+    return entities.Count != 0;
 }
 
 public void Disconnect() {

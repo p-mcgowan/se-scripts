@@ -174,7 +174,7 @@ public class DrawingSurface {
         if (colour == "" || colour == null) {
             return null;
         }
-        if (!colour.Contains(',')) {
+        if (!colour.Contains(",")) {
             return DrawingSurface.stringToColour.Get(colour);
         }
 
@@ -675,6 +675,8 @@ public static System.Globalization.NumberFormatInfo GetCustomFormat() {
 }
 
 public static class Util {
+    public static StringBuilder sb = new StringBuilder("");
+
     public static System.Text.RegularExpressions.Regex surfaceExtractor =
         Util.Regex(@"\s<(\d+)>$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
@@ -688,7 +690,12 @@ public static class Util {
             return "###,,0,K";
         }
 
-        return string.Concat(Enumerable.Repeat("#", $"{n}".Length)) + "0,,#M";
+        sb.Clear();
+        for (int i = $"{n}".Length; i > 0; --i) {
+            sb.Append("#");
+        }
+
+        return $"{sb}0,,#M";
     }
 
     public static string FormatNumber(VRage.MyFixedPoint input, string fmt = null) {
@@ -711,7 +718,7 @@ public static class Util {
 
     public static string ToItemName(MyProductionItem i) {
         string id = i.BlueprintId.ToString();
-        if (id.Contains('/')) {
+        if (id.Contains("/")) {
             return id.Split('/')[1];
         }
         return id;

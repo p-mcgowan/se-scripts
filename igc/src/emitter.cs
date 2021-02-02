@@ -6,14 +6,19 @@ public class IGCEmitter {
     public IMyUnicastListener unicastListener;
     public Dictionary<string, List<Action<MyIGCMessage>>> unicastHandlers;
     public Dictionary<string, long> receievers;
+    public bool verbose;
+    public StringBuilder logs;
 
-    public IGCEmitter(Program p) {
+    public IGCEmitter(Program p, bool verbose = false, StringBuilder logs = null) {
         this.p = p;
         this.id = this.p.IGC.Me;
         this.handlers = new Dictionary<string, List<Action<MyIGCMessage>>>();
         this.listeners = new Dictionary<string, IMyBroadcastListener>();
         this.unicastHandlers = new Dictionary<string, List<Action<MyIGCMessage>>>();
         this.receievers = new Dictionary<string, long>();
+        this.verbose = verbose;
+        this.logs = logs ?? new StringBuilder("");
+        this.unicastListener = this.p.IGC.UnicastListener;
     }
 
     public IGCEmitter Emit<TData>(string channel, TData data, long target = -1) {
@@ -26,62 +31,109 @@ public class IGCEmitter {
         return this;
     }
 
-    public IGCEmitter OnUnicast(string channel, Action<MyIGCMessage> handler) {
-        this.unicastListener = this.p.IGC.UnicastListener;
-        this.unicastListener.SetMessageCallback(channel);
-        this.AddHandler(channel, handler, this.unicastHandlers);
+    public IGCEmitter On(string channel, Action<MyIGCMessage> handler, bool unicast = false) {
+        if (unicast) {
+            this.unicastListener.SetMessageCallback(channel);
+            this.AddHandler(channel, handler, this.unicastHandlers);
+        } else {
+            this.AddListener(channel);
+            this.AddHandler(channel, handler, this.handlers);
+        }
+
+        if (this.verbose) {
+            this.p.Echo($"[{this.p.Me.CubeGrid.CustomName}] listening on {channel}");
+        }
 
         return this;
     }
 
-    public IGCEmitter On(string channel, Action<MyIGCMessage> handler) {
-        this.AddListener(channel);
-        this.AddHandler(channel, handler, this.handlers);
+    public IGCEmitter Once(string channel, Action<MyIGCMessage> handler, bool unicast = false) {
+        Action<MyIGCMessage> wrapper = null;
 
-        this.p.Echo($"[{this.id}] listening on {channel}");
+        wrapper = (MyIGCMessage msg) => {
+            handler(msg);
+            this.Off(channel, wrapper, unicast);
+        };
+        this.On(channel, wrapper, unicast);
 
         return this;
     }
 
-    public void Off(string channel) {
-        this.listeners.Remove(channel);
-        this.handlers.Remove(channel);
+    public bool Off(string channel, Action<MyIGCMessage> handler = null, bool unicast = false) {
+        List<Action<MyIGCMessage>> actions = null;
+        var msgHandles = unicast ? this.unicastHandlers : this.handlers;
+
+        if (!msgHandles.TryGetValue(channel, out actions) || actions.Count == 0) {
+            return false;
+        }
+
+        if (handler == null) {
+            actions.Clear();
+        } else {
+            actions.RemoveAll(h => h == handler);
+        }
+
+        if (actions.Count == 0) {
+            if (unicast) {
+                this.unicastListener.DisableMessageCallback();
+            } else {
+                this.listeners[channel].DisableMessageCallback();
+            }
+        }
+
+        return true;
     }
 
-    public void Process(string callbackString = "") {
+    public bool Process(string callbackString = "") {
+        bool hadMessage = false;
         List<Action<MyIGCMessage>> callbacks;
+        IMyBroadcastListener listener;
+        MyIGCMessage msg;
 
         foreach (var kv in this.listeners) {
             string channel = kv.Key;
-            IMyBroadcastListener listener = kv.Value;
+            listener = kv.Value;
 
             if (listener.HasPendingMessage && this.handlers.TryGetValue(channel, out callbacks)) {
                 while (listener.HasPendingMessage) {
-                    MyIGCMessage msg = listener.AcceptMessage();
-                    foreach (Action<MyIGCMessage> handle in callbacks) {
-                        handle(msg);
+                    msg = listener.AcceptMessage();
+                    this.logs.Append($"[{this.Who(msg.Source)}] {msg.Tag}: {msg.Data}\n");
+
+                    for (int cbIndex = callbacks.Count - 1; cbIndex >= 0; --cbIndex) {
+                        callbacks[cbIndex](msg);
                     }
+                    hadMessage = true;
                 }
             }
         }
 
-        if (this.unicastListener != null) {
-            if (this.unicastListener.HasPendingMessage) {
-                while (this.unicastListener.HasPendingMessage) {
-                    MyIGCMessage msg = this.unicastListener.AcceptMessage();
-                    if (this.unicastHandlers.TryGetValue(msg.Tag, out callbacks)) {
-                        foreach (Action<MyIGCMessage> handle in callbacks) {
-                            handle(msg);
-                        }
-                    }
+        while (this.unicastListener.HasPendingMessage) {
+            msg = this.unicastListener.AcceptMessage();
+            this.logs.Append($"[{this.Who(msg.Source)}] {msg.Tag}: {msg.Data}\n");
+
+            if (this.unicastHandlers.TryGetValue(msg.Tag, out callbacks)) {
+                for (int cbIndex = callbacks.Count - 1; cbIndex >= 0; --cbIndex) {
+                    callbacks[cbIndex](msg);
                 }
+                hadMessage = true;
             }
         }
+
+        return hadMessage;
     }
 
-    public void Log(string message) {
-        this.p.Me.GetSurface(0).WriteText(message + "\n", true);
-        this.p.Echo(message);
+    public bool HasMessages() {
+        if (this.unicastListener.HasPendingMessage) {
+            return true;
+        }
+
+        foreach (var kv in this.listeners) {
+            if (kv.Value.HasPendingMessage) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public void Hello(string response = null) {
@@ -92,13 +144,16 @@ public class IGCEmitter {
                 string who = msg.Data.ToString();
                 this.receievers[who] = msg.Source;
                 this.Emit("HELLO", response, msg.Source);
-                Log($"[{msg.Tag}] <= {who}");
             })
-            .OnUnicast("HELLO", (MyIGCMessage msg) => {
+            .On("HELLO", (MyIGCMessage msg) => {
                 string who = msg.Data.ToString();
                 this.receievers[who] = msg.Source;
-                Log($"[{msg.Tag}] <= {who}");
-            });
+
+                if (this.verbose) {
+                    this.p.Echo($"hello from {who}");
+                }
+            }, unicast: true);
+
 
         this.Emit("HELLO", response);
     }
@@ -109,7 +164,7 @@ public class IGCEmitter {
         this.listeners[channel] = listener;
     }
 
-    public void AddHandler(string channel, Action<MyIGCMessage> handler,  Dictionary<string, List<Action<MyIGCMessage>>> handlers) {
+    public void AddHandler(string channel, Action<MyIGCMessage> handler, Dictionary<string, List<Action<MyIGCMessage>>> handlers) {
         List<Action<MyIGCMessage>> list;
         if (!handlers.TryGetValue(channel, out list)) {
             handlers[channel] = new List<Action<MyIGCMessage>>();
