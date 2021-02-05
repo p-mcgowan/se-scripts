@@ -212,12 +212,20 @@ public class DrawingSurface {
     }
 
     public DrawingSurface SaveCursor() {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
         this.savedCursor = this.cursor;
 
         return this;
     }
 
     public DrawingSurface SetCursor(float? x, float? y) {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
         this.cursor.X = x ?? this.cursor.X;
         this.cursor.Y = y ?? this.cursor.Y;
 

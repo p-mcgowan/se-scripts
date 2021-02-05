@@ -225,12 +225,20 @@ public class DrawingSurface {
     }
 
     public DrawingSurface SaveCursor() {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
         this.savedCursor = this.cursor;
 
         return this;
     }
 
     public DrawingSurface SetCursor(float? x, float? y) {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
         this.cursor.X = x ?? this.cursor.X;
         this.cursor.Y = y ?? this.cursor.Y;
 
@@ -738,7 +746,7 @@ public class Template {
         this.Register("midBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.MidBar(options));
         this.Register("multiBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.MultiBar(options));
         this.Register("right", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.SetCursor(ds.width, null));
-        this.Register("center", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.SetCursor(0.5f * ds.width, null));
+        this.Register("center", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.SetCursor(ds.width / 2f, null));
     }
 
     public void Clear() {
