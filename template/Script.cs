@@ -187,7 +187,7 @@ public class DrawingSurface {
         if (colour == "" || colour == null) {
             return null;
         }
-        if (!colour.Contains(',')) {
+        if (!colour.Contains(",")) {
             return DrawingSurface.stringToColour.Get(colour);
         }
 
@@ -738,6 +738,7 @@ public class Template {
         this.Register("midBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.MidBar(options));
         this.Register("multiBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.MultiBar(options));
         this.Register("right", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.SetCursor(ds.width, null));
+        this.Register("center", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.SetCursor(0.5f * ds.width, null));
     }
 
     public void Clear() {
@@ -979,6 +980,8 @@ public static System.Globalization.NumberFormatInfo GetCustomFormat() {
 }
 
 public static class Util {
+    public static StringBuilder sb = new StringBuilder("");
+
     public static System.Text.RegularExpressions.Regex surfaceExtractor =
         Util.Regex(@"\s<(\d+)>$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
@@ -992,7 +995,12 @@ public static class Util {
             return "###,,0,K";
         }
 
-        return string.Concat(Enumerable.Repeat("#", $"{n}".Length)) + "0,,#M";
+        sb.Clear();
+        for (int i = $"{n}".Length; i > 0; --i) {
+            sb.Append("#");
+        }
+
+        return $"{sb}0,,#M";
     }
 
     public static string FormatNumber(VRage.MyFixedPoint input, string fmt = null) {
@@ -1015,7 +1023,7 @@ public static class Util {
 
     public static string ToItemName(MyProductionItem i) {
         string id = i.BlueprintId.ToString();
-        if (id.Contains('/')) {
+        if (id.Contains("/")) {
             return id.Split('/')[1];
         }
         return id;
