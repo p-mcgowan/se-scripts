@@ -2447,7 +2447,7 @@ public static class Util {
             sb.Append("#");
         }
 
-        return $"{sb}0,,#M";
+        return $"{sb}0,,.0M";
     }
 
     public static string FormatNumber(VRage.MyFixedPoint input, string fmt = null) {
