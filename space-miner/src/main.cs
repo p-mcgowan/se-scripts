@@ -1,7 +1,7 @@
 /*
 [blocks]
 connector=Miner Connector Drill
-landingGear=Miner Landing Gear TR
+landingGears=Miner Landing Gears
 merge=Miner Merge Block
 piston=Miner Piston
 projector=Miner Projector
@@ -24,11 +24,11 @@ MyIni ini = new MyIni();
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
 List<MyDetectedEntityInfo> entities = new List<MyDetectedEntityInfo>();
 
-IMyLandingGear landingGear;
 IMyPistonBase piston;
 IMyShipConnector connector;
 IMyProjector projector;
 IMyBlockGroup welders;
+IMyBlockGroup landingGears;
 IMyBlockGroup grinders;
 IMyBlockGroup drills;
 IMyShipMergeBlock merge;
@@ -44,7 +44,7 @@ float rotorAngleThresholdRad = 0.05f;
 float rotorSpinSpeedRPM = 1.6f;
 float pistonDrillSpeed = -0.045f;
 float pistonGrindSpeed = -0.5f;
-float pistonUpSpeed = 2f;
+float pistonUpSpeed = 1f;
 float pistonDownFindConnectorSpeed = -0.05f;
 float pistonDistanceThreshold = 0.1f;
 
@@ -65,9 +65,9 @@ public void Main(string argument, UpdateType updateSource) {
         return;
     }
 
-    if (argument == "stop" || !landingGear.IsLocked) {
+    if (argument == "stop" || !IsLandingGearLocked()) {
         Stop(true);
-        DrawStatus(landingGear.IsLocked ? "Stopped" : "Unlocked", updateSource);
+        DrawStatus(IsLandingGearLocked() ? "Stopped" : "Unlocked", updateSource);
         return;
     }
 
@@ -150,6 +150,10 @@ public string Retract() {
     }
 
     piston.Velocity = pistonUpSpeed;
+    if (merged && connected) {
+        Disconnect();
+    }
+
     return "Retract:reposition up";
 }
 
@@ -168,9 +172,13 @@ public string Drill() {
         state = "Drill:connect";
     }
     if (PistonNearMin() && merged && connected && projector.RemainingBlocks == 0) {
-        Unmerge();
-        piston.Velocity = pistonUpSpeed;
-        return "Drill:reposition";
+        if (DrillsNearEmpty()) {
+            Unmerge();
+            piston.Velocity = pistonUpSpeed;
+            return "Drill:reposition";
+        }
+
+        return "Drill:emptying";
     }
     if (PistonNearMax() && !merged) {
         merge.Enabled = true;
@@ -254,7 +262,7 @@ public void Stop(bool emergency = false) {
         rotor.RotorLock = false;
         rotor.LowerLimitRad = 0f;
         rotor.UpperLimitRad = 0f;
-        rotor.TargetVelocityRPM = rotorSpinSpeedRPM;
+        rotor.TargetVelocityRPM = 0.3f * rotorSpinSpeedRPM;
     }
 
     projector.Enabled = false;
@@ -287,6 +295,33 @@ public void SetOnOffBlockGroup(IMyBlockGroup blockGroup, bool enabled) {
     foreach (IMyFunctionalBlock block in blocks) {
         block.Enabled = enabled;
     }
+}
+
+public bool DrillsNearEmpty() {
+    blocks.Clear();
+    drills.GetBlocks(blocks);
+    foreach (IMyShipDrill drill in blocks) {
+        var inv = drill.GetInventory(0);
+        var pct = (float)inv.CurrentVolume / (float)inv.MaxVolume;
+        Echo($"{pct}");
+        if (pct > 0.1f) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+public bool IsLandingGearLocked() {
+    blocks.Clear();
+    landingGears.GetBlocks(blocks);
+    foreach (IMyLandingGear block in blocks) {
+        if (block.IsLocked) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 public bool SensorDetecting() {
@@ -330,7 +365,7 @@ public bool ParseCustomData() {
         return false;
     }
 
-    landingGear = (IMyLandingGear)GridTerminalSystem.GetBlockWithName(ini.Get("blocks", "landingGear").ToString());
+    landingGears = (IMyBlockGroup)GridTerminalSystem.GetBlockGroupWithName(ini.Get("blocks", "landingGears").ToString());
     piston = (IMyPistonBase)GridTerminalSystem.GetBlockWithName(ini.Get("blocks", "piston").ToString());
     connector = (IMyShipConnector)GridTerminalSystem.GetBlockWithName(ini.Get("blocks", "connector").ToString());
     projector = (IMyProjector)GridTerminalSystem.GetBlockWithName(ini.Get("blocks", "projector").ToString());
@@ -355,8 +390,8 @@ public bool ParseCustomData() {
 public string BlocksNotFound() {
     string notFound = "";
 
-    if (landingGear == null) {
-        notFound += "landingGear, ";
+    if (landingGears == null) {
+        notFound += "landingGears, ";
     }
     if (piston == null) {
         notFound += "piston, ";
