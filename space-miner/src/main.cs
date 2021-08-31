@@ -262,7 +262,8 @@ public void Stop(bool emergency = false) {
         rotor.RotorLock = false;
         rotor.LowerLimitRad = 0f;
         rotor.UpperLimitRad = 0f;
-        rotor.TargetVelocityRPM = 0.3f * rotorSpinSpeedRPM;
+        piston.Velocity = -2 * pistonUpSpeed;
+        rotor.TargetVelocityRPM = rotorSpinSpeedRPM;
     }
 
     projector.Enabled = false;
