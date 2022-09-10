@@ -219,7 +219,7 @@ textCircle
 
 ```ini
 [global]
-config=colour:0,60,100;bgColour=10,10,10
+config=colour=0,60,100;bgColour=10,10,10
 
 [Miner Control Seat <1>]
 output=
