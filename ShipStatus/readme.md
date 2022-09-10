@@ -150,7 +150,7 @@ airlockDoorMatch|string|Door pattern to match (regex)|Door(.*)
 airlockDoorExclude|string|Door pattern to exclude|Hangar
 healthIgnore|string|Pattern to ignore (eg Thrust,Wheel)|none
 healthOnHud|true/false|Enable "Show on HUD" for damaged blocks|false
-theme|string|Configure all displays to use a theme (see config template var below)|none
+config|string|Configure all displays to use a theme (see config template var below)|none
 
 
 The template vars available by default are:
@@ -219,7 +219,7 @@ textCircle
 
 ```ini
 [global]
-theme=colour:0,60,100;bgColour=10,10,10
+config=colour:0,60,100;bgColour=10,10,10
 
 [Miner Control Seat <1>]
 output=
@@ -285,7 +285,7 @@ output=
 
 ```ini
 [global]
-theme=colour=20,40,60;bgColour=black;size=0.6
+config=colour=20,40,60;bgColour=black;size=0.6
 
 [Programmable block <0>]
 output=
@@ -325,7 +325,7 @@ output=
 
 ```ini
 [global]
-theme=colour=20,40,60;bgColour=black;size=0.6
+config=colour=20,40,60;bgColour=black;size=0.6
 
 [LCD Panel 0:1]
 output=
@@ -347,7 +347,7 @@ output=
 
 ```ini
 [global]
-theme=colour=20,40,60;bgColour=black;size=0.6
+config=colour=20,40,60;bgColour=black;size=0.6
 
 [LCD Panel 0:2]
 output=
@@ -367,7 +367,7 @@ output=
 
 ```ini
 [global]
-theme=colour=20,40,60;bgColour=black;size=0.6
+config=colour=20,40,60;bgColour=black;size=0.6
 
 [LCD Panel 0:3]
 output=
@@ -405,7 +405,7 @@ output=
 
 ```ini
 [global]
-theme=colour=20,40,60;bgColour=black;size=0.6
+config=colour=20,40,60;bgColour=black;size=0.6
 
 [LCD Panel 1:3]
 output=

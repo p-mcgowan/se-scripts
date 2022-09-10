@@ -523,8 +523,8 @@ public bool ParseCustomData() {
         if (ini.Get("global", "getAllGrids").TryGetString(out setting)) {
             config.Set("getAllGrids", setting);
         }
-        if (ini.Get("global", "theme").TryGetString(out setting)) {
-            config.Set("theme", setting);
+        if (ini.Get("global", "config").TryGetString(out setting)) {
+            config.Set("config", setting);
             themeConfig = $"{{config:{setting}}}\n";
         }
     }
@@ -714,10 +714,10 @@ public IEnumerator<string> RunStuffOverTime()  {
     }
 
     DrawingSurface.Options themeOpts = null;
-    string theme = config.Get("theme");
+    string screenConfig = config.Get("config");
 
-    if (theme != null) {
-        themeOpts = template.StringToOptions(theme);
+    if (screenConfig != null) {
+        themeOpts = template.StringToOptions(screenConfig);
     }
 
     for (int j = 0; j < drawables.Count; ++j) {
@@ -729,7 +729,7 @@ public IEnumerator<string> RunStuffOverTime()  {
 
         yield return $"render {dw.Key}";
     }
-    config.Set("theme", null);
+    config.Set("config", null);
 
     yield break;
 }

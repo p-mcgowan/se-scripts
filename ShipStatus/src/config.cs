@@ -86,8 +86,8 @@ public bool ParseCustomData() {
         if (ini.Get("global", "getAllGrids").TryGetString(out setting)) {
             config.Set("getAllGrids", setting);
         }
-        if (ini.Get("global", "theme").TryGetString(out setting)) {
-            config.Set("theme", setting);
+        if (ini.Get("global", "config").TryGetString(out setting)) {
+            config.Set("config", setting);
             themeConfig = $"{{config:{setting}}}\n";
         }
     }

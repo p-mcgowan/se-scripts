@@ -69,10 +69,10 @@ public IEnumerator<string> RunStuffOverTime()  {
     }
 
     DrawingSurface.Options themeOpts = null;
-    string theme = config.Get("theme");
+    string screenConfig = config.Get("config");
 
-    if (theme != null) {
-        themeOpts = template.StringToOptions(theme);
+    if (screenConfig != null) {
+        themeOpts = template.StringToOptions(screenConfig);
     }
 
     for (int j = 0; j < drawables.Count; ++j) {
@@ -84,7 +84,7 @@ public IEnumerator<string> RunStuffOverTime()  {
 
         yield return $"render {dw.Key}";
     }
-    config.Set("theme", null);
+    config.Set("config", null);
 
     yield break;
 }
