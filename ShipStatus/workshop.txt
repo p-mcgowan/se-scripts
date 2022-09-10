@@ -1,22 +1,41 @@
 [h1]Space Engineers Ship Status Script[/h1]
 
 A configurable ship status display which renders sprites to different surfaces using a very flexible templating engine.
-Includes auto door closing and airlock grouping
+Includes auto door closing and airlock grouping.
+Reads from CustomData (see [url=https://github.com/malware-dev/MDK-SE/wiki/Handling-configuration-and-storage]Malware's MDK[/url]), parsing a template and a display target section. Easily allows for customization and extension to render awesome screens.
 
 Makes use of the following to draw sprites:
-[url=https://github.com/p-mcgowan/se-scripts/tree/master/template]template engine (github)[/url]
 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=2314207999]template engine (workshop)[/url]
-[url=https://github.com/p-mcgowan/se-scripts/tree/master/graphics]graphics (github)[/url]
 [url=https://steamcommunity.com/sharedfiles/filedetails/?id=2314207214]graphics (workshop)[/url]
-
-Reads from CustomData, parsing a template and a display target section. Easily allows for customization and extension to render awesome screens.
-
-The templates have some built-in functionality, but you can also build your own rendering methods.
-
-Images generated with ini format CustomData (see [url=https://github.com/malware-dev/MDK-SE/wiki/Handling-configuration-and-storage]Malware's MDK[/url]):
 
 [h1]Examples[/h1]
 For a list of examples with images, see [url=https://github.com/p-mcgowan/se-scripts/tree/master/ShipStatus#examples]the example page[/url] (wouldn't fit here).
+
+Pasting this into the CustomData of the programmable block would configure the cockpit of a ship to look like the last image above:
+[code]
+[global]
+config=size=0.5;bgColour=15,15,10;colour=200,200,200
+
+[Cockpit <0>]
+output=
+|Cargo: {cargo.fullString}
+|{cargo.bar}
+|Reactors: {power.reactors}, Batteries: {power.batteries}
+|{power.batteryBar}
+|Output: {power.reactorOutputMW} MW @ ({power.reactorUr} Ur)
+|Energy IO: {power.ioString}
+|{power.ioBar}
+|{power.ioLegend}
+
+[Cockpit <2>]
+output=
+|Ship status: {health.status}
+|{health.blocks}
+
+[Cockpit <1>]
+output=
+|{cargo.items}
+[/code]
 
 [h1]Api listing[/h1]
 Global config settings:
@@ -33,7 +52,7 @@ Global config settings:
 [tr][td]airlockDoorExclude[/td][td]string[/td][td]Door pattern to exclude[/td][td]Hangar[/td][/tr]
 [tr][td]healthIgnore[/td][td]string[/td][td]Pattern to ignore (eg Thrust,Wheel)[/td][td]none[/td][/tr]
 [tr][td]healthOnHud[/td][td]true/false[/td][td]Enable "Show on HUD" for damaged blocks[/td][td]false[/td][/tr]
-[tr][td]config[/td][td]string[/td][td]Configure all displays to use a theme (see config template var below)[/td][td]none[/td][/tr]
+[tr][td]theme[/td][td]string[/td][td]Configure all displays to use a theme (see config template var below)[/td][td]none[/td][/tr]
 [/table]
 
 The template vars available by default are:
@@ -88,14 +107,3 @@ bgColour: set the background colour[/td][td]Configure the display (only runs onc
 [tr][td]production.blocks[/td][td]none[/td][td]List of assemblers and refineries, with a status icon and their queue (if any).[/td][/tr]
 [tr][td]production.status[/td][td]none[/td][td]Overall production status (power saving, enabled, halted). The production class will turn on / off production blocks if they idle for a long time, then check every 4 minutes to see if they need to start up again.[/td][/tr]
 [/table]
-
-You can also register any render method you want, and use any of the values in each of the status programs (Cargo, Production, etc..).
-
-Also available from the [url=https://github.com/p-mcgowan/se-scripts/tree/master/template]templating script[/url]):
-bar
-circle
-midBar
-multiBar
-text
-textCircle
-config
