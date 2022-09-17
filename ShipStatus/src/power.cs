@@ -8,10 +8,12 @@ public class PowerDetails {
     public Template template;
     public List<IMyTerminalBlock> powerProducerBlocks;
     public List<IMyTerminalBlock> jumpDriveBlocks;
+    public List<IMyTerminalBlock> consumers;
     public List<MyInventoryItem> items;
     public List<float> ioFloats;
     public List<Color> ioColours;
     public Dictionary<string, Color> ioLegendNames;
+    public Dictionary<string, float> consumerDict;
 
     public float batteryCurrent;
     public float batteryInput;
@@ -52,13 +54,17 @@ public class PowerDetails {
     public int turbinesDisabled;
     public MyFixedPoint reactorUranium;
 
+    public MyDefinitionId electricity = new MyDefinitionId(typeof(VRage.Game.ObjectBuilders.Definitions.MyObjectBuilder_GasProperties), "Electricity");
+    public MyDefinitionId oxygen = new MyDefinitionId(typeof(VRage.Game.ObjectBuilders.Definitions.MyObjectBuilder_GasProperties), "Oxygen");
+    public MyDefinitionId hydrogen = new MyDefinitionId(typeof(VRage.Game.ObjectBuilders.Definitions.MyObjectBuilder_GasProperties), "Hydrogen");
     public float battChargeMax = 12f;
-
     public Color reactorColour = Color.Lighten(Color.Blue, 0.05);
     public Color hEnginesColour = DrawingSurface.stringToColour["dimred"];
     public Color batteriesColour = DrawingSurface.stringToColour["dimgreen"];
     public Color turbinesColour = Color.Darken(DrawingSurface.stringToColour["dimyellow"], 0.1);
     public Color solarsColour = Color.Darken(Color.Cyan, 0.8);
+    public char[] splitNewline = new[] { '\n' };
+    public bool shouldCheckConsumers = true;
 
     public PowerDetails(Program program, Template template = null) {
         this.program = program;
@@ -79,17 +85,15 @@ public class PowerDetails {
         };
         this.powerProducerBlocks = new List<IMyTerminalBlock>();
         this.jumpDriveBlocks = new List<IMyTerminalBlock>();
+        this.consumers = new List<IMyTerminalBlock>();
         this.ioLegendNames = new Dictionary<string, Color>();
+        this.consumerDict = new Dictionary<string, float>();
 
         this.Reset();
     }
 
     public void Reset() {
         this.Clear();
-
-        this.powerProducerBlocks.Clear();
-        this.jumpDriveBlocks.Clear();
-
         if (this.program.config.Enabled("power")) {
             this.RegisterTemplateVars();
         }
@@ -107,6 +111,7 @@ public class PowerDetails {
         this.template.Register("power.batteryMax", () => String.Format("{0:0.##}", this.batteryMax));
         this.template.Register("power.batteryOutput", () => String.Format("{0:0.##}", this.batteryOutputMW));
         this.template.Register("power.batteryOutputMax", () => String.Format("{0:0.##}", this.batteryOutputMax));
+        this.template.Register("power.consumers", this.PowerConsumers);
         this.template.Register("power.engineOutputMax", () => String.Format("{0:0.##}", this.hEngineOutputMax));
         this.template.Register("power.engineOutputMW", () => String.Format("{0:0.##}", this.hEngineOutputMW));
         this.template.Register("power.engines", () => this.hEngines.ToString());
@@ -178,9 +183,11 @@ public class PowerDetails {
         this.ClearTotals();
         this.powerProducerBlocks.Clear();
         this.jumpDriveBlocks.Clear();
+        this.consumers.Clear();
     }
 
     public void GetBlock(IMyTerminalBlock block) {
+        this.consumers.Add(block);
         if (block is IMyPowerProducer) {
             this.powerProducerBlocks.Add(block);
         } else if (block is IMyJumpDrive) {
@@ -291,6 +298,26 @@ public class PowerDetails {
             }
         }
 
+        if (this.shouldCheckConsumers) {
+            this.consumerDict.Clear();
+            MyResourceSinkComponent resourceSink;
+
+            foreach (IMyTerminalBlock block in this.consumers) {
+                if (block.Components.TryGet<MyResourceSinkComponent>(out resourceSink)) {
+                    float powerConsumption = resourceSink.CurrentInputByType(this.electricity);
+
+                    if (!this.consumerDict.ContainsKey(block.CustomName)) {
+                        this.consumerDict.Add(block.CustomName, powerConsumption);
+                    } else {
+                        this.consumerDict[block.CustomName] = this.consumerDict[block.CustomName] + powerConsumption;
+                    }
+                }
+            }
+
+            this.consumerDict = this.consumerDict.OrderBy(x => -x.Value).ToDictionary(x => x.Key, x => x.Value);
+        }
+        this.shouldCheckConsumers = !this.shouldCheckConsumers;
+
         this.reactorPotential = (this.reactors - this.reactorsDisabled) == 0 ? 0f : (this.reactorOutputMW / (float)(this.reactors - this.reactorsDisabled)) * (float)this.reactorsDisabled;
         this.hEnginePotential = (this.hEngines - this.hEnginesDisabled) == 0 ? 0f : (this.hEngineOutputMW / (float)(this.hEngines - this.hEnginesDisabled)) * (float)this.hEnginesDisabled;
         this.batteryPotential = (this.batteries - this.batteriesDisabled) == 0 ? 0f : (this.batteryOutputMW / (float)(this.batteries - this.batteriesDisabled)) * (float)this.batteriesDisabled;
@@ -399,6 +426,18 @@ public class PowerDetails {
         }
         string msg = text ?? options.text ?? "Reactors: ";
         ds.Text($"{msg}{this.reactors}, Output: {this.reactorOutputMW} MW, Ur: {this.reactorUranium}", options);
+    }
+
+    public void PowerConsumers(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        int max = Util.ParseInt(options.custom.Get("count") ?? "10");
+
+        foreach (var item in this.consumerDict) {
+            ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(item.Value.ToString(), textAlignment: TextAlignment.RIGHT).Newline();
+
+            if (--max == 0) {
+                return;
+            }
+        }
     }
 }
 /* POWER */
