@@ -429,7 +429,8 @@ public class PowerDetails {
         int max = Util.ParseInt(options.custom.Get("count") ?? "10");
 
         foreach (var item in this.consumerDict) {
-            ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(item.Value.ToString("0.000"), textAlignment: TextAlignment.RIGHT).Newline();
+            string kw = (item.Value * 1000).ToString("#,,# kW");
+            ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(kw, textAlignment: TextAlignment.RIGHT).Newline();
 
             if (--max == 0) {
                 return;
