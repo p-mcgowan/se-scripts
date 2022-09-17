@@ -64,7 +64,6 @@ public class PowerDetails {
     public Color turbinesColour = Color.Darken(DrawingSurface.stringToColour["dimyellow"], 0.1);
     public Color solarsColour = Color.Darken(Color.Cyan, 0.8);
     public char[] splitNewline = new[] { '\n' };
-    public bool shouldCheckConsumers = true;
 
     public PowerDetails(Program program, Template template = null) {
         this.program = program;
@@ -298,25 +297,23 @@ public class PowerDetails {
             }
         }
 
-        if (this.shouldCheckConsumers) {
-            this.consumerDict.Clear();
-            MyResourceSinkComponent resourceSink;
+        this.consumerDict.Clear();
+        MyResourceSinkComponent resourceSink;
 
-            foreach (IMyTerminalBlock block in this.consumers) {
-                if (block.Components.TryGet<MyResourceSinkComponent>(out resourceSink)) {
-                    float powerConsumption = resourceSink.CurrentInputByType(this.electricity);
+        foreach (IMyTerminalBlock block in this.consumers) {
+            if (block.Components.TryGet<MyResourceSinkComponent>(out resourceSink)) {
+                float powerConsumption = resourceSink.CurrentInputByType(this.electricity);
 
-                    if (!this.consumerDict.ContainsKey(block.CustomName)) {
-                        this.consumerDict.Add(block.CustomName, powerConsumption);
-                    } else {
-                        this.consumerDict[block.CustomName] = this.consumerDict[block.CustomName] + powerConsumption;
-                    }
+                string blockName = block.DefinitionDisplayNameText.ToString();
+                if (!this.consumerDict.ContainsKey(blockName)) {
+                    this.consumerDict.Add(blockName, powerConsumption);
+                } else {
+                    this.consumerDict[blockName] = this.consumerDict[blockName] + powerConsumption;
                 }
             }
-
-            this.consumerDict = this.consumerDict.OrderBy(x => -x.Value).ToDictionary(x => x.Key, x => x.Value);
         }
-        this.shouldCheckConsumers = !this.shouldCheckConsumers;
+
+        this.consumerDict = this.consumerDict.OrderBy(x => -x.Value).ToDictionary(x => x.Key, x => x.Value);
 
         this.reactorPotential = (this.reactors - this.reactorsDisabled) == 0 ? 0f : (this.reactorOutputMW / (float)(this.reactors - this.reactorsDisabled)) * (float)this.reactorsDisabled;
         this.hEnginePotential = (this.hEngines - this.hEnginesDisabled) == 0 ? 0f : (this.hEngineOutputMW / (float)(this.hEngines - this.hEnginesDisabled)) * (float)this.hEnginesDisabled;
