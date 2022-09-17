@@ -432,7 +432,7 @@ public class PowerDetails {
         int max = Util.ParseInt(options.custom.Get("count") ?? "10");
 
         foreach (var item in this.consumerDict) {
-            ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(item.Value.ToString(), textAlignment: TextAlignment.RIGHT).Newline();
+            ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(item.Value.ToString("0.000"), textAlignment: TextAlignment.RIGHT).Newline();
 
             if (--max == 0) {
                 return;
