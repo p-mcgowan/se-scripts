@@ -73,6 +73,9 @@ Draw()
 SaveCursor()
   store the current cursor position (for reference later)
 
+LoadCursor()
+  set the current cursor position to the saved one (or 0, 0 if not set)
+
 SetCursor(float? x, float? y)
   move the cursor to x, y
 

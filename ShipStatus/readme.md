@@ -172,6 +172,7 @@ power.batteryInputMax|none|Max battery input (MW).
 power.batteryMax|none|Max battery capacity (MWh).
 power.batteryOutput|none|Current battery output (MW).
 power.batteryOutputMax|none|Max battery output (MW).
+power.consumers|count: int|Prints top _count_ power consumers (default 10, all when _count_=0).
 power.engineOutputMax|none|Max H2 engine output (MW).
 power.engineOutputMW|none|Current H2 engine output (MW).
 power.engines|none|Count of H2 engines
@@ -212,6 +213,39 @@ text
 textCircle  
 
 ### Examples
+
+##### Main ship
+
+<img src="images/overview-with-consumer-columns.png" >
+
+```ini
+[global]
+config=colour=150,150,100;bgColour=black;size=0.5;
+
+[Transparent LCD]
+output=
+|{config:size=0.5}
+|{text:colour=120,50,50:OVERVIEW}
+|Jump drives: {power.jumpDrives}
+|{power.jumpBar}
+|Batteries: {power.batteries} {power.batteryInput} MW / {power.batteryOutput} MW
+|{power.batteryBar}
+|{power.ioString}
+|{power.ioBar}
+|{power.ioLegend}
+|
+|{text:colour=120,50,50:CONSUMERS}
+|{power.consumers:count=6}
+|
+|{text:colour=120,50,50:PRODUCTION}{setCursor:x=50%}{setCursor:x=+1.5}{text:colour=120,50,50:DAMAGE}
+|{?saveCursor}
+|{production.status}
+|{production.blocks}
+|{?setCursor:y=y;x=50%}{setCursor:x=+1.5}{saveCursor}
+|{health.status}
+|{health.blocks}
+|{setCursor:x=0}{?saveCursor}
+```
 
 ##### Mining ship
 
