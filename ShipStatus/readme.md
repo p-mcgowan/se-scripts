@@ -241,10 +241,10 @@ output=
 |{?saveCursor}
 |{production.status}
 |{production.blocks}
-|{?setCursor:y=y;x=50%}{setCursor:x=+1.5}{saveCursor}
+|{?setCursor:x=50%}{setCursor:x=+1.5}{saveCursor:y=y}
 |{health.status}
 |{health.blocks}
-|{setCursor:x=0}{?saveCursor}
+|{?setCursor:x=0;y=~y}{saveCursor}
 ```
 
 ##### Mining ship

@@ -79,7 +79,7 @@ The template includes these built in methods:
 
 Template var name|Options|Description
 ---|---|---
-config| font: set the font <br/>size: set the font size <br/>textPadding: set the padding <br/>colour: set the text colour <br/>bgColour: set the background colour |Configure the display (only runs once)
+config|font: set the font <br/>size: set the font size <br/>textPadding: set the padding <br/>colour: set the text colour <br/>bgColour: set the background colour |Configure the display (only runs once)
 text|text: string of text  <br/>colour: &lt;colour argument> (see below)  <br/>textAlignment: "center", "left", "right"  <br/>scale: a numeric scale factor|basic text rendering
 right|none|Set the alignment to the right for the rest of the line
 textCircle|colour: &lt;colour argument><br/>outline: if true, will not fill the circle|a small circle inline with text
@@ -87,7 +87,7 @@ circle| size: numeric size in pixels<br/>colour: &lt;colour argument><br/>outlin
 bar| pct: percent value from 0 to 1 (eg 0.24)<br/>width: width in pixels (default to width of screen or space left on line)<br/>height: height in pixels (defaults to text height)<br/>fillColour: &lt;colour argument><br/>text: string of text<br/>textColour: &lt;colour argument><br/>bgColour: &lt;colour argument><br/>textAlignment: "center", "left", "right"<br/>pad: percentage padding (defaults to 0.1)|a percent bar
 midBar| net: plus or minus number<br/>low: positive lowest value (will be used with net / low)<br/>high: positive highest value (will be used with net / high)<br/>width: width in pixels (default to width of screen or space left on line)<br/>height: height in pixels (defaults to text height)<br/>pad: percentage padding (defaults to 0.1)<br/>bgColour: &lt;colour argument> |a bar which accepts low, high, and a signed value, where negative will show red and positive will show green
 multiBar|values: a list of floats, separated by underscores (eg `0.1_0.4_0.2`) <br/>colours: a list of &lt;colour argument>, separated by underscores (eg `red_yellow_0,0,0,0.5`) <br/>width: width in pixels (default to width of screen or space left on line) <br/>height: height in pixels (defaults to text height) <br/>text: text content <br/>textColour: &lt;colour argument>, <br/>bgColour: &lt;colour argument>, <br/>|Similar to bar, but showing multiple levels of colours
-saveCursor|none|Save the current cusor position
+saveCursor|x: the x position, y: the y position|Save the current cursor position. If x and/or y are provided, will save the current position before changing to the requested one (see `setCursor`)
 setCursor|x: the x position, y: the y position|If the position is "x" or "y", sets to the saved cursor.<br/>If the position is a percent (eg `50%`), set to percent of width or height.<br/>If position starts with "+" or "-" (eg "+6"), add or subtract that number of characters from the current position.<br/>If position is a number (eg "250.5"), set to that pixel value<br/>If either position is not provided, the current value is unchanged.<br/>
 
 &lt;colour argument>:  Either a string colour name, or RGB or RGBA values

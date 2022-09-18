@@ -757,39 +757,8 @@ public class Template {
         this.Register("multiBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.MultiBar(options));
         this.Register("right", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.SetCursor(ds.width, null));
         this.Register("center", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.SetCursor(ds.width / 2f, null));
-        this.Register("saveCursor", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.SaveCursor());
-        this.Register("setCursor", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
-            float? x = this.ParseCursor(ds, options.custom.Get("x"), false);
-            float? y = this.ParseCursor(ds, options.custom.Get("y"), true);
-            ds.SetCursor(x, y);
-        });
-    }
-
-    public float? ParseCursor(DrawingSurface ds, string input, bool height = false) {
-        if (input == null) {
-            return null;
-        }
-
-        float saved = height ? ds.savedCursor.Y : ds.savedCursor.X;
-        if (input == "x" || input == "y") {
-            return saved;
-        }
-
-        float width = height ? ds.height : ds.width;
-        if (input[input.Length - 1] == '%') {
-            return width * Util.ParseFloat(input.Remove(input.Length - 1)) / 100f;
-        }
-
-        float current = height ? ds.cursor.Y : ds.cursor.X;
-        float charSize = height ? ds.charSizeInPx.Y : ds.charSizeInPx.X;
-        if (input[0] == '+') {
-            return current + Util.ParseFloat(input) * charSize;
-        }
-        if (input[0] == '-') {
-            return current - Util.ParseFloat(input) * charSize;
-        }
-
-        return Util.ParseFloat(input);
+        this.Register("saveCursor", this.SaveCursor);
+        this.Register("setCursor", this.SetCursor);
     }
 
     public void Clear() {
@@ -1015,6 +984,51 @@ public class Template {
         } else {
             return false;
         }
+    }
+
+    public float? ParseCursor(DrawingSurface ds, string input, bool vertical = false) {
+        if (input == null) {
+            return null;
+        }
+
+        float saved = vertical ? ds.savedCursor.Y : ds.savedCursor.X;
+        if (input == "x" || input == "y") {
+            return saved;
+        }
+
+        float width = vertical ? ds.height : ds.width;
+        if (input[input.Length - 1] == '%') {
+            return width * Util.ParseFloat(input.Remove(input.Length - 1)) / 100f;
+        }
+
+        float current = vertical ? ds.cursor.Y : ds.cursor.X;
+        if (input == "~x" || input == "~y") {
+            return Math.Max(current, saved);
+        }
+
+        float charSize = vertical ? ds.charSizeInPx.Y : ds.charSizeInPx.X;
+        if (input[0] == '+') {
+            return current + Util.ParseFloat(input) * charSize;
+        }
+        if (input[0] == '-') {
+            return current - Util.ParseFloat(input) * charSize;
+        }
+
+        return Util.ParseFloat(input);
+    }
+
+    public void SaveCursor(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        float x = ds.cursor.X;
+        float y = ds.cursor.Y;
+        this.SetCursor(ds, text, options);
+        ds.savedCursor.X = x;
+        ds.savedCursor.Y = y;
+    }
+
+    public void SetCursor(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        float? x = this.ParseCursor(ds, options.custom.Get("x"), false);
+        float? y = this.ParseCursor(ds, options.custom.Get("y"), true);
+        ds.SetCursor(x, y);
     }
 }
 /*
