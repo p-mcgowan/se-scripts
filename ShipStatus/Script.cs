@@ -908,6 +908,7 @@ public class PowerDetails {
     public Color turbinesColour = Color.Darken(DrawingSurface.stringToColour["dimyellow"], 0.1);
     public Color solarsColour = Color.Darken(Color.Cyan, 0.8);
     public char[] splitNewline = new[] { '\n' };
+    public List<float> widths = new List<float>() { 0, 0, 0, 0 };
 
     public PowerDetails(Program program, Template template = null) {
         this.program = program;
@@ -1255,7 +1256,7 @@ public class PowerDetails {
     }
 
     public string IoString() {
-        float io = this.CurrentInput() - this.CurrentOutput();
+        float io = this.batteries > 0 ? this.batteryInput - this.batteryOutputMW : this.CurrentInput() - this.CurrentOutput();
         float max = io > 0 ? this.MaxInput() : this.MaxOutput();
 
         return String.Format("{0:0.00} MW ({1})", io, Util.PctString(max == 0f ? 0f : Math.Abs(io) / max));
@@ -1272,14 +1273,40 @@ public class PowerDetails {
     public void PowerConsumers(DrawingSurface ds, string text, DrawingSurface.Options options) {
         int max = Util.ParseInt(options.custom.Get("count") ?? "10");
 
-        foreach (var item in this.consumerDict) {
-            string kw = (item.Value * 1000).ToString("#,,# kW");
-            ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(kw, textAlignment: TextAlignment.RIGHT).Newline();
+        if (ds.width / (ds.charSizeInPx.X + 1f) < 40) {
+            foreach (var item in this.consumerDict) {
+                string kw = (item.Value * 1000).ToString("#,,# kW");
+                ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(kw, textAlignment: TextAlignment.RIGHT);
 
-            if (--max == 0) {
-                return;
+                if (--max == 0) {
+                    return;
+                }
+                ds.Newline();
+            }
+        } else {
+            this.widths[0] = 0;
+            this.widths[1] = ds.width / 2 - 1.5f * ds.charSizeInPx.X;
+            this.widths[2] = ds.width / 2 + 1.5f * ds.charSizeInPx.X;
+            this.widths[3] = ds.width;
+
+            int i = 0;
+            foreach (var item in this.consumerDict) {
+                string kw = (item.Value * 1000).ToString("#,,# kW");
+                ds
+                    .SetCursor(this.widths[(i++ % 4)], null)
+                    .Text($"{item.Key}")
+                    .SetCursor(this.widths[(i++ % 4)], null)
+                    .Text(kw, textAlignment: TextAlignment.RIGHT);
+
+                if (--max == 0) {
+                    return;
+                }
+                if ((i % 4) == 0 || i >= this.consumerDict.Count * 2) {
+                    ds.Newline();
+                }
             }
         }
+        ds.Newline(reverse: true);
     }
 }
 /* POWER */
@@ -1710,6 +1737,16 @@ public class DrawingSurface {
         return this;
     }
 
+    public DrawingSurface LoadCursor() {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
+        this.cursor = this.savedCursor;
+
+        return this;
+    }
+
     public DrawingSurface SetCursor(float? x, float? y) {
         if (!this.drawing) {
             this.DrawStart();
@@ -1721,10 +1758,10 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface Newline(bool resetX = true, bool reverse = false) {
+    public DrawingSurface Newline(bool reverse = false) {
         float height = (this.charSizeInPx.Y + this.ySpace) * (reverse ? -1 : 1);
         this.cursor.Y += height;
-        this.cursor.X = resetX ? 0 : this.savedCursor.X;
+        this.cursor.X = this.savedCursor.X;
 
         return this;
     }
@@ -2223,6 +2260,39 @@ public class Template {
         this.Register("multiBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.MultiBar(options));
         this.Register("right", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.SetCursor(ds.width, null));
         this.Register("center", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.SetCursor(ds.width / 2f, null));
+        this.Register("saveCursor", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.SaveCursor());
+        this.Register("setCursor", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+            float? x = this.ParseCursor(ds, options.custom.Get("x"), false);
+            float? y = this.ParseCursor(ds, options.custom.Get("y"), true);
+            ds.SetCursor(x, y);
+        });
+    }
+
+    public float? ParseCursor(DrawingSurface ds, string input, bool height = false) {
+        if (input == null) {
+            return null;
+        }
+
+        float saved = height ? ds.savedCursor.Y : ds.savedCursor.X;
+        if (input == "x" || input == "y") {
+            return saved;
+        }
+
+        float width = height ? ds.height : ds.width;
+        if (input[input.Length - 1] == '%') {
+            return width * Util.ParseFloat(input.Remove(input.Length - 1)) / 100f;
+        }
+
+        float current = height ? ds.cursor.Y : ds.cursor.X;
+        float charSize = height ? ds.charSizeInPx.Y : ds.charSizeInPx.X;
+        if (input[0] == '+') {
+            return current + Util.ParseFloat(input) * charSize;
+        }
+        if (input[0] == '-') {
+            return current - Util.ParseFloat(input) * charSize;
+        }
+
+        return Util.ParseFloat(input);
     }
 
     public void Clear() {

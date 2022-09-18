@@ -64,6 +64,7 @@ public class PowerDetails {
     public Color turbinesColour = Color.Darken(DrawingSurface.stringToColour["dimyellow"], 0.1);
     public Color solarsColour = Color.Darken(Color.Cyan, 0.8);
     public char[] splitNewline = new[] { '\n' };
+    public List<float> widths = new List<float>() { 0, 0, 0, 0 };
 
     public PowerDetails(Program program, Template template = null) {
         this.program = program;
@@ -411,7 +412,7 @@ public class PowerDetails {
     }
 
     public string IoString() {
-        float io = this.CurrentInput() - this.CurrentOutput();
+        float io = this.batteries > 0 ? this.batteryInput - this.batteryOutputMW : this.CurrentInput() - this.CurrentOutput();
         float max = io > 0 ? this.MaxInput() : this.MaxOutput();
 
         return String.Format("{0:0.00} MW ({1})", io, Util.PctString(max == 0f ? 0f : Math.Abs(io) / max));
@@ -428,14 +429,40 @@ public class PowerDetails {
     public void PowerConsumers(DrawingSurface ds, string text, DrawingSurface.Options options) {
         int max = Util.ParseInt(options.custom.Get("count") ?? "10");
 
-        foreach (var item in this.consumerDict) {
-            string kw = (item.Value * 1000).ToString("#,,# kW");
-            ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(kw, textAlignment: TextAlignment.RIGHT).Newline();
+        if (ds.width / (ds.charSizeInPx.X + 1f) < 40) {
+            foreach (var item in this.consumerDict) {
+                string kw = (item.Value * 1000).ToString("#,,# kW");
+                ds.Text($"{item.Key}").SetCursor(ds.width, null).Text(kw, textAlignment: TextAlignment.RIGHT);
 
-            if (--max == 0) {
-                return;
+                if (--max == 0) {
+                    return;
+                }
+                ds.Newline();
+            }
+        } else {
+            this.widths[0] = 0;
+            this.widths[1] = ds.width / 2 - 1.5f * ds.charSizeInPx.X;
+            this.widths[2] = ds.width / 2 + 1.5f * ds.charSizeInPx.X;
+            this.widths[3] = ds.width;
+
+            int i = 0;
+            foreach (var item in this.consumerDict) {
+                string kw = (item.Value * 1000).ToString("#,,# kW");
+                ds
+                    .SetCursor(this.widths[(i++ % 4)], null)
+                    .Text($"{item.Key}")
+                    .SetCursor(this.widths[(i++ % 4)], null)
+                    .Text(kw, textAlignment: TextAlignment.RIGHT);
+
+                if (--max == 0) {
+                    return;
+                }
+                if ((i % 4) == 0 || i >= this.consumerDict.Count * 2) {
+                    ds.Newline();
+                }
             }
         }
+        ds.Newline(reverse: true);
     }
 }
 /* POWER */

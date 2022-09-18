@@ -159,6 +159,16 @@ public class DrawingSurface {
         return this;
     }
 
+    public DrawingSurface LoadCursor() {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
+        this.cursor = this.savedCursor;
+
+        return this;
+    }
+
     public DrawingSurface SetCursor(float? x, float? y) {
         if (!this.drawing) {
             this.DrawStart();
@@ -170,10 +180,10 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface Newline(bool resetX = true, bool reverse = false) {
+    public DrawingSurface Newline(bool reverse = false) {
         float height = (this.charSizeInPx.Y + this.ySpace) * (reverse ? -1 : 1);
         this.cursor.Y += height;
-        this.cursor.X = resetX ? 0 : this.savedCursor.X;
+        this.cursor.X = this.savedCursor.X;
 
         return this;
     }

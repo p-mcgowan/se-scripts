@@ -76,9 +76,9 @@ SaveCursor()
 SetCursor(float? x, float? y)
   move the cursor to x, y
 
-Newline(bool resetX = true)
+Newline()
   move the cursor down by the height of the current font size
-  if reset is false, will not set cursor X to 0 (to the left)
+  sets x value to cursor X (default is 0)
 
 Size(float? size = null)
   change font size

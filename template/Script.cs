@@ -234,6 +234,16 @@ public class DrawingSurface {
         return this;
     }
 
+    public DrawingSurface LoadCursor() {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
+        this.cursor = this.savedCursor;
+
+        return this;
+    }
+
     public DrawingSurface SetCursor(float? x, float? y) {
         if (!this.drawing) {
             this.DrawStart();
@@ -245,10 +255,10 @@ public class DrawingSurface {
         return this;
     }
 
-    public DrawingSurface Newline(bool resetX = true, bool reverse = false) {
+    public DrawingSurface Newline(bool reverse = false) {
         float height = (this.charSizeInPx.Y + this.ySpace) * (reverse ? -1 : 1);
         this.cursor.Y += height;
-        this.cursor.X = resetX ? 0 : this.savedCursor.X;
+        this.cursor.X = this.savedCursor.X;
 
         return this;
     }
@@ -747,6 +757,39 @@ public class Template {
         this.Register("multiBar", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.MultiBar(options));
         this.Register("right", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.SetCursor(ds.width, null));
         this.Register("center", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.SetCursor(ds.width / 2f, null));
+        this.Register("saveCursor", (DrawingSurface ds, string text, DrawingSurface.Options options) => ds.SaveCursor());
+        this.Register("setCursor", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+            float? x = this.ParseCursor(ds, options.custom.Get("x"), false);
+            float? y = this.ParseCursor(ds, options.custom.Get("y"), true);
+            ds.SetCursor(x, y);
+        });
+    }
+
+    public float? ParseCursor(DrawingSurface ds, string input, bool height = false) {
+        if (input == null) {
+            return null;
+        }
+
+        float saved = height ? ds.savedCursor.Y : ds.savedCursor.X;
+        if (input == "x" || input == "y") {
+            return saved;
+        }
+
+        float width = height ? ds.height : ds.width;
+        if (input[input.Length - 1] == '%') {
+            return width * Util.ParseFloat(input.Remove(input.Length - 1)) / 100f;
+        }
+
+        float current = height ? ds.cursor.Y : ds.cursor.X;
+        float charSize = height ? ds.charSizeInPx.Y : ds.charSizeInPx.X;
+        if (input[0] == '+') {
+            return current + Util.ParseFloat(input) * charSize;
+        }
+        if (input[0] == '-') {
+            return current - Util.ParseFloat(input) * charSize;
+        }
+
+        return Util.ParseFloat(input);
     }
 
     public void Clear() {
@@ -1008,7 +1051,7 @@ public static class Util {
             sb.Append("#");
         }
 
-        return $"{sb}0,,#M";
+        return $"{sb}0,,.0M";
     }
 
     public static string FormatNumber(VRage.MyFixedPoint input, string fmt = null) {
