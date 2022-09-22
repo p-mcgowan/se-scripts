@@ -273,15 +273,10 @@ public class DrawingSurface {
         }
 
         this.sb.Clear();
-        if (alignment == TextAlignment.LEFT) {
-            this.sb.Append(text);
-        } else if (alignment == TextAlignment.CENTER) {
-            int halfString = (int)Math.Ceiling(text.Length / 2d);
-            this.sb.Append(text.Substring(halfString, halfString));
-        }
+        this.sb.Append(text);
 
         Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
-        this.cursor.X += size.X;
+        this.cursor.X += alignment == TextAlignment.CENTER ? size.X / 2 : size.X;
     }
 
     public float ToRad(float deg) {
