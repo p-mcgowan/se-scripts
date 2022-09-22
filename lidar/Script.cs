@@ -94,7 +94,7 @@ public void Run(string argument, UpdateType updateSource) {
         Echo("  intersection as gps to custom");
         Echo("  data");
         Echo("-n, --name NAME  set gps name");
-        Echo("-p, --point PNT  use point from cam (meters)");
+        Echo("-p, --point PNT  use point from --cast cam (meters)");
 
         return;
     }
