@@ -215,10 +215,6 @@ public class DrawingSurface {
             this.DrawStart();
         }
 
-        this.sb.Clear();
-        this.sb.Append(sprite.Data);
-        Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
-
         sprite.Position = this.cursor + this.viewport.Position;
         sprite.RotationOrScale = this.surface.FontSize * sprite.RotationOrScale;
         sprite.FontId = this.surface.Font;
@@ -226,7 +222,7 @@ public class DrawingSurface {
 
         this.frame.Add(sprite);
 
-        this.cursor.X += size.X;
+        this.AddTextSizeToCursor(sprite.Data, sprite.Alignment);
     }
 
     public DrawingSurface Text(string text, Options options) {
@@ -266,13 +262,26 @@ public class DrawingSurface {
             FontId = surface.Font
         });
 
-        this.sb.Clear();
-        this.sb.Append(text);
-        Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
-
-        this.cursor.X += size.X;
+        this.AddTextSizeToCursor(text, textAlignment);
 
         return this;
+    }
+
+    public void AddTextSizeToCursor(string text, TextAlignment alignment) {
+        if (alignment == TextAlignment.RIGHT) {
+            return;
+        }
+
+        this.sb.Clear();
+        if (alignment == TextAlignment.LEFT) {
+            this.sb.Append(text);
+        } else if (alignment == TextAlignment.CENTER) {
+            int halfString = (int)Math.Ceiling(text.Length / 2d);
+            this.sb.Append(text.Substring(halfString, halfString));
+        }
+
+        Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
+        this.cursor.X += size.X;
     }
 
     public float ToRad(float deg) {

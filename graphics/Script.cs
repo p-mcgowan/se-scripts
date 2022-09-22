@@ -332,7 +332,17 @@ public class DrawingSurface {
         this.sb.Append(text);
         Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
 
-        this.cursor.X += size.X;
+        switch (textAlignment) {
+            case TextAlignment.CENTER:
+                this.cursor.X += size.X / 2f;
+                break;
+            case TextAlignment.LEFT:
+                this.cursor.X += size.X;
+                break;
+
+        }
+
+        this.program.Echo($"align={textAlignment}");
 
         return this;
     }

@@ -131,26 +131,31 @@ public class Template {
                 }
 
                 System.Text.RegularExpressions.Match m = this.cmdSplitter.Match(this.token.value);
-                if (m.Success) {
-                    var opts = this.StringToOptions(m.Groups["params"].Value);
-                    if (m.Groups["newline"].Value != "") {
-                        opts.custom["noNewline"] = "true";
-                        autoNewline = false;
-                    }
-                    text = (m.Groups["text"].Value == "" ? null : m.Groups["text"].Value);
-                    if (text != null) {
-                        text = System.Text.RegularExpressions.Regex.Replace(text, @"\\([\{\}])", "$1");
-                        opts.text = text;
-                    }
-                    string action = m.Groups["name"].Value;
-                    this.AddTemplateTokens(this.templateVars[outputName], action);
-                    nodeList.Add(new Node(action, text, opts));
-                    if (action == "config") {
-                        autoNewline = false;
-                    }
-                } else {
+                if (!m.Success) {
                     this.AddTemplateTokens(this.templateVars[outputName], this.token.value);
                     nodeList.Add(new Node(this.token.value));
+                    continue;
+                }
+
+                var opts = this.StringToOptions(m.Groups["params"].Value);
+
+                if (m.Groups["newline"].Value != "") {
+                    opts.custom["noNewline"] = "true";
+                    autoNewline = false;
+                }
+
+                text = m.Groups["text"].Value ?? null;
+                if (text != null) {
+                    text = System.Text.RegularExpressions.Regex.Replace(text, @"\\([\{\}])", "$1");
+                    opts.text = text;
+                }
+
+                string action = m.Groups["name"].Value;
+                this.AddTemplateTokens(this.templateVars[outputName], action);
+
+                nodeList.Add(new Node(action, text, opts));
+                if (action == "config") {
+                    autoNewline = false;
                 }
             }
 

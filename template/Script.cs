@@ -290,10 +290,6 @@ public class DrawingSurface {
             this.DrawStart();
         }
 
-        this.sb.Clear();
-        this.sb.Append(sprite.Data);
-        Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
-
         sprite.Position = this.cursor + this.viewport.Position;
         sprite.RotationOrScale = this.surface.FontSize * sprite.RotationOrScale;
         sprite.FontId = this.surface.Font;
@@ -301,7 +297,7 @@ public class DrawingSurface {
 
         this.frame.Add(sprite);
 
-        this.cursor.X += size.X;
+        this.AddTextSizeToCursor(sprite.Data, sprite.Alignment);
     }
 
     public DrawingSurface Text(string text, Options options) {
@@ -341,13 +337,26 @@ public class DrawingSurface {
             FontId = surface.Font
         });
 
-        this.sb.Clear();
-        this.sb.Append(text);
-        Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
-
-        this.cursor.X += size.X;
+        this.AddTextSizeToCursor(text, textAlignment);
 
         return this;
+    }
+
+    public void AddTextSizeToCursor(string text, TextAlignment alignment) {
+        if (alignment == TextAlignment.RIGHT) {
+            return;
+        }
+
+        this.sb.Clear();
+        if (alignment == TextAlignment.LEFT) {
+            this.sb.Append(text);
+        } else if (alignment == TextAlignment.CENTER) {
+            int halfString = (int)Math.Ceiling(text.Length / 2d);
+            this.sb.Append(text.Substring(halfString, halfString));
+        }
+
+        Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
+        this.cursor.X += size.X;
     }
 
     public float ToRad(float deg) {
@@ -825,26 +834,31 @@ public class Template {
                 }
 
                 System.Text.RegularExpressions.Match m = this.cmdSplitter.Match(this.token.value);
-                if (m.Success) {
-                    var opts = this.StringToOptions(m.Groups["params"].Value);
-                    if (m.Groups["newline"].Value != "") {
-                        opts.custom["noNewline"] = "true";
-                        autoNewline = false;
-                    }
-                    text = (m.Groups["text"].Value == "" ? null : m.Groups["text"].Value);
-                    if (text != null) {
-                        text = System.Text.RegularExpressions.Regex.Replace(text, @"\\([\{\}])", "$1");
-                        opts.text = text;
-                    }
-                    string action = m.Groups["name"].Value;
-                    this.AddTemplateTokens(this.templateVars[outputName], action);
-                    nodeList.Add(new Node(action, text, opts));
-                    if (action == "config") {
-                        autoNewline = false;
-                    }
-                } else {
+                if (!m.Success) {
                     this.AddTemplateTokens(this.templateVars[outputName], this.token.value);
                     nodeList.Add(new Node(this.token.value));
+                    continue;
+                }
+
+                var opts = this.StringToOptions(m.Groups["params"].Value);
+
+                if (m.Groups["newline"].Value != "") {
+                    opts.custom["noNewline"] = "true";
+                    autoNewline = false;
+                }
+
+                text = m.Groups["text"].Value ?? null;
+                if (text != null) {
+                    text = System.Text.RegularExpressions.Regex.Replace(text, @"\\([\{\}])", "$1");
+                    opts.text = text;
+                }
+
+                string action = m.Groups["name"].Value;
+                this.AddTemplateTokens(this.templateVars[outputName], action);
+
+                nodeList.Add(new Node(action, text, opts));
+                if (action == "config") {
+                    autoNewline = false;
                 }
             }
 
