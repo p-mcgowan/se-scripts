@@ -144,7 +144,7 @@ public class Template {
                     autoNewline = false;
                 }
 
-                text = m.Groups["text"].Value ?? null;
+                text = m.Groups["text"].Value == "" ? null : m.Groups["text"].Value;
                 if (text != null) {
                     text = System.Text.RegularExpressions.Regex.Replace(text, @"\\([\{\}])", "$1");
                     opts.text = text;

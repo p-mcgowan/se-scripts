@@ -224,7 +224,6 @@ config=colour=150,150,100;bgColour=black;size=0.5;
 
 [Transparent LCD]
 output=
-|{config:size=0.5}
 |{text:colour=120,50,50:OVERVIEW}
 |Jump drives: {power.jumpDrives}
 |{power.jumpBar}

@@ -427,6 +427,8 @@ public class CargoStatus {
             }
         }
 
+        this.cargoItemCounts = this.cargoItemCounts.OrderBy(x => -x.Value.ToIntSafe()).ToDictionary(x => x.Key, x => x.Value);
+
         if (this.max != 0) {
             this.pct = (float)this.vol / (float)this.max;
         }
@@ -2345,7 +2347,7 @@ public class Template {
                     autoNewline = false;
                 }
 
-                text = m.Groups["text"].Value ?? null;
+                text = m.Groups["text"].Value == "" ? null : m.Groups["text"].Value;
                 if (text != null) {
                     text = System.Text.RegularExpressions.Regex.Replace(text, @"\\([\{\}])", "$1");
                     opts.text = text;
