@@ -27,26 +27,27 @@ public void ParseDockingCoords(MyIGCMessage msg) {
     waypoints["_rcPos"] = new MyWaypointInfo("_rcPos", rcDockPosition);
 }
 
+public bool TravelHas(string config, string what) {
+    return config.IndexOf(what) != -1;
+}
+
 public bool TravelConfig(string cfg) {
     IMyRemoteControl remoteControl = (IMyRemoteControl)GetBlock(remoteControlId);
-    if (cfg.IndexOf("fwd") != -1) {
+    if (TravelHas(cfg, "fwd")) {
         remoteControl.Direction = Base6Directions.Direction.Forward;
-    }
-    if (cfg.IndexOf("back") != -1) {
+    } else if (TravelHas(cfg, "back")) {
         remoteControl.Direction = Base6Directions.Direction.Backward;
-    }
-    if (cfg.IndexOf("left") != -1) {
+    } else if (TravelHas(cfg, "left")) {
         remoteControl.Direction = Base6Directions.Direction.Left;
-    }
-    if (cfg.IndexOf("right") != -1) {
+    } else if (TravelHas(cfg, "right")) {
         remoteControl.Direction = Base6Directions.Direction.Right;
     }
-    if (cfg.IndexOf("slow") != -1) {
+
+    if (TravelHas(cfg, "slow")) {
         remoteControl.SetCollisionAvoidance(false);
         remoteControl.SetDockingMode(true);
         remoteControl.SpeedLimit = 5f;
-    }
-    if (cfg.IndexOf("fast") != -1) {
+    } else if (TravelHas(cfg, "fast")) {
         remoteControl.SetCollisionAvoidance(true);
         remoteControl.SetDockingMode(false);
         remoteControl.SpeedLimit = 50f;
@@ -75,6 +76,35 @@ public bool GoToLocation(string waypoint) {
     }
 
     return true;
+}
+
+int attempts = 5;
+public bool FaceLocation(string waypoint) {
+    if (!waypoints.ContainsKey(waypoint)) {
+        return AbortTask("Didn't find waypoint");
+    }
+
+    IMyRemoteControl remoteControl = (IMyRemoteControl)GetBlock(remoteControlId);
+
+    if (remoteControl.CurrentWaypoint.IsEmpty()) {
+        attempts = 5;
+        SetDroneThrusters(false);
+        remoteControl.FlightMode = FlightMode.OneWay;
+        remoteControl.AddWaypoint(waypoints[waypoint]);
+        remoteControl.SetAutoPilotEnabled(true);
+
+        return false;
+    }
+
+    if (attempts-- <= 0) {
+        remoteControl.SetAutoPilotEnabled(false);
+        remoteControl.ClearWaypoints();
+        SetDroneThrusters(true);
+
+        return true;
+    }
+
+    return false;
 }
 
 public bool ConnectToMergeBlock() {
@@ -108,8 +138,8 @@ public bool ReleaseMergeBlock() {
 public bool ReleaseConnector() {
     if (!GetBatteryConnector()) {
         Log("Didn't find connector");
+
         return false;
-        // return AbortTask("Didn't find connector");
     }
 
     IMyShipConnector connector = (IMyShipConnector)GetBlock(batteryConnectorId);

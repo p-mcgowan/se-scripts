@@ -22,7 +22,7 @@ public struct Task {
         this.arg = null;
     }
 
-    public bool Eval() {
+    public bool TryComplete() {
         return this.action != null ? this.action(this.arg) : this.arglessAction();
     }
 }
@@ -41,29 +41,30 @@ public void ProcessTasks() {
 }
 
 public void GetCurrentTask() {
-    if (tasks.Count > 0) {
-        Task task = tasks.Peek();
-
-        if (state != task.name) {
-            Log($"processing {task.name} / {tasks.Count}");
-        }
-
-        state = task.name;
-
-        if (task.Eval()) {
-            Task done;
-            tasks.TryDequeue(out done);
-
-            IMyRemoteControl remoteControl = (IMyRemoteControl)GetBlock(remoteControlId);
-            if (remoteControl != null) {
-                remoteControl.ClearWaypoints();
-            }
-
-            Runtime.UpdateFrequency |= UpdateFrequency.Once;
-        }
-    } else {
+    if (tasks.Count <= 0) {
         state = "Idle";
+        return;
     }
+
+    Task task = tasks.Peek();
+    if (state != task.name) {
+        Log($"> {task.name} ({tasks.Count})");
+    }
+    state = task.name;
+
+    if (!task.TryComplete()) {
+        return;
+    }
+
+    Task done;
+    tasks.TryDequeue(out done);
+
+    IMyRemoteControl remoteControl = (IMyRemoteControl)GetBlock(remoteControlId);
+    if (remoteControl != null) {
+        remoteControl.ClearWaypoints();
+    }
+
+    Runtime.UpdateFrequency |= UpdateFrequency.Once;
 }
 
 public void SetIdle() {

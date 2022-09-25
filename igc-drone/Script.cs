@@ -8,6 +8,55 @@ long batteryConnectorId = -1;
 List<long> batteryIds = new List<long>();
 MyCommandLine cli = new MyCommandLine();
 string state = "Idle";
+long requester = -1;
+
+public void StatusRequest(MyIGCMessage msg) {
+    Log($"responding to ping");
+    emitter.Emit("STATUS", state, msg.Source);
+}
+
+public bool CanProcess(MyIGCMessage msg) {
+    if (state == "Idle") {
+        return true;
+    }
+
+    Log($"NACK {msg.Tag}");
+    emitter.Emit("NACK", msg.Tag, msg.Source);
+
+    return false;
+}
+
+public void Ack(MyIGCMessage msg) {
+    if (!CanProcess(msg)) {
+        return;
+    }
+
+    MyTuple<string, string, Vector3D> response = new MyTuple<string, string, Vector3D>(
+        (string)msg.Data,
+        config.Get("general/id") ?? Me.CubeGrid.Name,
+        Me.GetPosition()
+    );
+    Log($"ACK {msg.Tag}");
+    emitter.Emit("ACK", response, msg.Source);
+}
+
+public void HandleJob(MyIGCMessage msg) {
+    if (!CanProcess(msg)) {
+        return;
+    }
+
+    string task = msg.As<string>();
+    Log($"Trying to do work: {msg.Tag}:{task}");
+
+    switch (task) {
+        case "battery":
+            requester = msg.Source;
+            ExecuteBatteryRequest(msg);
+            return;
+    }
+
+    Log($"Not sure how to handle '{msg.Tag}:{task}'");
+}
 
 public void SetupListeners() {
     emitter = new IGCEmitter(this, true);
@@ -16,16 +65,17 @@ public void SetupListeners() {
     emitter
         .On("STATUS", StatusRequest)
         .On("STATUS", StatusRequest, unicast: true)
-        .On("BATTERY", Ack)
-        .On("BATTERY", ExecuteBatteryRequest, unicast: true);
+        .On("JOB", Ack)
+        .On("JOB", HandleJob, unicast: true);
 }
 
 public Program() {
     Me.GetSurface(0).WriteText("online\n");
     if (Me.CustomData == "") {
-        Me.CustomData = $"[general]\nid={Me.CubeGrid.CustomName}";
+        Me.CustomData = $"[general]\nid={Me.CubeGrid.CustomName}\nsolar=Solar Farm";
     }
     config.Parse(this);
+
     SetupListeners();
     GetDroneBlocks();
 
@@ -38,172 +88,146 @@ public Program() {
 }
 
 public void Main(string argument, UpdateType updateType) {
-    IMyShipConnector connector;
-    IMyShipMergeBlock mergeBlock;
-    IMyRemoteControl remoteControl;
-
     emitter.Process();
 
     if (argument != null && argument != "") {
-        cli.TryParse(argument);
-        string command = cli.Items[0];
-        string channel = cli.Items.ElementAtOrDefault(1);
-        string msg = cli.Items.ElementAtOrDefault(2);
-        string target = cli.Items.ElementAtOrDefault(3);
-
-        switch (command) {
-            case "who":
-                foreach (var kv in emitter.receievers) {
-                    Log($"{kv.Key}, {kv.Value}");
-                }
-            break;
-            case "broadcast":
-                Log($"bradcasting '{msg}' on channel '{channel}'");
-                emitter.Emit(channel, msg);
-            break;
-            case "send":
-                Log($"unicasting '{msg}' on channel '{channel}' to {target}");
-                emitter.Emit(channel, msg, emitter.Who(target));
-            break;
-            case "state":
-                if (channel == null || channel == "") {
-                    Log(state);
-                } else {
-                    state = channel;
-                }
-            break;
-            case "start":
-                ProcessTasks();
-            break;
-            case "dock":
-                Log($"sending dock request '{channel}' to {msg}");
-                emitter.Once("DOCKING_REQUEST", (MyIGCMessage igcm) => {
-                    remoteControl = (IMyRemoteControl)GetBlock(remoteControlId);
-                    remoteControl.ClearWaypoints();
-                    state = "Idle";
-                    ParseDockingCoords(igcm);
-                    Log("Setting target");
-                    AddTask("Go to approach", GoToLocation, target ?? "_approach");
-                    ProcessTasks();
-                }, unicast: true);
-                emitter.Emit("DOCKING_REQUEST", channel, emitter.Who(msg));
-            break;
-            case "task":
-                switch (channel) {
-                    case "conn":
-                        AddTask("Connect to connector", ConnectToConnector);
-                    break;
-                    case "-conn":
-                        AddTask("Release connector", ReleaseConnector);
-                    break;
-                    case "merge":
-                        AddTask("Connect to merge block", ConnectToMergeBlock);
-                    break;
-                    case "-merge":
-                        AddTask("Release merge block", ReleaseMergeBlock);
-                    break;
-                    // case "":
-                    //     AddTask("Go to happy place", GoToDroneDock);
-                    // break;
-                }
-            break;
-            case "wp":
-                Log(ToGps(waypoints["_approach"].Coords, "_approach"));
-                Log(ToGps(waypoints["_rcPos"].Coords, "_rcPos"));
-            break;
-            case "reset":
-                mergeBlock = (IMyShipMergeBlock)GetBlock(mergeBlockId);
-                remoteControl = (IMyRemoteControl)GetBlock(remoteControlId);
-                remoteControl.ClearWaypoints();
-                SetDroneBatteryMode(ChargeMode.Auto);
-                if (GetBatteryConnector()) {
-                    connector = (IMyShipConnector)GetBlock(batteryConnectorId);
-                    connector.Connect();
-                }
-                batteryConnectorId = -1;
-                mergeBlock.Enabled = false;
-                AbortTask("resetting");
-            break;
-        }
+        HandleCliArgs(argument);
     }
 
     GetCurrentTask();
 }
 
+public void HandleCliArgs(string argument) {
+    IMyShipConnector connector;
+    IMyShipMergeBlock mergeBlock;
+    IMyRemoteControl remoteControl;
+
+    cli.TryParse(argument);
+    string command = cli.Items[0];
+    string channel = cli.Items.ElementAtOrDefault(1);
+    string msg = cli.Items.ElementAtOrDefault(2);
+    string target = cli.Items.ElementAtOrDefault(3);
+
+    switch (command) {
+        case "who":
+            foreach (var kv in emitter.receievers) {
+                Log($"{kv.Key}, {kv.Value}");
+            }
+            break;
+        case "broadcast":
+            Log($"bradcasting '{msg}' on channel '{channel}'");
+            emitter.Emit(channel, msg);
+            break;
+        case "send":
+            Log($"unicasting '{msg}' on channel '{channel}' to {target}");
+            emitter.Emit(channel, msg, emitter.Who(target));
+            break;
+        case "state":
+            if (channel == null || channel == "") {
+                Log(state);
+            } else {
+                state = channel;
+            }
+            break;
+        case "start":
+            ProcessTasks();
+            break;
+        case "dock":
+            // dock parking "Solar Farm"
+            Log($"sending dock request '{channel}' to {msg}");
+            AddTask("Awaiting docking instruction", Wait);
+            emitter.Once("DOCKING_REQUEST", AnswerParkingSpace, unicast: true);
+            emitter.Emit("DOCKING_REQUEST", channel, emitter.Who(msg));
+
+            // emitter.Once("DOCKING_REQUEST", (MyIGCMessage igcm) => {
+            //     remoteControl = (IMyRemoteControl)GetBlock(remoteControlId);
+            //     remoteControl.ClearWaypoints();
+            //     state = "Idle";
+            //     ParseDockingCoords(igcm);
+            //     Log("Setting target");
+            //     AddTask("Go to approach", GoToLocation, target ?? "_approach");
+            //     ProcessTasks();
+            // }, unicast: true);
+            // emitter.Emit("DOCKING_REQUEST", channel, emitter.Who(msg));
+            break;
+        case "task":
+            switch (channel) {
+                case "conn":
+                    AddTask("Connect to connector", ConnectToConnector);
+                    break;
+                case "-conn":
+                    AddTask("Release connector", ReleaseConnector);
+                    break;
+                case "merge":
+                    AddTask("Connect to merge block", ConnectToMergeBlock);
+                    break;
+                case "-merge":
+                    AddTask("Release merge block", ReleaseMergeBlock);
+                    break;
+                // case "":
+                //     AddTask("Go to happy place", GoToDroneDock);
+                    // break;
+            }
+            break;
+        case "wp":
+            Log(ToGps(waypoints["_approach"].Coords, "_approach"));
+            Log(ToGps(waypoints["_rcPos"].Coords, "_rcPos"));
+            break;
+        case "reset":
+            mergeBlock = (IMyShipMergeBlock)GetBlock(mergeBlockId);
+            remoteControl = (IMyRemoteControl)GetBlock(remoteControlId);
+            remoteControl.ClearWaypoints();
+            SetDroneThrusters(true);
+            SetDroneBatteryMode(ChargeMode.Auto);
+            if (GetBatteryConnector()) {
+                connector = (IMyShipConnector)GetBlock(batteryConnectorId);
+                connector.Connect();
+            }
+            batteryConnectorId = -1;
+            mergeBlock.Enabled = false;
+            AbortTask("resetting");
+            break;
+    }
+}
+
 public string ToGps(Vector3D point, string name = "", string colour = "") {
     return $"GPS:{name}:{point.X}:{point.Y}:{point.Z}:{colour}:";
 }
-public void StatusRequest(MyIGCMessage msg) {
-    Log($"responding to ping");
-    emitter.Emit("STATUS", state, msg.Source);
-}
-
-public bool CanProcess(MyIGCMessage msg) {
-    if (state != "Idle") {
-        Log($"NACK {msg.Tag}");
-        emitter.Emit("NACK", msg.Tag, msg.Source);
-        return false;
-    }
-    return true;
-}
-
-public void Ack(MyIGCMessage msg) {
-    if (!CanProcess(msg)) {
-        return;
-    }
-    MyTuple<string, string, Vector3D> response = new MyTuple<string, string, Vector3D>(
-        msg.Tag,
-        config.Get("general/id") ?? Me.CubeGrid.Name,
-        Me.GetPosition()
-    );
-    Log($"ACK {msg.Tag}");
-    emitter.Emit("ACK", response, msg.Source);
+public bool Wait() {
+    return false;
 }
 
 public void ExecuteBatteryRequest(MyIGCMessage msg) {
     if (!CanProcess(msg)) {
         return;
     }
+
     state = "Processing battery request";
-    AddTask("Fetch old battery", FetchOldBattery);
+    SetDroneBatteryMode(ChargeMode.Auto);
+    ReleaseMergeBlock();
+    SetDroneThrusters(true);
+    // queue forward slow
+    AddTask("Fetch new battery", FetchNewBattery);
 
     ProcessTasks();
 }
 
-public bool Wait() {
-    return false;
-}
-
-public bool FetchOldBattery() {
-    Log($"asking for dock [FetchOldBattery]");
-    AddTask("Awaiting docking instruction", Wait);
-    emitter.Once("DOCKING_REQUEST", AnswerFetchOldBattery, unicast: true);
-    emitter.Emit("DOCKING_REQUEST", "merge", emitter.Who("Pertram Station"));
-
-    return true;
-}
-
-public void AnswerFetchOldBattery(MyIGCMessage msg) {
-    ParseDockingCoords(msg);
+public void QueueMergeSteps() {
     AddTask("Config autopilot", TravelConfig, "fast fwd");
     AddTask("Go to approach", GoToLocation, "_approach");
-    AddTask("Config autopilot", TravelConfig, "slow fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
-
-    AddTask("Config autopilot", TravelConfig, "slow back");
     AddTask("Enable merge block", () => {
         IMyShipMergeBlock mergeBlock = (IMyShipMergeBlock)GetBlock(mergeBlockId);
         mergeBlock.Enabled = true;
 
         return true;
     });
+    AddTask("Config autopilot", TravelConfig, "slow back");
     AddTask("Move to merge block", GoToLocation, "_rcPos");
-    AddTask("Connect to merge block", ConnectToMergeBlock);
 
+    AddTask("Connect to merge block", ConnectToMergeBlock);
     AddTask("Set batteries", () => {
-        if (SetBatteryBlockMode(ChargeMode.Discharge)) {
-            SetDroneBatteryMode(ChargeMode.Recharge);
-        }
+        SetDroneBatteryMode(ChargeMode.Recharge);
+        SetBatteryBlockMode(ChargeMode.Discharge);
 
         return true;
     });
@@ -211,6 +235,79 @@ public void AnswerFetchOldBattery(MyIGCMessage msg) {
 
     AddTask("Config autopilot", TravelConfig, "slow fwd");
     AddTask("Go to approach", GoToLocation, "_approach");
+}
+
+public void QueueConnectorSteps(ChargeMode chargeMode) {
+    AddTask("Config autopilot", TravelConfig, "fast fwd");
+    AddTask("Go to approach", GoToLocation, "_approach");
+    AddTask("Config autopilot", TravelConfig, "slow back");
+    AddTask("Line up backwards", GoToLocation, "_moveOff");
+    AddTask("Config autopilot", TravelConfig, "slow fwd");
+    // AddTask("Line up forwards", FaceLocation, "_approach");
+    AddTask("Line up forwards", GoToLocation, "_approach");
+    AddTask("Config autopilot", TravelConfig, "slow back");
+    AddTask("Move to connector", GoToLocation, "_rcPos");
+
+    AddTask("Connect to connector", ConnectToConnector);
+    AddTask("Set batteries", () => {
+        SetDroneBatteryMode(ChargeMode.Auto);
+        SetBatteryBlockMode(chargeMode);
+
+        return true;
+    });
+    AddTask("Release merge block", ReleaseMergeBlock);
+
+    AddTask("Config autopilot", TravelConfig, "slow fwd");
+    AddTask("Leaving dock", GoToLocation, "_approach");
+}
+
+public bool FetchNewBattery() {
+    Log($"asking for dock [FetchNewBattery]");
+    AddTask("Awaiting docking instruction", Wait);
+    emitter.Once("DOCKING_REQUEST", AnswerFetchNewBattery, unicast: true);
+    emitter.Emit("DOCKING_REQUEST", "merge", emitter.Who(config.Get("general/solar")));
+
+    return true;
+}
+
+public void AnswerFetchNewBattery(MyIGCMessage msg) {
+    ParseDockingCoords(msg);
+    QueueMergeSteps();
+
+    AddTask("Deposit new battery", DepositNewBattery);
+    RemoveCurrentTask("Receieved docking instruction");
+}
+
+public bool DepositNewBattery() {
+    Log($"asking for dock [DepositNewBattery]");
+    AddTask("Awaiting docking instruction", Wait);
+    emitter.Once("DOCKING_REQUEST", AnswerDepositNewBattery, unicast: true);
+    emitter.Emit("DOCKING_REQUEST", "connector", requester);
+
+    return true;
+}
+
+public void AnswerDepositNewBattery(MyIGCMessage msg) {
+    ParseDockingCoords(msg);
+    QueueConnectorSteps(ChargeMode.Discharge);
+
+    AddTask("Fetch old battery", FetchOldBattery);
+    RemoveCurrentTask("Receieved docking instruction");
+}
+
+
+public bool FetchOldBattery() {
+    Log($"asking for dock [FetchOldBattery]");
+    AddTask("Awaiting docking instruction", Wait);
+    emitter.Once("DOCKING_REQUEST", AnswerFetchOldBattery, unicast: true);
+    emitter.Emit("DOCKING_REQUEST", "merge", requester);
+
+    return true;
+}
+
+public void AnswerFetchOldBattery(MyIGCMessage msg) {
+    ParseDockingCoords(msg);
+    QueueMergeSteps();
 
     AddTask("Deposit old battery", DepositOldBattery);
     RemoveCurrentTask("Receieved docking instruction");
@@ -220,107 +317,49 @@ public bool DepositOldBattery() {
     Log($"asking for dock [DepositOldBattery]");
     AddTask("Awaiting docking instruction", Wait);
     emitter.Once("DOCKING_REQUEST", AnswerDepositOldBattery, unicast: true);
-    emitter.Emit("DOCKING_REQUEST", "connector", emitter.Who("Solar Farm"));
+    emitter.Emit("DOCKING_REQUEST", "connector", emitter.Who(config.Get("general/solar")));
 
     return true;
 }
 
 public void AnswerDepositOldBattery(MyIGCMessage msg) {
     ParseDockingCoords(msg);
-    AddTask("Config autopilot", TravelConfig, "fast fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
-    AddTask("Config autopilot", TravelConfig, "slow fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
-
-    AddTask("Config autopilot", TravelConfig, "slow back");
-    AddTask("Move to connector", GoToLocation, "_rcPos");
-    AddTask("Connect to connector", ConnectToConnector);
-    AddTask("Set batteries", () => {
-        SetDroneBatteryMode(ChargeMode.Auto);
-        SetBatteryBlockMode(ChargeMode.Recharge);
-
-        return true;
-    });
-    AddTask("Release merge block", ReleaseMergeBlock);
-
-    AddTask("Config autopilot", TravelConfig, "slow fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
-
-    AddTask("Fetch new battery", FetchNewBattery);
+    QueueConnectorSteps(ChargeMode.Recharge);
+    AddTask("Request parking space", RequestParkingSpace);
     RemoveCurrentTask("Receieved docking instruction");
 }
 
-public bool FetchNewBattery() {
-    Log($"asking for dock [FetchNewBattery]");
+public bool RequestParkingSpace() {
+    Log($"asking for dock [RequestParkingSpace]");
     AddTask("Awaiting docking instruction", Wait);
-    emitter.Once("DOCKING_REQUEST", AnswerFetchNewBattery, unicast: true);
-    emitter.Emit("DOCKING_REQUEST", "merge", emitter.Who("Solar Farm"));
+    emitter.Once("DOCKING_REQUEST", AnswerParkingSpace, unicast: true);
+    emitter.Emit("DOCKING_REQUEST", "parking", emitter.Who(config.Get("general/solar")));
 
     return true;
 }
 
-public void AnswerFetchNewBattery(MyIGCMessage msg) {
+public void AnswerParkingSpace(MyIGCMessage msg) {
     ParseDockingCoords(msg);
+
     AddTask("Config autopilot", TravelConfig, "fast fwd");
     AddTask("Go to approach", GoToLocation, "_approach");
-    AddTask("Config autopilot", TravelConfig, "slow fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
-
-    AddTask("Config autopilot", TravelConfig, "slow back");
     AddTask("Enable merge block", () => {
         IMyShipMergeBlock mergeBlock = (IMyShipMergeBlock)GetBlock(mergeBlockId);
         mergeBlock.Enabled = true;
 
         return true;
     });
-    AddTask("Move to merge block", GoToLocation, "_rcPos");
-    AddTask("Connect to merge block", ConnectToMergeBlock);
-    AddTask("Set batteries", () => {
-        if (SetBatteryBlockMode(ChargeMode.Discharge)) {
-            SetDroneBatteryMode(ChargeMode.Recharge);
-        }
-
-        return true;
-    });
-    AddTask("Release connector", ReleaseConnector);
-
-    AddTask("Config autopilot", TravelConfig, "slow fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
-    AddTask("Deposit new battery", DepositNewBattery);
-    RemoveCurrentTask("Receieved docking instruction");
-}
-
-public bool DepositNewBattery() {
-    Log($"asking for dock [DepositNewBattery]");
-    AddTask("Awaiting docking instruction", Wait);
-    emitter.Once("DOCKING_REQUEST", AnswerDepositNewBattery, unicast: true);
-    emitter.Emit("DOCKING_REQUEST", "connector", emitter.Who("Pertram Station"));
-
-    return true;
-}
-
-public void AnswerDepositNewBattery(MyIGCMessage msg) {
-    ParseDockingCoords(msg);
-    AddTask("Config autopilot", TravelConfig, "fast fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
-    AddTask("Config autopilot", TravelConfig, "slow fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
-
     AddTask("Config autopilot", TravelConfig, "slow back");
-    AddTask("Move to connector", GoToLocation, "_rcPos");
-    AddTask("Connect to connector", ConnectToConnector);
+    AddTask("Move to merge block", GoToLocation, "_rcPos");
 
-    AddTask("Set batteries", () => {
-        if (SetBatteryBlockMode(ChargeMode.Discharge)) {
-            SetDroneBatteryMode(ChargeMode.Auto);
-        }
+    AddTask("Connect to merge block", ConnectToMergeBlock);
+    AddTask("Recharging", () => {
+        SetDroneBatteryMode(ChargeMode.Recharge);
+        SetDroneThrusters(false);
 
         return true;
     });
-    AddTask("Release merge block", ReleaseMergeBlock);
-    AddTask("Config autopilot", TravelConfig, "slow fwd");
-    AddTask("Leaving dock", GoToLocation, "_approach");
-    // AddTask("Go to happy place", GoToDroneDock);
+
     RemoveCurrentTask("Receieved docking instruction");
 }
 public IMyTerminalBlock GetBlock(long id) {
@@ -341,6 +380,7 @@ public void GetDroneBlocks() {
     batteryIds.Clear();
 
     foreach (var block in blocks) {
+        Log($"{block.CustomName}");
         if (block is IMyShipMergeBlock){
             mergeBlockId = block.EntityId;
         } else if (block is IMyShipConnector){
@@ -350,6 +390,18 @@ public void GetDroneBlocks() {
         } else if (block is IMyBatteryBlock) {
             batteryIds.Add(block.EntityId);
         }
+    }
+}
+
+public void SetDroneThrusters(bool enabled) {
+    blocks.Clear();
+    GridTerminalSystem.GetBlocksOfType<IMyThrust>(blocks, b =>
+        b.IsSameConstructAs(Me) &&
+        b.CustomName.Contains("Drone") &&
+        (b is IMyThrust)
+    );
+    foreach (IMyThrust block in blocks) {
+        block.Enabled = enabled;
     }
 }
 
@@ -447,26 +499,27 @@ public void ParseDockingCoords(MyIGCMessage msg) {
     waypoints["_rcPos"] = new MyWaypointInfo("_rcPos", rcDockPosition);
 }
 
+public bool TravelHas(string config, string what) {
+    return config.IndexOf(what) != -1;
+}
+
 public bool TravelConfig(string cfg) {
     IMyRemoteControl remoteControl = (IMyRemoteControl)GetBlock(remoteControlId);
-    if (cfg.IndexOf("fwd") != -1) {
+    if (TravelHas(cfg, "fwd")) {
         remoteControl.Direction = Base6Directions.Direction.Forward;
-    }
-    if (cfg.IndexOf("back") != -1) {
+    } else if (TravelHas(cfg, "back")) {
         remoteControl.Direction = Base6Directions.Direction.Backward;
-    }
-    if (cfg.IndexOf("left") != -1) {
+    } else if (TravelHas(cfg, "left")) {
         remoteControl.Direction = Base6Directions.Direction.Left;
-    }
-    if (cfg.IndexOf("right") != -1) {
+    } else if (TravelHas(cfg, "right")) {
         remoteControl.Direction = Base6Directions.Direction.Right;
     }
-    if (cfg.IndexOf("slow") != -1) {
+
+    if (TravelHas(cfg, "slow")) {
         remoteControl.SetCollisionAvoidance(false);
         remoteControl.SetDockingMode(true);
         remoteControl.SpeedLimit = 5f;
-    }
-    if (cfg.IndexOf("fast") != -1) {
+    } else if (TravelHas(cfg, "fast")) {
         remoteControl.SetCollisionAvoidance(true);
         remoteControl.SetDockingMode(false);
         remoteControl.SpeedLimit = 50f;
@@ -495,6 +548,35 @@ public bool GoToLocation(string waypoint) {
     }
 
     return true;
+}
+
+int attempts = 5;
+public bool FaceLocation(string waypoint) {
+    if (!waypoints.ContainsKey(waypoint)) {
+        return AbortTask("Didn't find waypoint");
+    }
+
+    IMyRemoteControl remoteControl = (IMyRemoteControl)GetBlock(remoteControlId);
+
+    if (remoteControl.CurrentWaypoint.IsEmpty()) {
+        attempts = 5;
+        SetDroneThrusters(false);
+        remoteControl.FlightMode = FlightMode.OneWay;
+        remoteControl.AddWaypoint(waypoints[waypoint]);
+        remoteControl.SetAutoPilotEnabled(true);
+
+        return false;
+    }
+
+    if (attempts-- <= 0) {
+        remoteControl.SetAutoPilotEnabled(false);
+        remoteControl.ClearWaypoints();
+        SetDroneThrusters(true);
+
+        return true;
+    }
+
+    return false;
 }
 
 public bool ConnectToMergeBlock() {
@@ -528,8 +610,8 @@ public bool ReleaseMergeBlock() {
 public bool ReleaseConnector() {
     if (!GetBatteryConnector()) {
         Log("Didn't find connector");
+
         return false;
-        // return AbortTask("Didn't find connector");
     }
 
     IMyShipConnector connector = (IMyShipConnector)GetBlock(batteryConnectorId);
@@ -562,7 +644,7 @@ public struct Task {
         this.arg = null;
     }
 
-    public bool Eval() {
+    public bool TryComplete() {
         return this.action != null ? this.action(this.arg) : this.arglessAction();
     }
 }
@@ -581,29 +663,30 @@ public void ProcessTasks() {
 }
 
 public void GetCurrentTask() {
-    if (tasks.Count > 0) {
-        Task task = tasks.Peek();
-
-        if (state != task.name) {
-            Log($"processing {task.name} / {tasks.Count}");
-        }
-
-        state = task.name;
-
-        if (task.Eval()) {
-            Task done;
-            tasks.TryDequeue(out done);
-
-            IMyRemoteControl remoteControl = (IMyRemoteControl)GetBlock(remoteControlId);
-            if (remoteControl != null) {
-                remoteControl.ClearWaypoints();
-            }
-
-            Runtime.UpdateFrequency |= UpdateFrequency.Once;
-        }
-    } else {
+    if (tasks.Count <= 0) {
         state = "Idle";
+        return;
     }
+
+    Task task = tasks.Peek();
+    if (state != task.name) {
+        Log($"> {task.name} ({tasks.Count})");
+    }
+    state = task.name;
+
+    if (!task.TryComplete()) {
+        return;
+    }
+
+    Task done;
+    tasks.TryDequeue(out done);
+
+    IMyRemoteControl remoteControl = (IMyRemoteControl)GetBlock(remoteControlId);
+    if (remoteControl != null) {
+        remoteControl.ClearWaypoints();
+    }
+
+    Runtime.UpdateFrequency |= UpdateFrequency.Once;
 }
 
 public void SetIdle() {
@@ -845,10 +928,10 @@ public class Config {
         this.customData = p.Me.CustomData;
 
         string value;
-        ini.GetKeys(this.keys);
+        this.ini.GetKeys(this.keys);
 
         foreach (MyIniKey key in this.keys) {
-            if (ini.Get(key.Section, key.Name).TryGetString(out value)) {
+            if (this.ini.Get(key.Section, key.Name).TryGetString(out value)) {
                 this.Set(key.ToString(), value);
             }
         }

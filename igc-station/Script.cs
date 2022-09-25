@@ -1,9 +1,157 @@
+const string customDataInit = @"[general]
+energyProvider=false
+connectorName=BattPack
+parkingName=Parking
+";
+
 IGCEmitter emitter;
+MyCommandLine cli = new MyCommandLine();
+bool isEnergyProvider = false;
+string batteryConnectorName = "BattPack";
+string parkingMergeName = "Parking";
+
+public Program() {
+    Me.GetSurface(0).WriteText("online\n");
+
+    if (Me.CustomData == "") {
+        Me.CustomData = $"{customDataInit}id={Me.CubeGrid.CustomName}";
+        Log($"Using default customData.");
+    }
+    config.Parse(this);
+    isEnergyProvider = config.Enabled("general/energyProvider");
+    batteryConnectorName = config.Get("general/connectorName", "BattPack");
+    parkingMergeName = config.Get("general/parkingName", "Parking");
+
+    SetupListeners();
+    Runtime.UpdateFrequency |= UpdateFrequency.Update100;
+}
+
+public bool ReplaceBatteries() {
+    blocks.Clear();
+    GridTerminalSystem.GetBlocksOfType<IMyBatteryBlock>(blocks, b =>
+        b is IMyBatteryBlock && IsAlive(b) && b.CustomName.Contains(batteryConnectorName)
+    );
+
+    float batteryCurrent = 0;
+    float batteryMax = 0;
+    foreach (IMyBatteryBlock battery in blocks) {
+        batteryCurrent += battery.CurrentStoredPower;
+        batteryMax += battery.MaxStoredPower;
+    }
+
+    if (batteryMax == 0f) {
+        return false;
+    }
+
+    Log($"Checking battery status: {(100 * batteryCurrent / batteryMax).ToString("#,0.00")}%");
+
+    return batteryCurrent / batteryMax < 0.3f;
+}
+
+double lastCheck = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
+
+public void Main(string argument, UpdateType updateType) {
+    emitter.Process();
+
+    if (argument != null && argument != "") {
+        HandleCliArgs(argument);
+    }
+
+    ProcessAcks();
+
+    if (isEnergyProvider) {
+        return;
+    }
+
+    double timeNow = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
+    if (timeNow - lastCheck > 5 * 60 * 1000) {
+        lastCheck = timeNow;
+        if (ReplaceBatteries()) {
+            Log($"Requesting new battery");
+            emitter.Emit("JOB", "battery");
+        }
+    }
+}
+
+public void SetupListeners() {
+    emitter = new IGCEmitter(this, true);
+    emitter.Hello(config.Get("general/id"));
+
+    emitter.On("DOCKING_REQUEST", HandleDockingRequests, unicast: true);
+    emitter.On("STATUS", HandleStatusRequests, unicast: true);
+    emitter.On("ACK", BufferAck, unicast: true);
+}
+
+public void HandleCliArgs(string argument) {
+    cli.TryParse(argument);
+    string command = cli.Items[0];
+    string channel = cli.Items.ElementAtOrDefault(1);
+    string msg = cli.Items.ElementAtOrDefault(2);
+    string target = cli.Items.ElementAtOrDefault(3);
+
+    switch (command) {
+        case "who":
+            foreach (var kv in emitter.receievers) {
+                Log($"{kv.Key}, {kv.Value}");
+            }
+            break;
+        case "broadcast":
+            Log($"bradcasting '{msg}' on channel '{channel}'");
+            emitter.Emit(channel, msg);
+            break;
+        case "send":
+            Log($"unicasting '{msg}' on channel '{channel}' to {target}");
+            emitter.Emit(channel, msg, emitter.Who(target));
+            break;
+        default:
+            Echo("usage: todo");
+            break;
+    }
+}
+
+public string ToGps(Vector3D point, string name = "", string colour = "") {
+    return $"GPS:{name}:{point.X}:{point.Y}:{point.Z}:{colour}:";
+}
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
 List<IMyBlockGroup> groups = new List<IMyBlockGroup>();
 List<MyIGCMessage> responses = new List<MyIGCMessage>();
-MyCommandLine cli = new MyCommandLine();
 bool newMessageReceieved = false;
+
+public bool IsAlive(IMyTerminalBlock block) {
+    return block != null && block.WorldMatrix.Translation != Vector3.Zero && block.IsWorking && block.IsFunctional;
+}
+
+public bool ConnectorIsAvailable(IMyShipConnector con, string name) {
+    return IsAlive(con) && con.Status == MyShipConnectorStatus.Unconnected && con.CustomName.Contains(name);
+}
+
+public void HandleDockingRequests(MyIGCMessage msg) {
+    string type = msg.Data.ToString();
+
+    Log($"incoming DOCKING_REQUEST for {type}");
+    IMyTerminalBlock block = FindDockBlock(type);
+    if (block == null) {
+        return;
+    }
+
+    Log("responding to docking request");
+    emitter.Emit("DOCKING_REQUEST", DockingInfo(block), msg.Source);
+}
+
+public IMyTerminalBlock FindDockBlock(string type) {
+    blocks.Clear();
+    groups.Clear();
+    if (type == "merge") {
+        return FindMergeBlock(batteryConnectorName);
+    } else if (type == "connector") {
+        return FindConnector(batteryConnectorName);
+    } else if (type == "parking") {
+        return FindMergeBlock(parkingMergeName);
+    }
+    Log($"Unsupported docking type: '{type}'");
+
+    return null;
+}
 
 public MyTuple<string, Vector3D, Vector3D> DockingInfo(IMyTerminalBlock block) {
     Vector3D blockPos = block.GetPosition();
@@ -23,92 +171,65 @@ public MyTuple<string, Vector3D, Vector3D> DockingInfo(IMyTerminalBlock block) {
     return new MyTuple<string, Vector3D, Vector3D>(type, blockPos, forward);
 }
 
-public bool IsAlive(IMyTerminalBlock block) {
-    return block != null && block.WorldMatrix.Translation != Vector3.Zero && block.IsWorking && block.IsFunctional;
-}
-
-public IMyTerminalBlock FindDockBlock(MyIGCMessage msg) {
-    string type = msg.Data.ToString();
-
-    blocks.Clear();
-    groups.Clear();
-    if (type == "merge") {
-        MyTuple<IMyShipMergeBlock, float> best = new MyTuple<IMyShipMergeBlock, float>(null, -1f);
-        GridTerminalSystem.GetBlockGroups(groups, g => g.Name.Contains("BattPack"));
-
-        foreach (IMyBlockGroup group in groups) {
-            blocks.Clear();
-            group.GetBlocks(blocks);
-
-            IMyShipMergeBlock candidate = null;
-            float battCharge = 0f;
-            foreach (IMyTerminalBlock block in blocks) {
-                IMyShipMergeBlock merge = block as IMyShipMergeBlock;
-                if (IsAlive(merge) && !merge.IsConnected) {
-                    candidate = merge;
-                    continue;
-                }
-
-                IMyBatteryBlock battery = block as IMyBatteryBlock;
-                if (IsAlive(battery)) {
-                    battCharge += battery.CurrentStoredPower;
-                    continue;
-                }
-            }
-
-            if (Me.CubeGrid.CustomName == "Solar Farm") {
-                // return highest batt
-                if (candidate != null && best.Item1 == null || battCharge > best.Item2) {
-                    best.Item1 = candidate;
-                    best.Item2 = battCharge;
-                }
-            } else {
-                // return lowest batt
-                if (candidate != null && best.Item1 == null || battCharge < best.Item2) {
-                    best.Item1 = candidate;
-                    best.Item2 = battCharge;
-                }
-            }
-        }
-        if (best.Item1 != null) {
-            Log($"found best result: {best.Item1.CustomName}, {best.Item2}");
-            return best.Item1;
-        }
-    } else if (type == "connector") {
-        GridTerminalSystem.GetBlocksOfType<IMyShipConnector>(blocks, b => b.IsSameConstructAs(Me));
-        foreach (IMyShipConnector con in blocks) {
-            if (IsAlive(con) && con.Status == MyShipConnectorStatus.Unconnected && con.CustomName.Contains("BattPack")) {
-                return con;
-            }
+public IMyShipConnector FindConnector(string name) {
+    GridTerminalSystem.GetBlocksOfType<IMyShipConnector>(blocks, b => b.IsSameConstructAs(Me));
+    foreach (IMyShipConnector con in blocks) {
+        if (ConnectorIsAvailable(con, name)) {
+            return con;
         }
     }
+
     Log($"did not find applicable dock: groups {groups.Count}, blocks {blocks.Count}");
 
     return null;
 }
 
-public void HandleDockingRequests(MyIGCMessage msg) {
-    Log("incoming DOCKING_REQUEST");
-    IMyTerminalBlock block = FindDockBlock(msg);
-    if (block != null) {
-        Log("responding to docking request");
-        emitter.Emit("DOCKING_REQUEST", DockingInfo(block), msg.Source);
-    } else {
-        Log("no free blocks");
+public IMyShipMergeBlock FindMergeBlock(string name) {
+    MyTuple<IMyShipMergeBlock, float> best = new MyTuple<IMyShipMergeBlock, float>(null, -1f);
+    GridTerminalSystem.GetBlockGroups(groups, g => g.Name.Contains(name));
+
+    foreach (IMyBlockGroup group in groups) {
+        blocks.Clear();
+        group.GetBlocks(blocks);
+
+        IMyShipMergeBlock candidate = null;
+        float battCharge = 0f;
+        foreach (IMyTerminalBlock block in blocks) {
+            IMyShipMergeBlock merge = block as IMyShipMergeBlock;
+            if (IsAlive(merge) && !merge.IsConnected) {
+                candidate = merge;
+                continue;
+            }
+
+            IMyBatteryBlock battery = block as IMyBatteryBlock;
+            if (IsAlive(battery)) {
+                battCharge += battery.CurrentStoredPower;
+                continue;
+            }
+        }
+
+        if (
+            (candidate != null && best.Item1 == null)
+            || (isEnergyProvider && battCharge > best.Item2)
+            || (!isEnergyProvider && battCharge < best.Item2)
+        ) {
+            best.Item1 = candidate;
+            best.Item2 = battCharge;
+        }
     }
+
+    if (best.Item1 == null) {
+        Log($"did not find applicable dock: groups {groups.Count}, blocks {blocks.Count}");
+    } else {
+        Log($"found best result: {best.Item1.CustomName}, {best.Item2}");
+    }
+
+    return best.Item1;
+
 }
 
 public void HandleStatusRequests(MyIGCMessage msg) {
     Log($"[{emitter.Who(msg.Source)}]: {msg.Data}");
-}
-
-public void SetupListeners() {
-    emitter = new IGCEmitter(this, true);
-    emitter.Hello();
-
-    emitter.On("DOCKING_REQUEST", HandleDockingRequests, unicast: true);
-    emitter.On("STATUS", HandleStatusRequests, unicast: true);
-    emitter.On("ACK", BufferAck, unicast: true);
 }
 
 public void BufferAck(MyIGCMessage msg) {
@@ -132,12 +253,12 @@ public void ProcessAcks() {
 
     long src = -1;
     double nearest = 0;
-    string tag = "";
+    string channel = "";
     Vector3D me = Me.GetPosition();
 
     foreach (var msg in responses) {
         MyTuple<string, string, Vector3D> data = msg.As<MyTuple<string, string, Vector3D>>();
-        tag = data.Item1;
+        channel = data.Item1;
         string name = data.Item2;
         Vector3D pos = data.Item3;
 
@@ -151,56 +272,12 @@ public void ProcessAcks() {
     }
 
     if (src != -1) {
-        Log($"giving {tag} task to {emitter.Who(src)}");
-        emitter.Emit(tag, "CONTINUE", src);
+        Log($"giving '{channel}' task to {emitter.Who(src)}");
+        emitter.Emit("JOB", channel, src);
     }
 
     responses.Clear();
     Runtime.UpdateFrequency |= UpdateFrequency.Once;
-}
-
-public Program() {
-    Me.GetSurface(0).WriteText("online\n");
-    if (Me.CustomData == "") {
-        Me.CustomData = $"[general]\nid={Me.CubeGrid.CustomName}";
-    }
-    config.Parse(this);
-    SetupListeners();
-    Runtime.UpdateFrequency |= UpdateFrequency.Update100;
-}
-
-public void Main(string argument, UpdateType updateType) {
-    emitter.Process();
-
-    if (argument != null && argument != "") {
-        cli.TryParse(argument);
-        string command = cli.Items[0];
-        string channel = cli.Items.ElementAtOrDefault(1);
-        string msg = cli.Items.ElementAtOrDefault(2);
-        string target = cli.Items.ElementAtOrDefault(3);
-
-        switch (command) {
-            case "who":
-                foreach (var kv in emitter.receievers) {
-                    Log($"{kv.Key}, {kv.Value}");
-                }
-            break;
-            case "broadcast":
-                Log($"bradcasting '{msg}' on channel '{channel}'");
-                emitter.Emit(channel, msg);
-            break;
-            case "send":
-                Log($"unicasting '{msg}' on channel '{channel}' to {target}");
-                emitter.Emit(channel, msg, emitter.Who(target));
-            break;
-        }
-    }
-
-    ProcessAcks();
-}
-
-public string ToGps(Vector3D point, string name = "", string colour = "") {
-    return $"GPS:{name}:{point.X}:{point.Y}:{point.Z}:{colour}:";
 }
 public class IGCEmitter {
     public Program p;
@@ -421,10 +498,10 @@ public class Config {
         this.customData = p.Me.CustomData;
 
         string value;
-        ini.GetKeys(this.keys);
+        this.ini.GetKeys(this.keys);
 
         foreach (MyIniKey key in this.keys) {
-            if (ini.Get(key.Section, key.Name).TryGetString(out value)) {
+            if (this.ini.Get(key.Section, key.Name).TryGetString(out value)) {
                 this.Set(key.ToString(), value);
             }
         }
@@ -450,8 +527,10 @@ StringBuilder size = new StringBuilder("Q");
 public int GetLineCount() {
     IMyTextSurface surface = Me.GetSurface(0);
     Vector2 charSizeInPx = surface.MeasureStringInPixels(size, surface.Font, surface.FontSize);
+    float padding = (surface.TextPadding / 100) * surface.SurfaceSize.Y;
+    float height = surface.SurfaceSize.Y - (2 * padding);
 
-    return (int)(surface.TextureSize.Y / charSizeInPx.Y);
+    return (int)(Math.Round(height / charSizeInPx.Y));
 }
 
 public void Debug(string message, bool newline = true, IMyTextSurface output = null) {

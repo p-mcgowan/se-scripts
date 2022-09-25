@@ -16,6 +16,7 @@ public void GetDroneBlocks() {
     batteryIds.Clear();
 
     foreach (var block in blocks) {
+        Log($"{block.CustomName}");
         if (block is IMyShipMergeBlock){
             mergeBlockId = block.EntityId;
         } else if (block is IMyShipConnector){
@@ -25,6 +26,18 @@ public void GetDroneBlocks() {
         } else if (block is IMyBatteryBlock) {
             batteryIds.Add(block.EntityId);
         }
+    }
+}
+
+public void SetDroneThrusters(bool enabled) {
+    blocks.Clear();
+    GridTerminalSystem.GetBlocksOfType<IMyThrust>(blocks, b =>
+        b.IsSameConstructAs(Me) &&
+        b.CustomName.Contains("Drone") &&
+        (b is IMyThrust)
+    );
+    foreach (IMyThrust block in blocks) {
+        block.Enabled = enabled;
     }
 }
 
