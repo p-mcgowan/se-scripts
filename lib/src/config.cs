@@ -35,10 +35,10 @@ public class Config {
         this.customData = p.Me.CustomData;
 
         string value;
-        ini.GetKeys(this.keys);
+        this.ini.GetKeys(this.keys);
 
         foreach (MyIniKey key in this.keys) {
-            if (ini.Get(key.Section, key.Name).TryGetString(out value)) {
+            if (this.ini.Get(key.Section, key.Name).TryGetString(out value)) {
                 this.Set(key.ToString(), value);
             }
         }

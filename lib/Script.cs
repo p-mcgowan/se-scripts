@@ -42,10 +42,10 @@ public class Config {
         this.customData = p.Me.CustomData;
 
         string value;
-        ini.GetKeys(this.keys);
+        this.ini.GetKeys(this.keys);
 
         foreach (MyIniKey key in this.keys) {
-            if (ini.Get(key.Section, key.Name).TryGetString(out value)) {
+            if (this.ini.Get(key.Section, key.Name).TryGetString(out value)) {
                 this.Set(key.ToString(), value);
             }
         }
@@ -73,9 +73,8 @@ public int GetLineCount() {
     Vector2 charSizeInPx = surface.MeasureStringInPixels(size, surface.Font, surface.FontSize);
     float padding = (surface.TextPadding / 100) * surface.SurfaceSize.Y;
     float height = surface.SurfaceSize.Y - (2 * padding);
-    Echo($"{height}, {charSizeInPx.Y}");
 
-    return (int)(height / charSizeInPx.Y);
+    return (int)(Math.Round(height / charSizeInPx.Y));
 }
 
 public void Debug(string message, bool newline = true, IMyTextSurface output = null) {
