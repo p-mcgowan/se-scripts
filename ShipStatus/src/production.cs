@@ -115,7 +115,7 @@ public class ProductionDetails {
                 continue;
             }
             bool idle = block.IsIdle();
-            if (block.block.DefinitionDisplayNameText.ToString() != "Survival kit") {
+            if (block.block.DefinitionDisplayNameText.ToString() != "Survival Kit") {
                 allIdle = allIdle && idle;
             }
             if (idle) {
@@ -214,7 +214,7 @@ public class ProductionBlock {
     public bool Enabled {
         get { return block.Enabled; }
         set {
-            if (block.DefinitionDisplayNameText.ToString() == "Survival kit") {
+            if (block.DefinitionDisplayNameText.ToString() == "Survival Kit") {
                 return;
             }
             block.Enabled = value;
