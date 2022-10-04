@@ -177,6 +177,7 @@ public class Template {
         }
     }
 
+    public int insertSprites = 0;
     public void Render(DrawingSurface ds, string name = null) {
         string dsName = name ?? ds.name;
         List<Node> nodeList = null;
@@ -187,6 +188,12 @@ public class Template {
 
         DsCallback callback = null;
         int i = 0;
+        if (++insertSprites >= 4) {
+            insertSprites=0;
+        }
+        for (int j = 0; j < insertSprites; j++) {
+            ds.frame.Add(new MySprite());
+        }
         this.removeNodes.Clear();
         foreach (Node node in nodeList) {
             if (node.action == "newline") {
