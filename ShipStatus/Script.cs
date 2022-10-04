@@ -23,8 +23,9 @@ const string customDataInit = @"; CustomData config:
 ;healthIgnore=
 ;healthOnHud=false
 
-[Programmable block <0>]
+[Programmable Block <0>]
 output=
+|{config:size=0.5;bgColour=0,10,40}
 |Jump drives: {power.jumpDrives}
 |{power.jumpBar}
 |Batteries: {power.batteries}
@@ -1429,7 +1430,7 @@ public class ProductionDetails {
                 continue;
             }
             bool idle = block.IsIdle();
-            if (block.block.DefinitionDisplayNameText.ToString() != "Survival kit") {
+            if (block.block.DefinitionDisplayNameText.ToString() != "Survival Kit") {
                 allIdle = allIdle && idle;
             }
             if (idle) {
@@ -1528,7 +1529,7 @@ public class ProductionBlock {
     public bool Enabled {
         get { return block.Enabled; }
         set {
-            if (block.DefinitionDisplayNameText.ToString() == "Survival kit") {
+            if (block.DefinitionDisplayNameText.ToString() == "Survival Kit") {
                 return;
             }
             block.Enabled = value;
@@ -2380,6 +2381,7 @@ public class Template {
         }
     }
 
+    public int insertSprites = 0;
     public void Render(DrawingSurface ds, string name = null) {
         string dsName = name ?? ds.name;
         List<Node> nodeList = null;
@@ -2390,6 +2392,12 @@ public class Template {
 
         DsCallback callback = null;
         int i = 0;
+        if (++insertSprites >= 4) {
+            insertSprites=0;
+        }
+        for (int j = 0; j < insertSprites; j++) {
+            ds.frame.Add(new MySprite());
+        }
         this.removeNodes.Clear();
         foreach (Node node in nodeList) {
             if (node.action == "newline") {
