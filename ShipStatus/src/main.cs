@@ -23,8 +23,9 @@ const string customDataInit = @"; CustomData config:
 ;healthIgnore=
 ;healthOnHud=false
 
-[Programmable block <0>]
+[Programmable Block <0>]
 output=
+|{config:size=0.5;bgColour=0,10,40}
 |Jump drives: {power.jumpDrives}
 |{power.jumpBar}
 |Batteries: {power.batteries}
