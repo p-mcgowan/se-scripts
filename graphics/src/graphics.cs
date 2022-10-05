@@ -144,6 +144,7 @@ public class DrawingSurface {
         this.frame = this.surface.DrawFrame();
         // https://support.keenswh.com/spaceengineers/pc/topic/1-192-021-lcd-scripts-using-sprites-dont-work-in-mp
         if ((++this.mpSpriteSync) % 2 != 0) {
+            this.frame.Add(new MySprite());
             if (this.mpSpriteSync > 10) {
                 this.mpSpriteSync = 0;
             }
