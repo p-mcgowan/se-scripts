@@ -23,28 +23,28 @@ const string customDataInit = @"; CustomData config:
 ;healthIgnore=
 ;healthOnHud=false
 
+{text:colour=120,50,50:CONSUMERS}
+
 [Programmable Block <0>]
 output=
-|{config:size=0.5;bgColour=0,10,40}
-|Jump drives: {power.jumpDrives}
+|{config:size=0.45;bgColour=0,10,30}
+|{text:colour=120,50,50:JUMP DRIVES:} {power.jumpDrives}
 |{power.jumpBar}
-|Batteries: {power.batteries}
+|{text:colour=120,50,50:BATTERIES:} {power.batteries}
 |{power.batteryBar}
-|Reactors: {power.reactors}, Output: {power.reactorOutputMW} MW  ({power.reactorUr} Ur)
-|Solar panels: {power.solars}, Output: {power.solarOutputMW} MW
-|Wind turbines: {power.turbines}, Output: {power.turbineOutputMW} MW
-|H2 Engines: {power.engines}, Output: {power.engineOutputMW} MW
-|Energy IO: {power.ioString}
+|{text:colour=120,50,50:ENERGY IO:} {power.ioString}
 |{power.ioBar}
 |{power.ioLegend}
 |
-|Ship status: {health.status}
-|{health.blocks}
-|
+|{text:colour=120,50,50:PRODUCTION:}{setCursor:x=50%}{setCursor:x=+1.5}{text:colour=120,50,50:DAMAGE:} {health.status}
+|{?saveCursor}
 |{production.status}
 |{production.blocks}
+|{?setCursor:x=50%}{setCursor:x=+1.5}{saveCursor:y=y}
+|{health.blocks}
+|{?setCursor:x=0;y=~y}{saveCursor}
 |
-|Cargo: {cargo.fullString}
+|{text:colour=120,50,50:CARGO:} {cargo.fullString}
 |{cargo.bar}
 |{cargo.items}
 ";
