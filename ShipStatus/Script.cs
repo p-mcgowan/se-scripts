@@ -1625,8 +1625,8 @@ public class DrawingSurface {
     public string name;
     public int ySpace;
     public Color colourGrey = new Color(40, 40, 40);
+    public bool mpSpriteSync = false;
     public readonly StringBuilder sizeBuilder;
-    public int mpSpriteSync;
 
     public static char[] underscoreSep = { '_' };
     public static char[] commaSep = { ',' };
@@ -1677,7 +1677,6 @@ public class DrawingSurface {
             return;
         }
 
-        this.mpSpriteSync = 0;
         this.cursor.X = 0f;
         this.cursor.Y = 0f;
         this.surface.Script = "";
@@ -1723,12 +1722,15 @@ public class DrawingSurface {
         this.InitScreen();
         this.drawing = true;
         this.frame = this.surface.DrawFrame();
-        // https://support.keenswh.com/spaceengineers/pc/topic/1-192-021-lcd-scripts-using-sprites-dont-work-in-mp
-        if ((++this.mpSpriteSync) % 2 != 0) {
-            this.frame.Add(new MySprite());
-            if (this.mpSpriteSync > 10) {
-                this.mpSpriteSync = 0;
-            }
+        this.mpSpriteSync = !this.mpSpriteSync;
+        if (this.mpSpriteSync) {
+            this.frame.Add(new MySprite() {
+               Type = SpriteType.TEXTURE,
+               Data = "SquareSimple",
+               Color = surface.BackgroundColor,
+               Position = new Vector2(0, 0),
+               Size = new Vector2(0, 0)
+            });
         }
     }
 
