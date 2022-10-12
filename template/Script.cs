@@ -1070,6 +1070,14 @@ public static class Util {
     public static System.Text.RegularExpressions.Regex surfaceExtractor =
         Util.Regex(@"\s<(\d+)>$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
+    public static string GetFormatNumberStr(double input) {
+        return Util.GetFormatNumberStr((VRage.MyFixedPoint)input);
+    }
+
+    public static string GetFormatNumberStr(float input) {
+        return Util.GetFormatNumberStr((VRage.MyFixedPoint)input);
+    }
+
     public static string GetFormatNumberStr(VRage.MyFixedPoint input) {
         int n = Math.Max(0, (int)input);
         if (n == 0) {
@@ -1086,6 +1094,14 @@ public static class Util {
         }
 
         return $"{sb}0,,.0M";
+    }
+
+    public static string FormatNumber(double input, string fmt = null) {
+        return Util.FormatNumber((VRage.MyFixedPoint)input, fmt);
+    }
+
+    public static string FormatNumber(float input, string fmt = null) {
+        return Util.FormatNumber((VRage.MyFixedPoint)input, fmt);
     }
 
     public static string FormatNumber(VRage.MyFixedPoint input, string fmt = null) {
@@ -1112,6 +1128,10 @@ public static class Util {
             return id.Split('/')[1];
         }
         return id;
+    }
+
+    public static string PctString(double val) {
+        return Util.PctString((float)val);
     }
 
     public static string PctString(float val) {
