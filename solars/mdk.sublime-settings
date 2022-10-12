@@ -15,5 +15,9 @@
 
   // set to true to include mdk's thumb, or set to a path to use another png file
   "thumb": true,
-  "ext": "../util/util.cs"
+
+  "ext": "../util/util.cs",
+
+  // todo: should get picked up when importing files with allowLinq true
+  "allowLinq": true
 }

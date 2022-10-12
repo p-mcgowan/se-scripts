@@ -1,22 +1,31 @@
+string customDataDefault = @"[panels]
+name=Solar Farm Panels
+[rotor]
+name=Solar Farm Rotor
+reverse=false
+
+;[rotorRev]
+;name=Solar Farm Rotor 2";
+bool foundLocalMax = false;
+bool starting = true;
+float closeEnough = 0.05f;
+float currentOutput = 0f;
+float currentPotential = 0f;
+float prevPotential = 0f;
+float rotorSpinSpeed = 0.1f;
+int maxReductions = 4;
+int reductions = 0;
+int solarCount;
 string panelGroup = "Panels";
 string rotorName = "Rotor";
 string rotorRevName = "Rotor 2";
-
+DrawingSurface output;
 IMyBlockGroup panels;
 IMyMotorStator rotor;
 IMyMotorStator rotorRev;
-int solarCount;
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
-DrawingSurface output;
 MyIni ini = new MyIni();
-float prev = 0f;
-float current = 0f;
-int reductions = 0;
-int maxReductions = 3;
-float rotorSpinSpeed = 0.1f;
-bool starting = true;
-float closeEnough = 0.05f;
-bool foundLocalMax = false;
+string reverseRotor = "false";
 
 public void Bail(string message) {
     Echo(message);
@@ -31,9 +40,16 @@ public void Bail(string message) {
 public Program() {
     output = new DrawingSurface(Me.GetSurface(0), this, "PB");
 
+    if (Me.CustomData == "") {
+        Bail($"No customData - adding default");
+        Me.CustomData = customDataDefault;
+        return;
+    }
+
     MyIniParseResult result;
     if (!ini.TryParse(Me.CustomData, out result)) {
         Bail($"Failed to parse config:\n{result}");
+        return;
     }
 
     if (!ini.ContainsSection("panels") || !ini.Get("panels", "name").TryGetString(out panelGroup)) {
@@ -52,6 +68,12 @@ public Program() {
     panels = (IMyBlockGroup)GridTerminalSystem.GetBlockGroupWithName(panelGroup);
     rotor = (IMyMotorStator)GridTerminalSystem.GetBlockWithName(rotorName);
     rotorRev = (IMyMotorStator)GridTerminalSystem.GetBlockWithName(rotorRevName);
+    if (ini.ContainsSection("rotor") && ini.Get("rotor", "reverse").TryGetString(out reverseRotor)) {
+        Echo($"reverseRotor={reverseRotor}, willrev={reverseRotor == "true"}");
+        if (reverseRotor == "true") {
+            rotorSpinSpeed = -1 * rotorSpinSpeed;
+        }
+    }
 
     if (panels == null || rotor == null) {
         Bail($"Did not find all blocks\n" +
@@ -63,21 +85,21 @@ public Program() {
     Runtime.UpdateFrequency = UpdateFrequency.Update100;
 }
 
-public float GetMaxOut() {
+public void GetOuputs() {
     blocks.Clear();
     panels.GetBlocks(blocks);
     solarCount = 0;
-    float max = 0f;
+    currentOutput = 0f;
+    currentPotential = 0f;
 
     foreach (IMySolarPanel panel in blocks) {
         if (panel == null || panel.WorldMatrix.Translation == Vector3.Zero || !panel.IsWorking || !panel.IsFunctional) {
             continue;
         }
         solarCount++;
-        max += panel.MaxOutput;
+        currentPotential += panel.MaxOutput;
+        currentOutput += panel.CurrentOutput;
     }
-
-    return solarCount == 0f ? 0f : max / solarCount;
 }
 
 public void SetRotorRPM(float a) {
@@ -94,15 +116,19 @@ public void Initialize() {
     }
 
     if (rotorRev == null || rotor.Angle > backAngle - closeEnough && rotor.Angle < backAngle + closeEnough) {
-        current = GetMaxOut();
+        GetOuputs();
+        if (currentOutput == 0f) {
+            SetRotorRPM(0f);
+            starting = false;
+        }
         ReportStatus("Finding sun");
-        if (prev == 0f) {
+        if (prevPotential == 0f) {
             SetRotorRPM(-2 * rotorSpinSpeed);
-            prev = current;
+            prevPotential = currentPotential;
             return;
         }
 
-        if (current < prev) {
+        if (currentPotential < prevPotential) {
             if (foundLocalMax) {
                 SetRotorRPM(0f);
                 starting = false;
@@ -111,7 +137,7 @@ public void Initialize() {
                 SetRotorRPM(-1 * rotor.TargetVelocityRPM);
             }
         }
-        prev = current;
+        prevPotential = currentPotential;
         return;
     }
     ReportStatus("Initializing");
@@ -124,19 +150,23 @@ public void Initialize() {
 }
 
 public void ReportStatus(string state) {
-    Echo($"current: {current}");
-    Echo($"prev: {prev}");
+    Echo($"currentOutput: {currentOutput}");
+    Echo($"currentPotential: {currentPotential}");
+    Echo($"prevPotential: {prevPotential}");
     Echo($"reductions: {reductions}");
+    Echo($"reverseRotor: {reverseRotor}, rev={reverseRotor == "true"}");
     Echo(state);
 
     output
         .Text($"SOLAR MODULE").Newline()
-        .Text($"{solarCount} panels").Newline()
-        .Text($"{solarCount * current} MW potential").Newline()
+        .Text($"{solarCount} panels {currentOutput.ToString(("0.###"))} / {currentPotential.ToString(("0.###"))} MW").Newline()
         .Newline()
         .Text($"Status: {state}")
         .Draw();
 }
+
+// bool sunObscured = false;
+// bool repositionIncreased = false;
 
 public void Main(string argument, UpdateType updateType) {
     if (starting) {
@@ -144,18 +174,40 @@ public void Main(string argument, UpdateType updateType) {
         return;
     }
 
-    current = GetMaxOut();
+    GetOuputs();
+
+    if (currentOutput == 0f) {
+        ReportStatus("Waiting for sun");
+        SetRotorRPM(0f);
+        return;
+    }
 
     if (rotor.TargetVelocityRPM == 0f) {
-        if (current < prev && ++reductions > maxReductions) {
+        if (currentPotential < prevPotential && ++reductions > maxReductions) {
             SetRotorRPM(rotorSpinSpeed);
             ReportStatus("Repositioning");
             reductions = 0;
+            // repositionIncreased = false;
         } else {
             ReportStatus("Online");
         }
     } else {
-        if (current < prev && ++reductions > maxReductions) {
+        // if (currentPotential >= prevPotential) {
+        //     repositionIncreased = true;
+        //     sunObscured = false;
+        // } else {
+        //     sunObscured = true;
+        //     ReportStatus("Can't find sun");
+        //     // return;
+        // }
+        // else if (!repositionIncreased) {
+        //     Echo("repositioning didn't increase output");
+        //     SetRotorRPM(0);
+        //     reductions = 0;
+        //     sunObscured = true;
+        //     ReportStatus("Waiting for sun");
+        // }
+        if (currentPotential < prevPotential && ++reductions > maxReductions) {
             SetRotorRPM(0);
             reductions = 0;
             ReportStatus("Online");
@@ -164,7 +216,7 @@ public void Main(string argument, UpdateType updateType) {
         }
     }
 
-    prev = current;
+    prevPotential = currentPotential;
 }
 /*
  * GRAPHICS
@@ -212,6 +264,7 @@ public class DrawingSurface {
     public string name;
     public int ySpace;
     public Color colourGrey = new Color(40, 40, 40);
+    public bool mpSpriteSync = false;
     public readonly StringBuilder sizeBuilder;
 
     public static char[] underscoreSep = { '_' };
@@ -280,7 +333,7 @@ public class DrawingSurface {
         if (colour == "" || colour == null) {
             return null;
         }
-        if (!colour.Contains(',')) {
+        if (!colour.Contains(",")) {
             return DrawingSurface.stringToColour.Get(colour);
         }
 
@@ -308,6 +361,16 @@ public class DrawingSurface {
         this.InitScreen();
         this.drawing = true;
         this.frame = this.surface.DrawFrame();
+        this.mpSpriteSync = !this.mpSpriteSync;
+        if (this.mpSpriteSync) {
+            this.frame.Add(new MySprite() {
+               Type = SpriteType.TEXTURE,
+               Data = "SquareSimple",
+               Color = surface.BackgroundColor,
+               Position = new Vector2(0, 0),
+               Size = new Vector2(0, 0)
+            });
+        }
     }
 
     public DrawingSurface Draw() {
@@ -318,22 +381,40 @@ public class DrawingSurface {
     }
 
     public DrawingSurface SaveCursor() {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
         this.savedCursor = this.cursor;
 
         return this;
     }
 
+    public DrawingSurface LoadCursor() {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
+        this.cursor = this.savedCursor;
+
+        return this;
+    }
+
     public DrawingSurface SetCursor(float? x, float? y) {
+        if (!this.drawing) {
+            this.DrawStart();
+        }
+
         this.cursor.X = x ?? this.cursor.X;
         this.cursor.Y = y ?? this.cursor.Y;
 
         return this;
     }
 
-    public DrawingSurface Newline(bool resetX = true, bool reverse = false) {
+    public DrawingSurface Newline(bool reverse = false) {
         float height = (this.charSizeInPx.Y + this.ySpace) * (reverse ? -1 : 1);
         this.cursor.Y += height;
-        this.cursor.X = resetX ? 0 : this.savedCursor.X;
+        this.cursor.X = this.savedCursor.X;
 
         return this;
     }
@@ -365,10 +446,6 @@ public class DrawingSurface {
             this.DrawStart();
         }
 
-        this.sb.Clear();
-        this.sb.Append(sprite.Data);
-        Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
-
         sprite.Position = this.cursor + this.viewport.Position;
         sprite.RotationOrScale = this.surface.FontSize * sprite.RotationOrScale;
         sprite.FontId = this.surface.Font;
@@ -376,7 +453,7 @@ public class DrawingSurface {
 
         this.frame.Add(sprite);
 
-        this.cursor.X += size.X;
+        this.AddTextSizeToCursor(sprite.Data, sprite.Alignment);
     }
 
     public DrawingSurface Text(string text, Options options) {
@@ -416,13 +493,21 @@ public class DrawingSurface {
             FontId = surface.Font
         });
 
-        this.sb.Clear();
-        this.sb.Append(text);
-        Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
-
-        this.cursor.X += size.X;
+        this.AddTextSizeToCursor(text, textAlignment);
 
         return this;
+    }
+
+    public void AddTextSizeToCursor(string text, TextAlignment alignment) {
+        if (alignment == TextAlignment.RIGHT) {
+            return;
+        }
+
+        this.sb.Clear();
+        this.sb.Append(text);
+
+        Vector2 size = this.surface.MeasureStringInPixels(this.sb, this.surface.Font, this.surface.FontSize);
+        this.cursor.X += alignment == TextAlignment.CENTER ? size.X / 2 : size.X;
     }
 
     public float ToRad(float deg) {
@@ -781,6 +866,8 @@ public static System.Globalization.NumberFormatInfo GetCustomFormat() {
 }
 
 public static class Util {
+    public static StringBuilder sb = new StringBuilder("");
+
     public static System.Text.RegularExpressions.Regex surfaceExtractor =
         Util.Regex(@"\s<(\d+)>$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
@@ -794,7 +881,12 @@ public static class Util {
             return "###,,0,K";
         }
 
-        return string.Concat(Enumerable.Repeat("#", $"{n}".Length)) + "0,,#M";
+        sb.Clear();
+        for (int i = $"{n}".Length; i > 0; --i) {
+            sb.Append("#");
+        }
+
+        return $"{sb}0,,.0M";
     }
 
     public static string FormatNumber(VRage.MyFixedPoint input, string fmt = null) {
@@ -817,7 +909,7 @@ public static class Util {
 
     public static string ToItemName(MyProductionItem i) {
         string id = i.BlueprintId.ToString();
-        if (id.Contains('/')) {
+        if (id.Contains("/")) {
             return id.Split('/')[1];
         }
         return id;

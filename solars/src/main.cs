@@ -1,22 +1,31 @@
+string customDataDefault = @"[panels]
+name=Solar Farm Panels
+[rotor]
+name=Solar Farm Rotor
+reverse=false
+
+;[rotorRev]
+;name=Solar Farm Rotor 2";
+bool foundLocalMax = false;
+bool starting = true;
+float closeEnough = 0.05f;
+float currentOutput = 0f;
+float currentPotential = 0f;
+float prevPotential = 0f;
+float rotorSpinSpeed = 0.1f;
+int maxReductions = 4;
+int reductions = 0;
+int solarCount;
 string panelGroup = "Panels";
 string rotorName = "Rotor";
 string rotorRevName = "Rotor 2";
-
+DrawingSurface output;
 IMyBlockGroup panels;
 IMyMotorStator rotor;
 IMyMotorStator rotorRev;
-int solarCount;
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
-DrawingSurface output;
 MyIni ini = new MyIni();
-float prev = 0f;
-float current = 0f;
-int reductions = 0;
-int maxReductions = 3;
-float rotorSpinSpeed = 0.1f;
-bool starting = true;
-float closeEnough = 0.05f;
-bool foundLocalMax = false;
+string reverseRotor = "false";
 
 public void Bail(string message) {
     Echo(message);
@@ -31,9 +40,16 @@ public void Bail(string message) {
 public Program() {
     output = new DrawingSurface(Me.GetSurface(0), this, "PB");
 
+    if (Me.CustomData == "") {
+        Bail($"No customData - adding default");
+        Me.CustomData = customDataDefault;
+        return;
+    }
+
     MyIniParseResult result;
     if (!ini.TryParse(Me.CustomData, out result)) {
         Bail($"Failed to parse config:\n{result}");
+        return;
     }
 
     if (!ini.ContainsSection("panels") || !ini.Get("panels", "name").TryGetString(out panelGroup)) {
@@ -52,6 +68,12 @@ public Program() {
     panels = (IMyBlockGroup)GridTerminalSystem.GetBlockGroupWithName(panelGroup);
     rotor = (IMyMotorStator)GridTerminalSystem.GetBlockWithName(rotorName);
     rotorRev = (IMyMotorStator)GridTerminalSystem.GetBlockWithName(rotorRevName);
+    if (ini.ContainsSection("rotor") && ini.Get("rotor", "reverse").TryGetString(out reverseRotor)) {
+        Echo($"reverseRotor={reverseRotor}, willrev={reverseRotor == "true"}");
+        if (reverseRotor == "true") {
+            rotorSpinSpeed = -1 * rotorSpinSpeed;
+        }
+    }
 
     if (panels == null || rotor == null) {
         Bail($"Did not find all blocks\n" +
@@ -63,21 +85,21 @@ public Program() {
     Runtime.UpdateFrequency = UpdateFrequency.Update100;
 }
 
-public float GetMaxOut() {
+public void GetOuputs() {
     blocks.Clear();
     panels.GetBlocks(blocks);
     solarCount = 0;
-    float max = 0f;
+    currentOutput = 0f;
+    currentPotential = 0f;
 
     foreach (IMySolarPanel panel in blocks) {
         if (panel == null || panel.WorldMatrix.Translation == Vector3.Zero || !panel.IsWorking || !panel.IsFunctional) {
             continue;
         }
         solarCount++;
-        max += panel.MaxOutput;
+        currentPotential += panel.MaxOutput;
+        currentOutput += panel.CurrentOutput;
     }
-
-    return solarCount == 0f ? 0f : max / solarCount;
 }
 
 public void SetRotorRPM(float a) {
@@ -94,15 +116,19 @@ public void Initialize() {
     }
 
     if (rotorRev == null || rotor.Angle > backAngle - closeEnough && rotor.Angle < backAngle + closeEnough) {
-        current = GetMaxOut();
+        GetOuputs();
+        if (currentOutput == 0f) {
+            SetRotorRPM(0f);
+            starting = false;
+        }
         ReportStatus("Finding sun");
-        if (prev == 0f) {
+        if (prevPotential == 0f) {
             SetRotorRPM(-2 * rotorSpinSpeed);
-            prev = current;
+            prevPotential = currentPotential;
             return;
         }
 
-        if (current < prev) {
+        if (currentPotential < prevPotential) {
             if (foundLocalMax) {
                 SetRotorRPM(0f);
                 starting = false;
@@ -111,7 +137,7 @@ public void Initialize() {
                 SetRotorRPM(-1 * rotor.TargetVelocityRPM);
             }
         }
-        prev = current;
+        prevPotential = currentPotential;
         return;
     }
     ReportStatus("Initializing");
@@ -124,19 +150,23 @@ public void Initialize() {
 }
 
 public void ReportStatus(string state) {
-    Echo($"current: {current}");
-    Echo($"prev: {prev}");
+    Echo($"currentOutput: {currentOutput}");
+    Echo($"currentPotential: {currentPotential}");
+    Echo($"prevPotential: {prevPotential}");
     Echo($"reductions: {reductions}");
+    Echo($"reverseRotor: {reverseRotor}, rev={reverseRotor == "true"}");
     Echo(state);
 
     output
         .Text($"SOLAR MODULE").Newline()
-        .Text($"{solarCount} panels").Newline()
-        .Text($"{solarCount * current} MW potential").Newline()
+        .Text($"{solarCount} panels {currentOutput.ToString(("0.###"))} / {currentPotential.ToString(("0.###"))} MW").Newline()
         .Newline()
         .Text($"Status: {state}")
         .Draw();
 }
+
+// bool sunObscured = false;
+// bool repositionIncreased = false;
 
 public void Main(string argument, UpdateType updateType) {
     if (starting) {
@@ -144,18 +174,40 @@ public void Main(string argument, UpdateType updateType) {
         return;
     }
 
-    current = GetMaxOut();
+    GetOuputs();
+
+    if (currentOutput == 0f) {
+        ReportStatus("Waiting for sun");
+        SetRotorRPM(0f);
+        return;
+    }
 
     if (rotor.TargetVelocityRPM == 0f) {
-        if (current < prev && ++reductions > maxReductions) {
+        if (currentPotential < prevPotential && ++reductions > maxReductions) {
             SetRotorRPM(rotorSpinSpeed);
             ReportStatus("Repositioning");
             reductions = 0;
+            // repositionIncreased = false;
         } else {
             ReportStatus("Online");
         }
     } else {
-        if (current < prev && ++reductions > maxReductions) {
+        // if (currentPotential >= prevPotential) {
+        //     repositionIncreased = true;
+        //     sunObscured = false;
+        // } else {
+        //     sunObscured = true;
+        //     ReportStatus("Can't find sun");
+        //     // return;
+        // }
+        // else if (!repositionIncreased) {
+        //     Echo("repositioning didn't increase output");
+        //     SetRotorRPM(0);
+        //     reductions = 0;
+        //     sunObscured = true;
+        //     ReportStatus("Waiting for sun");
+        // }
+        if (currentPotential < prevPotential && ++reductions > maxReductions) {
             SetRotorRPM(0);
             reductions = 0;
             ReportStatus("Online");
@@ -164,5 +216,5 @@ public void Main(string argument, UpdateType updateType) {
         }
     }
 
-    prev = current;
+    prevPotential = currentPotential;
 }
