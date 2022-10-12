@@ -23,8 +23,6 @@ const string customDataInit = @"; CustomData config:
 ;healthIgnore=
 ;healthOnHud=false
 
-{text:colour=120,50,50:CONSUMERS}
-
 [Programmable Block <0>]
 output=
 |{config:size=0.45;bgColour=0,10,30}
@@ -650,16 +648,17 @@ public bool RecheckFailed() {
  * ENUMERATOR
  */
 public void RunStateMachine() {
-    if (stateMachine != null) {
-        bool hasMoreSteps = stateMachine.MoveNext();
+    if (stateMachine == null) {
+        return;
+    }
+    bool hasMoreSteps = stateMachine.MoveNext();
 
-        if (hasMoreSteps) {
-            Runtime.UpdateFrequency |= UpdateFrequency.Once;
-        } else {
-            stateMachine.Dispose();
-            stateMachine = null;
-            Runtime.UpdateFrequency &= ~UpdateFrequency.Once;
-        }
+    if (hasMoreSteps) {
+        Runtime.UpdateFrequency |= UpdateFrequency.Once;
+    } else {
+        stateMachine.Dispose();
+        stateMachine = null;
+        Runtime.UpdateFrequency &= ~UpdateFrequency.Once;
     }
 }
 
@@ -2576,6 +2575,14 @@ public static class Util {
     public static System.Text.RegularExpressions.Regex surfaceExtractor =
         Util.Regex(@"\s<(\d+)>$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
+    public static string GetFormatNumberStr(double input) {
+        return Util.GetFormatNumberStr((VRage.MyFixedPoint)input);
+    }
+
+    public static string GetFormatNumberStr(float input) {
+        return Util.GetFormatNumberStr((VRage.MyFixedPoint)input);
+    }
+
     public static string GetFormatNumberStr(VRage.MyFixedPoint input) {
         int n = Math.Max(0, (int)input);
         if (n == 0) {
@@ -2592,6 +2599,14 @@ public static class Util {
         }
 
         return $"{sb}0,,.0M";
+    }
+
+    public static string FormatNumber(double input, string fmt = null) {
+        return Util.FormatNumber((VRage.MyFixedPoint)input, fmt);
+    }
+
+    public static string FormatNumber(float input, string fmt = null) {
+        return Util.FormatNumber((VRage.MyFixedPoint)input, fmt);
     }
 
     public static string FormatNumber(VRage.MyFixedPoint input, string fmt = null) {
@@ -2618,6 +2633,10 @@ public static class Util {
             return id.Split('/')[1];
         }
         return id;
+    }
+
+    public static string PctString(double val) {
+        return Util.PctString((float)val);
     }
 
     public static string PctString(float val) {

@@ -2,16 +2,17 @@
  * ENUMERATOR
  */
 public void RunStateMachine() {
-    if (stateMachine != null) {
-        bool hasMoreSteps = stateMachine.MoveNext();
+    if (stateMachine == null) {
+        return;
+    }
+    bool hasMoreSteps = stateMachine.MoveNext();
 
-        if (hasMoreSteps) {
-            Runtime.UpdateFrequency |= UpdateFrequency.Once;
-        } else {
-            stateMachine.Dispose();
-            stateMachine = null;
-            Runtime.UpdateFrequency &= ~UpdateFrequency.Once;
-        }
+    if (hasMoreSteps) {
+        Runtime.UpdateFrequency |= UpdateFrequency.Once;
+    } else {
+        stateMachine.Dispose();
+        stateMachine = null;
+        Runtime.UpdateFrequency &= ~UpdateFrequency.Once;
     }
 }
 

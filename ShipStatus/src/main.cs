@@ -23,8 +23,6 @@ const string customDataInit = @"; CustomData config:
 ;healthIgnore=
 ;healthOnHud=false
 
-{text:colour=120,50,50:CONSUMERS}
-
 [Programmable Block <0>]
 output=
 |{config:size=0.45;bgColour=0,10,30}
