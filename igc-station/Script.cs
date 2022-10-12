@@ -134,7 +134,7 @@ public void HandleDockingRequests(MyIGCMessage msg) {
         return;
     }
 
-    Log("responding to docking request");
+    Log($"responding to docking request: {block.CustomName}");
     emitter.Emit("DOCKING_REQUEST", DockingInfo(block), msg.Source);
 }
 
@@ -188,6 +188,8 @@ public IMyShipMergeBlock FindMergeBlock(string name) {
     MyTuple<IMyShipMergeBlock, float> best = new MyTuple<IMyShipMergeBlock, float>(null, -1f);
     GridTerminalSystem.GetBlockGroups(groups, g => g.Name.Contains(name));
 
+    Log($"finding {(isEnergyProvider ? "highest" : "lowest")} of {groups.Count()} '{name}' groups");
+
     foreach (IMyBlockGroup group in groups) {
         blocks.Clear();
         group.GetBlocks(blocks);
@@ -219,9 +221,7 @@ public IMyShipMergeBlock FindMergeBlock(string name) {
     }
 
     if (best.Item1 == null) {
-        Log($"did not find applicable dock: groups {groups.Count}, blocks {blocks.Count}");
-    } else {
-        Log($"found best result: {best.Item1.CustomName}, {best.Item2}");
+        Log($"did not find applicable '{name}' dock");
     }
 
     return best.Item1;
@@ -473,11 +473,13 @@ public class Config {
     public string customData;
     public Dictionary<string, string> settings;
     public List<MyIniKey> keys;
+    public List<string> sections;
 
     public Config() {
         this.ini = new MyIni();
         this.settings = new Dictionary<string, string>();
         this.keys = new List<MyIniKey>();
+        this.sections = new List<string>();
     }
 
     public void Clear() {
@@ -488,29 +490,38 @@ public class Config {
     }
 
     public bool Parse(Program p) {
+        bool parsed = this.Parse(p.Me.CustomData);
+        if (!parsed) {
+            p.Echo($"failed to parse customData");
+        }
+
+        return parsed;
+    }
+
+    public bool Parse(string iniTemplate) {
         this.Clear();
 
         MyIniParseResult result;
-        if (!this.ini.TryParse(p.Me.CustomData, out result)) {
-            p.Echo($"failed to parse custom data\n{result}");
+        if (!this.ini.TryParse(iniTemplate, out result)) {
             return false;
         }
-        this.customData = p.Me.CustomData;
+        this.customData = iniTemplate;
 
-        string value;
+        this.ini.GetSections(this.sections);
+
+        string keyValue;
         this.ini.GetKeys(this.keys);
-
         foreach (MyIniKey key in this.keys) {
-            if (this.ini.Get(key.Section, key.Name).TryGetString(out value)) {
-                this.Set(key.ToString(), value);
+            if (this.ini.Get(key.Section, key.Name).TryGetString(out keyValue)) {
+                this.Set(key.ToString(), keyValue);
             }
         }
 
         return true;
     }
 
-    public void Set(string name, string value) {
-        this.settings[name] = value;
+    public void Set(string name, string keyValue) {
+        this.settings[name] = keyValue;
     }
 
     public string Get(string name, string alt = null) {

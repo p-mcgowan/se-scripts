@@ -11,23 +11,20 @@ public void ExecuteBatteryRequest(MyIGCMessage msg) {
     SetDroneBatteryMode(ChargeMode.Auto);
     ReleaseMergeBlock();
     SetDroneThrusters(true);
-    // queue forward slow
     AddTask("Fetch new battery", FetchNewBattery);
 
     ProcessTasks();
 }
 
 public void QueueMergeSteps() {
-    AddTask("Config autopilot", TravelConfig, "fast fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
+    AddTask("Go to approach", GoToLocation, "fast fwd _approach");
     AddTask("Enable merge block", () => {
         IMyShipMergeBlock mergeBlock = (IMyShipMergeBlock)GetBlock(mergeBlockId);
         mergeBlock.Enabled = true;
 
         return true;
     });
-    AddTask("Config autopilot", TravelConfig, "slow back");
-    AddTask("Move to merge block", GoToLocation, "_rcPos");
+    AddTask("Move to merge block", GoToLocation, "slow back _rcPos");
 
     AddTask("Connect to merge block", ConnectToMergeBlock);
     AddTask("Set batteries", () => {
@@ -38,22 +35,22 @@ public void QueueMergeSteps() {
     });
     AddTask("Release connector", ReleaseConnector);
 
-    AddTask("Config autopilot", TravelConfig, "slow fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
+    AddTask("Go to approach", GoToLocation, "slow fwd _approach");
 }
 
 public void QueueConnectorSteps(ChargeMode chargeMode) {
-    AddTask("Config autopilot", TravelConfig, "fast fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
-    AddTask("Config autopilot", TravelConfig, "slow back");
-    AddTask("Line up backwards", GoToLocation, "_moveOff");
-    AddTask("Config autopilot", TravelConfig, "slow fwd");
-    // AddTask("Line up forwards", FaceLocation, "_approach");
-    AddTask("Line up forwards", GoToLocation, "_approach");
-    AddTask("Config autopilot", TravelConfig, "slow back");
-    AddTask("Move to connector", GoToLocation, "_rcPos");
+    AddTask("Go to approach", GoToLocation, "fast fwd _approach");
+    AddTask("Move to connector", GoToLocation, "slow back _rcPos");
+    AddTask("Connect to connector", () => {
+        if (!ConnectToConnector()) {
+            AddTask("Realign connector", GoToLocation, "slow fwd _approach");
+            AddTask("Move to connector", GoToLocation, "slow back _rcPos");
+            AddTask("Connect to connector", ConnectToConnector);
+        }
 
-    AddTask("Connect to connector", ConnectToConnector);
+        return true;
+    });
+
     AddTask("Set batteries", () => {
         SetDroneBatteryMode(ChargeMode.Auto);
         SetBatteryBlockMode(chargeMode);
@@ -62,8 +59,7 @@ public void QueueConnectorSteps(ChargeMode chargeMode) {
     });
     AddTask("Release merge block", ReleaseMergeBlock);
 
-    AddTask("Config autopilot", TravelConfig, "slow fwd");
-    AddTask("Leaving dock", GoToLocation, "_approach");
+    AddTask("Leaving dock", GoToLocation, "slow fwd _approach");
 }
 
 public bool FetchNewBattery() {
@@ -146,16 +142,14 @@ public bool RequestParkingSpace() {
 public void AnswerParkingSpace(MyIGCMessage msg) {
     ParseDockingCoords(msg);
 
-    AddTask("Config autopilot", TravelConfig, "fast fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
+    AddTask("Go to approach", GoToLocation, "fast fwd _approach");
     AddTask("Enable merge block", () => {
         IMyShipMergeBlock mergeBlock = (IMyShipMergeBlock)GetBlock(mergeBlockId);
         mergeBlock.Enabled = true;
 
         return true;
     });
-    AddTask("Config autopilot", TravelConfig, "slow back");
-    AddTask("Move to merge block", GoToLocation, "_rcPos");
+    AddTask("Move to merge block", GoToLocation, "slow back _rcPos");
 
     AddTask("Connect to merge block", ConnectToMergeBlock);
     AddTask("Recharging", () => {

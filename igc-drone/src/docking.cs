@@ -56,7 +56,10 @@ public bool TravelConfig(string cfg) {
     return true;
 }
 
-public bool GoToLocation(string waypoint) {
+public bool GoToLocation(string cfg) {
+    TravelConfig(cfg);
+    string[] parts = cfg.Split(' ');
+    string waypoint = parts[parts.Length - 1];
     if (!waypoints.ContainsKey(waypoint)) {
         return AbortTask("Didn't find waypoint");
     }

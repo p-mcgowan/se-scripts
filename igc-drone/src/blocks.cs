@@ -16,7 +16,6 @@ public void GetDroneBlocks() {
     batteryIds.Clear();
 
     foreach (var block in blocks) {
-        Log($"{block.CustomName}");
         if (block is IMyShipMergeBlock){
             mergeBlockId = block.EntityId;
         } else if (block is IMyShipConnector){

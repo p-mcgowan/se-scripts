@@ -206,23 +206,20 @@ public void ExecuteBatteryRequest(MyIGCMessage msg) {
     SetDroneBatteryMode(ChargeMode.Auto);
     ReleaseMergeBlock();
     SetDroneThrusters(true);
-    // queue forward slow
     AddTask("Fetch new battery", FetchNewBattery);
 
     ProcessTasks();
 }
 
 public void QueueMergeSteps() {
-    AddTask("Config autopilot", TravelConfig, "fast fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
+    AddTask("Go to approach", GoToLocation, "fast fwd _approach");
     AddTask("Enable merge block", () => {
         IMyShipMergeBlock mergeBlock = (IMyShipMergeBlock)GetBlock(mergeBlockId);
         mergeBlock.Enabled = true;
 
         return true;
     });
-    AddTask("Config autopilot", TravelConfig, "slow back");
-    AddTask("Move to merge block", GoToLocation, "_rcPos");
+    AddTask("Move to merge block", GoToLocation, "slow back _rcPos");
 
     AddTask("Connect to merge block", ConnectToMergeBlock);
     AddTask("Set batteries", () => {
@@ -233,22 +230,22 @@ public void QueueMergeSteps() {
     });
     AddTask("Release connector", ReleaseConnector);
 
-    AddTask("Config autopilot", TravelConfig, "slow fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
+    AddTask("Go to approach", GoToLocation, "slow fwd _approach");
 }
 
 public void QueueConnectorSteps(ChargeMode chargeMode) {
-    AddTask("Config autopilot", TravelConfig, "fast fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
-    AddTask("Config autopilot", TravelConfig, "slow back");
-    AddTask("Line up backwards", GoToLocation, "_moveOff");
-    AddTask("Config autopilot", TravelConfig, "slow fwd");
-    // AddTask("Line up forwards", FaceLocation, "_approach");
-    AddTask("Line up forwards", GoToLocation, "_approach");
-    AddTask("Config autopilot", TravelConfig, "slow back");
-    AddTask("Move to connector", GoToLocation, "_rcPos");
+    AddTask("Go to approach", GoToLocation, "fast fwd _approach");
+    AddTask("Move to connector", GoToLocation, "slow back _rcPos");
+    AddTask("Connect to connector", () => {
+        if (!ConnectToConnector()) {
+            AddTask("Realign connector", GoToLocation, "slow fwd _approach");
+            AddTask("Move to connector", GoToLocation, "slow back _rcPos");
+            AddTask("Connect to connector", ConnectToConnector);
+        }
 
-    AddTask("Connect to connector", ConnectToConnector);
+        return true;
+    });
+
     AddTask("Set batteries", () => {
         SetDroneBatteryMode(ChargeMode.Auto);
         SetBatteryBlockMode(chargeMode);
@@ -257,8 +254,7 @@ public void QueueConnectorSteps(ChargeMode chargeMode) {
     });
     AddTask("Release merge block", ReleaseMergeBlock);
 
-    AddTask("Config autopilot", TravelConfig, "slow fwd");
-    AddTask("Leaving dock", GoToLocation, "_approach");
+    AddTask("Leaving dock", GoToLocation, "slow fwd _approach");
 }
 
 public bool FetchNewBattery() {
@@ -341,16 +337,14 @@ public bool RequestParkingSpace() {
 public void AnswerParkingSpace(MyIGCMessage msg) {
     ParseDockingCoords(msg);
 
-    AddTask("Config autopilot", TravelConfig, "fast fwd");
-    AddTask("Go to approach", GoToLocation, "_approach");
+    AddTask("Go to approach", GoToLocation, "fast fwd _approach");
     AddTask("Enable merge block", () => {
         IMyShipMergeBlock mergeBlock = (IMyShipMergeBlock)GetBlock(mergeBlockId);
         mergeBlock.Enabled = true;
 
         return true;
     });
-    AddTask("Config autopilot", TravelConfig, "slow back");
-    AddTask("Move to merge block", GoToLocation, "_rcPos");
+    AddTask("Move to merge block", GoToLocation, "slow back _rcPos");
 
     AddTask("Connect to merge block", ConnectToMergeBlock);
     AddTask("Recharging", () => {
@@ -380,7 +374,6 @@ public void GetDroneBlocks() {
     batteryIds.Clear();
 
     foreach (var block in blocks) {
-        Log($"{block.CustomName}");
         if (block is IMyShipMergeBlock){
             mergeBlockId = block.EntityId;
         } else if (block is IMyShipConnector){
@@ -528,7 +521,10 @@ public bool TravelConfig(string cfg) {
     return true;
 }
 
-public bool GoToLocation(string waypoint) {
+public bool GoToLocation(string cfg) {
+    TravelConfig(cfg);
+    string[] parts = cfg.Split(' ');
+    string waypoint = parts[parts.Length - 1];
     if (!waypoints.ContainsKey(waypoint)) {
         return AbortTask("Didn't find waypoint");
     }
@@ -903,11 +899,13 @@ public class Config {
     public string customData;
     public Dictionary<string, string> settings;
     public List<MyIniKey> keys;
+    public List<string> sections;
 
     public Config() {
         this.ini = new MyIni();
         this.settings = new Dictionary<string, string>();
         this.keys = new List<MyIniKey>();
+        this.sections = new List<string>();
     }
 
     public void Clear() {
@@ -918,29 +916,38 @@ public class Config {
     }
 
     public bool Parse(Program p) {
+        bool parsed = this.Parse(p.Me.CustomData);
+        if (!parsed) {
+            p.Echo($"failed to parse customData");
+        }
+
+        return parsed;
+    }
+
+    public bool Parse(string iniTemplate) {
         this.Clear();
 
         MyIniParseResult result;
-        if (!this.ini.TryParse(p.Me.CustomData, out result)) {
-            p.Echo($"failed to parse custom data\n{result}");
+        if (!this.ini.TryParse(iniTemplate, out result)) {
             return false;
         }
-        this.customData = p.Me.CustomData;
+        this.customData = iniTemplate;
 
-        string value;
+        this.ini.GetSections(this.sections);
+
+        string keyValue;
         this.ini.GetKeys(this.keys);
-
         foreach (MyIniKey key in this.keys) {
-            if (this.ini.Get(key.Section, key.Name).TryGetString(out value)) {
-                this.Set(key.ToString(), value);
+            if (this.ini.Get(key.Section, key.Name).TryGetString(out keyValue)) {
+                this.Set(key.ToString(), keyValue);
             }
         }
 
         return true;
     }
 
-    public void Set(string name, string value) {
-        this.settings[name] = value;
+    public void Set(string name, string keyValue) {
+        this.settings[name] = keyValue;
     }
 
     public string Get(string name, string alt = null) {

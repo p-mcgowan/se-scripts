@@ -20,7 +20,7 @@ public void HandleDockingRequests(MyIGCMessage msg) {
         return;
     }
 
-    Log("responding to docking request");
+    Log($"responding to docking request: {block.CustomName}");
     emitter.Emit("DOCKING_REQUEST", DockingInfo(block), msg.Source);
 }
 
@@ -74,6 +74,8 @@ public IMyShipMergeBlock FindMergeBlock(string name) {
     MyTuple<IMyShipMergeBlock, float> best = new MyTuple<IMyShipMergeBlock, float>(null, -1f);
     GridTerminalSystem.GetBlockGroups(groups, g => g.Name.Contains(name));
 
+    Log($"finding {(isEnergyProvider ? "highest" : "lowest")} of {groups.Count()} '{name}' groups");
+
     foreach (IMyBlockGroup group in groups) {
         blocks.Clear();
         group.GetBlocks(blocks);
@@ -105,9 +107,7 @@ public IMyShipMergeBlock FindMergeBlock(string name) {
     }
 
     if (best.Item1 == null) {
-        Log($"did not find applicable dock: groups {groups.Count}, blocks {blocks.Count}");
-    } else {
-        Log($"found best result: {best.Item1.CustomName}, {best.Item2}");
+        Log($"did not find applicable '{name}' dock");
     }
 
     return best.Item1;
