@@ -36,6 +36,15 @@ public class OxygenSystem {
         }
     }
 
+    public bool GetGenerators() {
+        foreach (IMyGasGenerator genny in this.oxyGens) {
+            if (genny.Enabled) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public void GetOxygenLevels() {
         this.currentVolume = 0f;
         this.maxVolume = 0f;

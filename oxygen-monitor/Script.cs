@@ -1,12 +1,21 @@
 Template template;
 int refetchBlocks = 0;
-string outputTemplate = @"[Programmable Block Oxygen <0>]
+string outputTemplate = @"
+[oxygen]
+enableFillPct=0.3
+disableFillPct=0.7
+
+[Programmable Block Oxygen <0>]
 output=
 |Oxygen Status
 |{oxygen.currentVolume} / {oxygen.maxVolume} L ({oxygen.fillPct})
 |
+|{oxygen.generationEnabled}
+|
 |{oxygen.blocks}
 ";
+float enableFillPct = 0.3f;
+float disableFillPct = 0.7f;
 OxygenSystem oxygen;
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
 List<DrawingSurface> drawables = new List<DrawingSurface>();
@@ -35,6 +44,14 @@ public Program() {
                 .Text($@"{tank.CustomName} {Util.FormatNumber(currentVolume)} / {Util.FormatNumber(tank.Capacity)} L ({Util.PctString(tank.FilledRatio)})", options)
                 .Newline();
         }
+        ds.Newline(reverse: true);
+    });
+    template.Register("oxygen.generationEnabled", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+        string message = options.custom.Get("txtDisabled") ?? "Oxygen generation off";
+        if (oxygen.GetGenerators()) {
+            message = options.custom.Get("txtEnabled") ?? "Oxygen generation on";
+        }
+        ds.Text(message, options);
     });
 
     oxygen = new OxygenSystem(this);
@@ -43,7 +60,7 @@ public Program() {
     Runtime.UpdateFrequency |= UpdateFrequency.Update100;
 }
 
-public void FindDrawables() {
+public void ReloadConfig() {
     string name;
     string surfaceName;
     IMyTextSurface surface;
@@ -64,10 +81,12 @@ public void FindDrawables() {
             string panelName = hasNumberedSurface ? surfaceName : name;
             DrawingSurface ds = new DrawingSurface(surface, this, panelName);
             drawables.Add(ds);
-            Echo(this.config.Get($"{panelName}/output"));
             template.PreRender(ds.name, this.config.Get($"{panelName}/output"));
         }
     }
+
+    enableFillPct = Util.ParseFloat(config.Get("oxygen/enableFillPct"), 0.3f);
+    disableFillPct = Util.ParseFloat(config.Get("oxygen/disableFillPct"), 0.7f);
 }
 
 public void DrawStatus() {
@@ -81,7 +100,7 @@ public void Main(string argument, UpdateType updateType) {
         Echo("reloading templates");
         config.Parse(Me.CustomData);
         lastCustomData = Me.CustomData;
-        FindDrawables();
+        ReloadConfig();
     }
     if (++refetchBlocks % 4 == 0) {
         oxygen.RefetchBlocks();
@@ -89,9 +108,9 @@ public void Main(string argument, UpdateType updateType) {
     }
     oxygen.GetOxygenLevels();
 
-    if (oxygen.fillPct < 0.3) {
+    if (oxygen.fillPct <= enableFillPct) {
         oxygen.SetGenerators(true);
-    } else if (oxygen.fillPct > 0.7) {
+    } else if (oxygen.fillPct >= disableFillPct) {
         oxygen.SetGenerators(false);
     }
 
@@ -838,6 +857,15 @@ public class OxygenSystem {
         foreach (IMyGasGenerator genny in this.oxyGens) {
             genny.Enabled = enabled;
         }
+    }
+
+    public bool GetGenerators() {
+        foreach (IMyGasGenerator genny in this.oxyGens) {
+            if (genny.Enabled) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void GetOxygenLevels() {
