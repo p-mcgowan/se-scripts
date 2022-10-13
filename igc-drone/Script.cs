@@ -219,7 +219,7 @@ public void QueueMergeSteps() {
 
         return true;
     });
-    AddTask("Move to merge block", GoToLocation, "slow back _rcPos");
+    AddTask("Move to merge block", GoToLocation, "slower back _rcPos");
 
     AddTask("Connect to merge block", ConnectToMergeBlock);
     AddTask("Set batteries", () => {
@@ -236,15 +236,10 @@ public void QueueMergeSteps() {
 public void QueueConnectorSteps(ChargeMode chargeMode) {
     AddTask("Go to approach", GoToLocation, "fast fwd _approach");
     AddTask("Move to connector", GoToLocation, "slow back _rcPos");
-    AddTask("Connect to connector", () => {
-        if (!ConnectToConnector()) {
-            AddTask("Realign connector", GoToLocation, "slow fwd _approach");
-            AddTask("Move to connector", GoToLocation, "slow back _rcPos");
-            AddTask("Connect to connector", ConnectToConnector);
-        }
 
-        return true;
-    });
+    AddTask("Realign connector", GoToLocation, "slow fwd _approach");
+    AddTask("Move to connector", GoToLocation, "slow back _rcPos");
+    AddTask("Connect to connector", ConnectToConnector);
 
     AddTask("Set batteries", () => {
         SetDroneBatteryMode(ChargeMode.Auto);
@@ -344,7 +339,7 @@ public void AnswerParkingSpace(MyIGCMessage msg) {
 
         return true;
     });
-    AddTask("Move to merge block", GoToLocation, "slow back _rcPos");
+    AddTask("Move to merge block", GoToLocation, "slower back _rcPos");
 
     AddTask("Connect to merge block", ConnectToMergeBlock);
     AddTask("Recharging", () => {
@@ -508,7 +503,11 @@ public bool TravelConfig(string cfg) {
         remoteControl.Direction = Base6Directions.Direction.Right;
     }
 
-    if (TravelHas(cfg, "slow")) {
+    if (TravelHas(cfg, "slower")) {
+        remoteControl.SetCollisionAvoidance(false);
+        remoteControl.SetDockingMode(true);
+        remoteControl.SpeedLimit = 2.5f;
+    } else if (TravelHas(cfg, "slow")) {
         remoteControl.SetCollisionAvoidance(false);
         remoteControl.SetDockingMode(true);
         remoteControl.SpeedLimit = 5f;

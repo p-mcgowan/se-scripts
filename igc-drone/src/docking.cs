@@ -43,7 +43,11 @@ public bool TravelConfig(string cfg) {
         remoteControl.Direction = Base6Directions.Direction.Right;
     }
 
-    if (TravelHas(cfg, "slow")) {
+    if (TravelHas(cfg, "slower")) {
+        remoteControl.SetCollisionAvoidance(false);
+        remoteControl.SetDockingMode(true);
+        remoteControl.SpeedLimit = 2.5f;
+    } else if (TravelHas(cfg, "slow")) {
         remoteControl.SetCollisionAvoidance(false);
         remoteControl.SetDockingMode(true);
         remoteControl.SpeedLimit = 5f;
