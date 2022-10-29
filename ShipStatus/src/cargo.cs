@@ -67,10 +67,20 @@ public class CargoStatus {
     }
 
     public void CargoBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
-        string colourName = this.pct > 0.85 ? "dimred" : this.pct > 0.60 ? "dimyellow" : "dimgreen";
-        Color? colour = DrawingSurface.stringToColour.Get(colourName);
-        Color? textColour = options.textColour ?? ds.surface.ScriptForegroundColor;
-        ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct), textColour: textColour);
+        string colourName = options.custom.Get("colourLow") ?? "dimgreen";
+        if (this.pct > 0.85) {
+            colourName = options.custom.Get("colourHigh") ?? "dimred";
+        } else if (this.pct > 0.60) {
+            colourName = options.custom.Get("colourMid") ?? "dimyellow";
+        }
+
+        options.pct = this.pct;
+        options.fillColour = DrawingSurface.StringToColour(colourName);
+        this.program.log.Append($"fill: {options.fillColour}, colourName: {colourName}");
+        options.text = Util.PctString(this.pct);
+        options.textColour = options.textColour ?? ds.surface.ScriptForegroundColor;
+
+        ds.Bar(options);
     }
 
     public void CargoItems(DrawingSurface ds, string text, DrawingSurface.Options options) {

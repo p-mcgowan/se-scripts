@@ -406,7 +406,7 @@ public class DrawingSurface {
 
     public DrawingSurface Bar(Options options) {
         if (options == null || options.pct == 0f) {
-            return this.Bar(0f, text: "--/--");
+            options.text = options.text ?? "--/--";
         }
 
         return this.Bar(

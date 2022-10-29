@@ -342,10 +342,20 @@ public class CargoStatus {
     }
 
     public void CargoBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
-        string colourName = this.pct > 0.85 ? "dimred" : this.pct > 0.60 ? "dimyellow" : "dimgreen";
-        Color? colour = DrawingSurface.stringToColour.Get(colourName);
-        Color? textColour = options.textColour ?? ds.surface.ScriptForegroundColor;
-        ds.Bar(this.pct, fillColour: colour, text: Util.PctString(this.pct), textColour: textColour);
+        string colourName = options.custom.Get("colourLow") ?? "dimgreen";
+        if (this.pct > 0.85) {
+            colourName = options.custom.Get("colourHigh") ?? "dimred";
+        } else if (this.pct > 0.60) {
+            colourName = options.custom.Get("colourMid") ?? "dimyellow";
+        }
+
+        options.pct = this.pct;
+        options.fillColour = DrawingSurface.StringToColour(colourName);
+        this.program.log.Append($"fill: {options.fillColour}, colourName: {colourName}");
+        options.text = Util.PctString(this.pct);
+        options.textColour = options.textColour ?? ds.surface.ScriptForegroundColor;
+
+        ds.Bar(options);
     }
 
     public void CargoItems(DrawingSurface ds, string text, DrawingSurface.Options options) {
@@ -1213,7 +1223,12 @@ public class PowerDetails {
         this.ioFloats.Add(this.solarOutputMW / max);
         this.ioFloats.Add(this.solarPotential / max);
 
-        ds.MultiBar(this.ioFloats, this.ioColours, text: text, textAlignment: TextAlignment.LEFT);
+        options.values = this.ioFloats;
+        options.colours = this.ioColours;
+        options.text = text ?? options.text;
+        options.align = options.align ?? TextAlignment.LEFT;
+
+        ds.MultiBar(options);
     }
 
     public void IoLegend(DrawingSurface ds, string text, DrawingSurface.Options options) {
@@ -1986,7 +2001,7 @@ public class DrawingSurface {
 
     public DrawingSurface Bar(Options options) {
         if (options == null || options.pct == 0f) {
-            return this.Bar(0f, text: "--/--");
+            options.text = options.text ?? "--/--";
         }
 
         return this.Bar(

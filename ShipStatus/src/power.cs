@@ -367,7 +367,12 @@ public class PowerDetails {
         this.ioFloats.Add(this.solarOutputMW / max);
         this.ioFloats.Add(this.solarPotential / max);
 
-        ds.MultiBar(this.ioFloats, this.ioColours, text: text, textAlignment: TextAlignment.LEFT);
+        options.values = this.ioFloats;
+        options.colours = this.ioColours;
+        options.text = text ?? options.text;
+        options.align = options.align ?? TextAlignment.LEFT;
+
+        ds.MultiBar(options);
     }
 
     public void IoLegend(DrawingSurface ds, string text, DrawingSurface.Options options) {
