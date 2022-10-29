@@ -76,7 +76,6 @@ public class CargoStatus {
 
         options.pct = this.pct;
         options.fillColour = DrawingSurface.StringToColour(colourName);
-        this.program.log.Append($"fill: {options.fillColour}, colourName: {colourName}");
         options.text = Util.PctString(this.pct);
         options.textColour = options.textColour ?? ds.surface.ScriptForegroundColor;
 
