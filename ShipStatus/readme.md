@@ -157,7 +157,7 @@ The template vars available by default are:
 template var|options|description
 ---|---|---
 config| font: set the font <br/>size: set the font size <br/>textPadding: set the padding <br/>colour: set the text colour <br/>bgColour: set the background colour |Configure the display (only runs once)
-cargo.bar|none|A coloured fill bar which goes from green to red based on % full
+cargo.bar|colourLow: colour, colourMid: colour, colourHigh: colour|A coloured fill bar which goes from green to red (unless overridden) based on % full
 cargo.cap|none|The cargo volume capacity
 cargo.fullString|none|A nicely formatted `<current> / <max> L` volume string
 cargo.items|none|A list of all items in cargo. Will split into 2 columns if display is wide enough 
