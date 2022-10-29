@@ -1,0 +1,53 @@
+[global]
+airlockOpenTime=1000
+healthOnHud=true
+config=colour=150,150,100;bgColour=black;size=0.5;
+
+[Cockpit <0>]
+output=
+|{config:size=0.75}
+|{text:colour=120,50,50:FUEL}
+|{power.reactorUr} Uranium Ingot
+|
+|{text:colour=120,50,50:PRODUCTION}
+|{power.ioBar}
+|{power.ioLegend}
+|{power.reactorOutputMW} / {power.reactorOutputMax}
+|
+|{text:colour=120,50,50:CONSUMERS}
+|{power.consumers:count=3}
+
+
+[Cockpit <1>]
+output=
+|{text:colour=120,50,50:OVERVIEW}
+|Jump drives: {power.jumpDrives}
+|{power.jumpBar}
+|Batteries: {power.batteries} {power.batteryInput} MW / {power.batteryOutput} MW
+|{power.batteryBar}
+|{power.ioString}
+|{power.ioBar}
+|{power.ioLegend}
+|
+|{text:colour=120,50,50:CONSUMERS}
+|{power.consumers:count=6}
+|
+|{text:colour=120,50,50:PRODUCTION}{setCursor:x=50%}{setCursor:x=+1.5}{text:colour=120,50,50:DAMAGE}
+|{?saveCursor}
+|{production.status}
+|{production.blocks}
+|{setCursor:x=50%}{setCursor:x=+1.5}{?saveCursor:y=y}
+|{health.status}
+|{health.blocks}
+|{?setCursor:x=0;y=~y}{saveCursor}
+
+[Cockpit <2>]
+output=
+|Cargo: {cargo.fullString}
+|{cargo.bar}
+|{cargo.items}
+
+[Cockpit <3>]
+output=
+|Consumers:
+|{power.consumers}
