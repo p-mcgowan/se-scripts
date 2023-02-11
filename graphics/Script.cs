@@ -540,7 +540,7 @@ public class DrawingSurface {
         text = text ?? Util.PctString(pct);
         if (text != null && text != "") {
             this.cursor.X += (width / 2);
-            this.Text(text, textColour ?? this.surface.ScriptForegroundColor, textAlignment: textAlignment, scale: 0.8f);
+            this.Text(text, textColour ?? this.surface.ScriptForegroundColor, textAlignment: textAlignment, scale: 0.875f);
             this.cursor.X += (width / 2);
         } else {
             this.cursor.X += width;
