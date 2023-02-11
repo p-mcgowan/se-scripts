@@ -161,6 +161,21 @@ output=
 |{gas.h2Bar:textColour=black}
 ```
 
+<img src="images/cargo-item.png">
+
+The config used to generate it:
+```ini
+[Text Panel <0>]
+output=
+|{config:size=0.4}
+|Snowballs (ice ore): {cargo.item:name=Ice} Kg
+|Steel Plates: {cargo.item:name=SteelPlate}
+|
+|all items:
+|{cargo.items}
+
+```
+
 Global config settings:
 
 setting|value type|description|default
@@ -187,6 +202,7 @@ cargo.bar|colourLow: colour, colourMid: colour, colourHigh: colour|A coloured fi
 cargo.cap|none|The cargo volume capacity
 cargo.fullString|none|A nicely formatted `<current> / <max> L` volume string
 cargo.items|none|A list of all items in cargo. Will split into 2 columns if display is wide enough 
+cargo.item|name: name of the item to select (as shown in cargo.items)|The count of a particular item 
 cargo.stored|none|Current cargo volume
 health.blocks|none|A list of all damaged blocks and their percent health
 health.status|none|A message saying whether damage is detected or not

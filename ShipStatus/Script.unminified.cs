@@ -341,6 +341,7 @@ public class CargoStatus {
         });
         this.template.Register("cargo.bar", this.CargoBar);
         this.template.Register("cargo.items", this.CargoItems);
+        this.template.Register("cargo.item", this.CargoItem);
     }
 
     public void CargoBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
@@ -357,6 +358,15 @@ public class CargoStatus {
         options.textColour = options.textColour ?? ds.surface.ScriptForegroundColor;
 
         ds.Bar(options);
+    }
+
+    public void CargoItem(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        string name = options.custom.Get("name");
+        VRage.MyFixedPoint itemCount;
+        if (!this.cargoItemCounts.TryGetValue(name, out itemCount)) {
+            itemCount = 0;
+        }
+        ds.Text(Util.FormatNumber(itemCount), options);
     }
 
     public void CargoItems(DrawingSurface ds, string text, DrawingSurface.Options options) {

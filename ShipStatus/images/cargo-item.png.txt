@@ -1,0 +1,8 @@
+[Text Panel <0>]
+output=
+|{config:size=0.4}
+|Snowballs (ice ore): {cargo.item:name=Ice} Kg
+|Steel Plates: {cargo.item:name=SteelPlate}
+|
+|all items:
+|{cargo.items}
