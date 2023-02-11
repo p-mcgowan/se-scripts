@@ -73,6 +73,9 @@ output=
 ```
 
 ### Api listing
+
+See [Gobal config settings](#global-config-settings) and [Template variables](#template-variables) for a full listing. Below are some examples.
+
 This is an example of most of the options available - the template key `{something}` is followed by the value rendered:
 <img src="images/api-demo.png">
 
@@ -135,6 +138,8 @@ output=
 |{text:colour=0,60,60:\{power.ioBar\}} (inline): {power.ioBar}
 ```
 
+---
+
 <img src="images/gas-system.png">
 
 The config used to generate it:
@@ -161,6 +166,8 @@ output=
 |{gas.h2Bar:textColour=black}
 ```
 
+---
+
 <img src="images/cargo-item.png">
 
 The config used to generate it:
@@ -176,7 +183,9 @@ output=
 
 ```
 
-Global config settings:
+---
+
+#### Global config settings:
 
 setting|value type|description|default
 ---|---|---|---
@@ -194,6 +203,7 @@ healthOnHud|true/false|Enable "Show on HUD" for damaged blocks|false
 config|string|Configure all displays to use a theme (see config template var below)|none
 
 
+#### Template variables:
 The template vars available by default are:
 template var|options|description
 ---|---|---
