@@ -43,6 +43,7 @@ public IEnumerator<string> RunStuffOverTime()  {
             cargoStatus.Reset();
             blockHealth.Reset();
             productionDetails.Reset();
+            gasStatus.Reset();
             airlock.Reset();
 
             yield return "reset";
@@ -68,6 +69,11 @@ public IEnumerator<string> RunStuffOverTime()  {
         productionDetails.Refresh();
         yield return "productionDetails";
     }
+    if (config.Enabled("gas")) {
+        gasStatus.Refresh();
+        yield return "gasStatus";
+    }
+
 
     DrawingSurface.Options themeOpts = null;
     string screenConfig = config.Get("config");

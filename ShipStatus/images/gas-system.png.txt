@@ -1,0 +1,20 @@
+[Text Panel <0>]
+output=
+|{config:size=0.4}
+|oxygen
+|\{gas.o2CurrentVolume\}: {gas.o2CurrentVolume}
+|\{gas.o2MaxVolume\}: {gas.o2MaxVolume}
+|\{gas.o2FillPct\}: {gas.o2FillPct}
+|\{gas.o2Tanks\}:
+|{gas.o2Tanks}
+|\{gas.o2Bar\}:
+|{gas.o2Bar:textColour=black}
+|\{gas.generationEnabled\}: {gas.generationEnabled}
+|
+|\{gas.h2CurrentVolume\}: {gas.h2CurrentVolume}
+|\{gas.h2MaxVolume\}: {gas.h2MaxVolume}
+|\{gas.h2FillPct\}: {gas.h2FillPct}
+|\{gas.h2Tanks\}:
+|{gas.h2Tanks}
+|\{gas.h2Bar\}:
+|{gas.h2Bar:textColour=black}

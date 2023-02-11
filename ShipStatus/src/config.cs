@@ -27,6 +27,22 @@ public class Config {
     }
 }
 
+public static string[] globalConfigs = new string[] {
+    "airlock",
+    "production",
+    "cargo",
+    "power",
+    "health",
+    "gas",
+    "healthIgnore",
+    "airlockOpenTime",
+    "airlockAllDoors",
+    "airlockDoorMatch",
+    "airlockDoorExclude",
+    "healthOnHud",
+    "getAllGrids",
+};
+
 public bool ParseCustomData() {
     MyIniParseResult result;
     if (!ini.TryParse(Me.CustomData, out result)) {
@@ -50,41 +66,10 @@ public bool ParseCustomData() {
 
     if (ini.ContainsSection("global")) {
         string setting = "";
-        if (ini.Get("global", "airlock").TryGetString(out setting)) {
-            config.Set("airlock", setting);
-        }
-        if (ini.Get("global", "production").TryGetString(out setting)) {
-            config.Set("production", setting);
-        }
-        if (ini.Get("global", "cargo").TryGetString(out setting)) {
-            config.Set("cargo", setting);
-        }
-        if (ini.Get("global", "power").TryGetString(out setting)) {
-            config.Set("power", setting);
-        }
-        if (ini.Get("global", "health").TryGetString(out setting)) {
-            config.Set("health", setting);
-        }
-        if (ini.Get("global", "healthIgnore").TryGetString(out setting)) {
-            config.Set("healthIgnore", setting);
-        }
-        if (ini.Get("global", "airlockOpenTime").TryGetString(out setting)) {
-            config.Set("airlockOpenTime", setting);
-        }
-        if (ini.Get("global", "airlockAllDoors").TryGetString(out setting)) {
-            config.Set("airlockAllDoors", setting);
-        }
-        if (ini.Get("global", "airlockDoorMatch").TryGetString(out setting)) {
-            config.Set("airlockDoorMatch", setting);
-        }
-        if (ini.Get("global", "airlockDoorExclude").TryGetString(out setting)) {
-            config.Set("airlockDoorExclude", setting);
-        }
-        if (ini.Get("global", "healthOnHud").TryGetString(out setting)) {
-            config.Set("healthOnHud", setting);
-        }
-        if (ini.Get("global", "getAllGrids").TryGetString(out setting)) {
-            config.Set("getAllGrids", setting);
+        foreach (string cfg in globalConfigs) {
+            if (ini.Get("global", cfg).TryGetString(out setting)) {
+                config.Set(cfg, setting);
+            }
         }
         if (ini.Get("global", "config").TryGetString(out setting)) {
             config.Set("config", setting);
@@ -169,6 +154,7 @@ public void RefetchBlocks() {
     blockHealth.Clear();
     powerDetails.Clear();
     productionDetails.Clear();
+    gasStatus.Clear();
 
     GridTerminalSystem.GetBlocks(allBlocks);
     foreach (IMyTerminalBlock block in allBlocks) {
@@ -183,6 +169,7 @@ public void RefetchBlocks() {
         cargoStatus.GetBlock(block);
         blockHealth.GetBlock(block);
         productionDetails.GetBlock(block);
+        gasStatus.GetBlock(block);
         airlock.GetBlock(block);
     }
 
@@ -191,6 +178,7 @@ public void RefetchBlocks() {
     blockHealth.GotBLocks();
     powerDetails.GotBLocks();
     productionDetails.GotBLocks();
+    gasStatus.GotBLocks();
 }
 
 public bool RecheckFailed() {

@@ -14,6 +14,7 @@ const string customDataInit = @"; CustomData config:
 ;cargo=false
 ;power=false
 ;health=false
+;gas=false
 ;  airlock config (defaults are shown)
 ;airlockOpenTime=750
 ;airlockAllDoors=false
@@ -67,6 +68,7 @@ public Program() {
     blockHealth = new BlockHealth(this, template);
     productionDetails = new ProductionDetails(this, template);
     airlock = new Airlock(this);
+    gasStatus = new GasStatus(this, template);
 
     if (!Configure()) {
         return;
