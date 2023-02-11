@@ -73,7 +73,7 @@ output=
 ```
 
 ### Api listing
-This is an example of the options available - the template key `{something}` is followed by the value rendered:
+This is an example of most of the options available - the template key `{something}` is followed by the value rendered:
 <img src="images/api-demo.png">
 
 The config used to generate it:
@@ -133,6 +133,32 @@ output=
 |{text:colour=0,60,60:\{power.turbineOutputMW\}} => {power.turbineOutputMW}
 |{text:colour=0,60,60:\{power.turbines\}} => {power.turbines}
 |{text:colour=0,60,60:\{power.ioBar\}} (inline): {power.ioBar}
+```
+
+<img src="images/gas-system.png">
+
+The config used to generate it:
+```ini
+[Text Panel <0>]
+output=
+|{config:size=0.4}
+|oxygen
+|\{gas.o2CurrentVolume\}: {gas.o2CurrentVolume}
+|\{gas.o2MaxVolume\}: {gas.o2MaxVolume}
+|\{gas.o2FillPct\}: {gas.o2FillPct}
+|\{gas.o2Tanks\}:
+|{gas.o2Tanks}
+|\{gas.o2Bar\}:
+|{gas.o2Bar:textColour=black}
+|\{gas.generationEnabled\}: {gas.generationEnabled}
+|
+|\{gas.h2CurrentVolume\}: {gas.h2CurrentVolume}
+|\{gas.h2MaxVolume\}: {gas.h2MaxVolume}
+|\{gas.h2FillPct\}: {gas.h2FillPct}
+|\{gas.h2Tanks\}:
+|{gas.h2Tanks}
+|\{gas.h2Bar\}:
+|{gas.h2Bar:textColour=black}
 ```
 
 Global config settings:
@@ -200,6 +226,17 @@ power.turbineOutputMW|none|Current wind turbine output.
 power.turbines|none|Wind turbine count.
 production.blocks|none|List of assemblers and refineries, with a status icon and their queue (if any).
 production.status|none|Overall production status (power saving, enabled, halted). The production class will turn on / off production blocks if they idle for a long time, then check every 4 minutes to see if they need to start up again.
+gas.o2CurrentVolume|none|O2 tank volume (L).
+gas.o2MaxVolume|none|O2 tank capacity (L).
+gas.o2FillPct|none|O2 tank fill pct.
+gas.o2Tanks|none|Listing of O2 tanks names and volume (current/cap and %).
+gas.o2Bar|[default bar options](https://github.com/p-mcgowan/se-scripts/tree/master/graphics)|O2 tank filled percent bar.
+gas.generationEnabled|txtDisabled: text to show when disabled, txtEnabled: text to show when enabled|Text for O2 generators enabled or disabled.
+gas.h2CurrentVolume|none|H2 tank volume (L).
+gas.h2MaxVolume|none|H2 tank capacity (L).
+gas.h2FillPct|none|H2 tank fill pct.
+gas.h2Tanks|none|Listing of H2 tanks names and volume (current/cap and %).
+gas.h2Bar|[default bar options](https://github.com/p-mcgowan/se-scripts/tree/master/graphics)|H2 tank filled percent bar.
 
 You can also register any render method you want, and use any of the values in each of the status programs (Cargo, Production, etc..).
 
