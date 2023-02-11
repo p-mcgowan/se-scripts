@@ -10,6 +10,7 @@ Makes use of the following to draw sprites:
 
 [h1]Examples[/h1]
 For a list of examples with images, see [url=https://github.com/p-mcgowan/se-scripts/tree/master/ShipStatus#examples]the example page[/url] (wouldn't fit here).
+The readme.md there will contain more info, examples (character limit here is too low).
 
 Pasting this into the CustomData of the programmable block would configure the cockpit of a ship to look like the last image above:
 [code]
@@ -55,7 +56,7 @@ Global config settings:
 [tr][td]theme[/td][td]string[/td][td]Configure all displays to use a theme (see config template var below)[/td][td]none[/td][/tr]
 [/table]
 
-The template vars available by default are:
+Some template vars (full list on github) available by default are:
 
 [table]
 [tr][th]template var[/th][th]options[/th][th]description[/th][/tr]
@@ -74,27 +75,14 @@ bgColour: set the background colour[/td][td]Configure the display (only runs onc
 [tr][td]health.status[/td][td]none[/td][td]A message saying whether damage is detected or not[/td][/tr]
 [tr][td]power.batteries[/td][td]none[/td][td]Count of batteries[/td][/tr]
 [tr][td]power.batteryBar[/td][td][url=https://github.com/p-mcgowan/se-scripts/tree/master/graphics]default bar options[/url][/td][td]Coloured bar showing discharge / recharge rate and time remaining[/td][/tr]
-[tr][td]power.batteryCurrent[/td][td]none[/td][td]Total of battery charge (MWh).[/td][/tr]
-[tr][td]power.batteryInput[/td][td]none[/td][td]Current battery input (MW).[/td][/tr]
-[tr][td]power.batteryInputMax[/td][td]none[/td][td]Max battery input (MW).[/td][/tr]
-[tr][td]power.batteryMax[/td][td]none[/td][td]Max battery capacity (MWh).[/td][/tr]
-[tr][td]power.batteryOutput[/td][td]none[/td][td]Current battery output (MW).[/td][/tr]
-[tr][td]power.batteryOutputMax[/td][td]none[/td][td]Max battery output (MW).[/td][/tr]
 [tr][td]power.engineOutputMax[/td][td]none[/td][td]Max H2 engine output (MW).[/td][/tr]
 [tr][td]power.engineOutputMW[/td][td]none[/td][td]Current H2 engine output (MW).[/td][/tr]
-[tr][td]power.engines[/td][td]none[/td][td]Count of H2 engines[/td][/tr]
 [tr][td]power.ioString[/td][td]none[/td][td]Formatted energy IO: net output / max output (utilization %).[/td][/tr]
-[tr][td]power.input[/td][td]none[/td][td]Current energy input (MW).[/td][/tr]
-[tr][td]power.output[/td][td]none[/td][td]Current energy output (MW).[/td][/tr]
-[tr][td]power.maxOutput[/td][td]none[/td][td]Max possible energy output (MW).[/td][/tr]
 [tr][td]power.ioBar[/td][td]none[/td][td]Bar showing contribution to total power by block. Reactors are blue, H2 engines red, betteries green, turbines yellow, solars cyan. If blocks are disabled, they are shown in a darker colour.[/td][/tr]
 [tr][td]power.ioLegend[/td][td]none[/td][td]Shows a coloured legend for the io bar.[/td][/tr]
 [tr][td]power.jumpBar[/td][td][url=https://github.com/p-mcgowan/se-scripts/tree/master/graphics]default bar options[/url], text: string, pct: float[/td][td]Jump drive charge status. Text and percent override the default bar contents.[/td][/tr]
-[tr][td]power.jumpCurrent[/td][td]none[/td][td]Jump drive current charge (MW).[/td][/tr]
 [tr][td]power.jumpDrives[/td][td]none[/td][td]Jump drive count.[/td][/tr]
 [tr][td]power.jumpMax[/td][td]none[/td][td]Jump drive max charge (MW).[/td][/tr]
-[tr][td]power.reactorOutputMax[/td][td]none[/td][td]Reactor max output (MW).[/td][/tr]
-[tr][td]power.reactorOutputMW[/td][td]none[/td][td]Reactor current output (MW).[/td][/tr]
 [tr][td]power.reactors[/td][td]none[/td][td]Reactor count.[/td][/tr]
 [tr][td]power.reactorString[/td][td]text: string[/td][td]Formatted reactor string: &lt;text or Reactors: >&lt;count>, Output: &lt;output> MW, Ur: &lt;uranium> kg"[/td][/tr]
 [tr][td]power.reactors[/td][td]none[/td][td]Reactor count[/td][/tr]
@@ -102,19 +90,13 @@ bgColour: set the background colour[/td][td]Configure the display (only runs onc
 [tr][td]power.solarOutputMax[/td][td]none[/td][td]Max solar output.[/td][/tr]
 [tr][td]power.solarOutputMW[/td][td]none[/td][td]Current solar output.[/td][/tr]
 [tr][td]power.solars[/td][td]none[/td][td]Solar panel count.[/td][/tr]
-[tr][td]power.turbineOutputMax[/td][td]none[/td][td]Max wind turbine output.[/td][/tr]
-[tr][td]power.turbineOutputMW[/td][td]none[/td][td]Current wind turbine output.[/td][/tr]
 [tr][td]power.turbines[/td][td]none[/td][td]Wind turbine count.[/td][/tr]
 [tr][td]production.blocks[/td][td]none[/td][td]List of assemblers and refineries, with a status icon and their queue (if any).[/td][/tr]
 [tr][td]production.status[/td][td]none[/td][td]Overall production status (power saving, enabled, halted). The production class will turn on / off production blocks if they idle for a long time, then check every 4 minutes to see if they need to start up again.[/td][/tr]
-[tr][td]gas.o2CurrentVolume[/td][td]none[/td][td]O2 tank volume (L).[/td][/tr]
-[tr][td]gas.o2MaxVolume[/td][td]none[/td][td]O2 tank capacity (L).[/td][/tr]
 [tr][td]gas.o2FillPct[/td][td]none[/td][td]O2 tank fill pct.[/td][/tr]
 [tr][td]gas.o2Tanks[/td][td]none[/td][td]Listing of O2 tanks names and volume (current/cap and %).[/td][/tr]
 [tr][td]gas.o2Bar[/td][td][url=https://github.com/p-mcgowan/se-scripts/tree/master/graphics]default bar options[/url][/td][td]O2 tank filled percent bar.[/td][/tr]
 [tr][td]gas.generationEnabled[/td][td]txtDisabled: text to show when disabled, txtEnabled: text to show when enabled[/td][td]Text for O2 generators enabled or disabled.[/td][/tr]
-[tr][td]gas.h2CurrentVolume[/td][td]none[/td][td]H2 tank volume (L).[/td][/tr]
-[tr][td]gas.h2MaxVolume[/td][td]none[/td][td]H2 tank capacity (L).[/td][/tr]
 [tr][td]gas.h2FillPct[/td][td]none[/td][td]H2 tank fill pct.[/td][/tr]
 [tr][td]gas.h2Tanks[/td][td]none[/td][td]Listing of H2 tanks names and volume (current/cap and %).[/td][/tr]
 [tr][td]gas.h2Bar[/td][td][url=https://github.com/p-mcgowan/se-scripts/tree/master/graphics]default bar options[/url][/td][td]H2 tank filled percent bar.[/td][/tr]

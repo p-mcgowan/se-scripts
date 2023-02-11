@@ -148,7 +148,6 @@ public class GasStatus {
         foreach (IMyGasTank tank in this.o2Tanks) {
             this.o2CurrentVolume += (tank.FilledRatio * tank.Capacity);
             this.o2MaxVolume += tank.Capacity;
-            this.o2FillPct += tank.FilledRatio;
             this.o2TankCount++;
 
             if (!this.tankMap.ContainsKey(tank.CustomName)) {
@@ -161,7 +160,6 @@ public class GasStatus {
         foreach (IMyGasTank tank in this.h2Tanks) {
             this.h2CurrentVolume += (tank.FilledRatio * tank.Capacity);
             this.h2MaxVolume += tank.Capacity;
-            this.h2FillPct += tank.FilledRatio;
             this.h2TankCount++;
 
             if (!this.tankMap.ContainsKey(tank.CustomName)) {
@@ -171,8 +169,8 @@ public class GasStatus {
             }
         }
 
-        this.o2FillPct = this.o2TankCount == 0 ? 0 : this.o2FillPct / this.o2TankCount;
-        this.h2FillPct = this.h2TankCount == 0 ? 0 : this.h2FillPct / this.h2TankCount;
+        this.o2FillPct = this.o2TankCount == 0 ? 0 : this.o2CurrentVolume / this.o2MaxVolume;
+        this.h2FillPct = this.h2TankCount == 0 ? 0 : this.h2CurrentVolume / this.h2MaxVolume;
     }
 }
 /* GAS */
