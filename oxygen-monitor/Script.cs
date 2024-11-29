@@ -524,7 +524,7 @@ public class DrawingSurface {
 
     public DrawingSurface Bar(Options options) {
         if (options == null || options.pct == 0f) {
-            return this.Bar(0f, text: "--/--");
+            options.text = options.text ?? "--/--";
         }
 
         return this.Bar(
@@ -596,7 +596,7 @@ public class DrawingSurface {
         text = text ?? Util.PctString(pct);
         if (text != null && text != "") {
             this.cursor.X += (width / 2);
-            this.Text(text, textColour ?? this.surface.ScriptForegroundColor, textAlignment: textAlignment, scale: 0.8f);
+            this.Text(text, textColour ?? this.surface.ScriptForegroundColor, textAlignment: textAlignment, scale: 0.875f);
             this.cursor.X += (width / 2);
         } else {
             this.cursor.X += width;

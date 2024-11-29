@@ -3,10 +3,10 @@ IMyBlockGroup right;
 IMyBlockGroup left;
 
 public Program() {
-    Runtime.UpdateFrequency = UpdateFrequency.None;
-    right = GridTerminalSystem.GetBlockGroupWithName("Right");
-    left = GridTerminalSystem.GetBlockGroupWithName("Left");
-    GridTerminalSystem.GetBlocksOfType<IMyTextPanel, IMyReflectorLight>(blocks);
+  Runtime.UpdateFrequency = UpdateFrequency.None;
+  right = GridTerminalSystem.GetBlockGroupWithName("Right");
+  left = GridTerminalSystem.GetBlockGroupWithName("Left");
+  GridTerminalSystem.GetBlocksOfType<IMyTextPanel, IMyReflectorLight>(blocks);
 }
 
 public void Main(string argument, UpdateType updateSource) {
@@ -16,24 +16,24 @@ public void Main(string argument, UpdateType updateSource) {
       blocks.Clear();
       left.GetBlocks(blocks);
       foreach (IMyReflectorLight block in blocks) {
-          block.Color = Color.White;
+        block.Color = Color.White;
       }
       blocks.Clear();
       right.GetBlocks(blocks);
       foreach (IMyReflectorLight block in blocks) {
-          block.Color = Color.White;
+        block.Color = Color.White;
       }
     } else {
       Runtime.UpdateFrequency = UpdateFrequency.Update10;
       blocks.Clear();
       left.GetBlocks(blocks);
       foreach (IMyReflectorLight block in blocks) {
-          block.Color = Color.Red;
+        block.Color = Color.Red;
       }
       blocks.Clear();
       right.GetBlocks(blocks);
       foreach (IMyReflectorLight block in blocks) {
-          block.Color = Color.Blue;
+        block.Color = Color.Blue;
       }
     }
     return;

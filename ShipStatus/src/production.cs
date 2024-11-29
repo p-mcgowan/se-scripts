@@ -33,9 +33,10 @@ public class ProductionDetails {
         this.blockStatus = new Dictionary<ProductionBlock, string>();
         this.queueItems = new Dictionary<string, VRage.MyFixedPoint>();
         this.statusDotColour = new Dictionary<string, string>() {
-            { "Idle", "dimgreen" },
-            { "Working", "dimyellow" },
-            { "Blocked", "dimred" }
+            { "Broken", "dimred" },
+            { "Idle", "dimgray" },
+            { "Working", "dimgreen" },
+            { "Blocked", "dimyellow" }
         };
         this.queueBuilder = new StringBuilder();
         this.splitNewline = new[] { '\n' };
@@ -234,7 +235,7 @@ public class ProductionBlock {
 
     public bool IsIdle() {
         string status = this.Status();
-        if (status == "Idle") {
+        if (status == "Idle" || status == "Broken") {
             this.idleTime = (this.idleTime == -1) ? this.Now() : this.idleTime;
             return true;
         } else if (status == "Blocked" && !block.Enabled) {
@@ -249,7 +250,9 @@ public class ProductionBlock {
     }
 
     public string Status() {
-        if (this.block.IsQueueEmpty && !this.block.IsProducing) {
+        if (!this.block.IsFunctional) {
+            return "Broken";
+        } else if (this.block.IsQueueEmpty && !this.block.IsProducing) {
             return "Idle";
         } else if (this.block.IsProducing) {
             return "Working";

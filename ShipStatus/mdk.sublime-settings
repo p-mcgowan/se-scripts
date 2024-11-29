@@ -4,7 +4,7 @@
   "build_dir": "./build",
 
   // main output file
-  "output": "Script.cs",
+  "output": "script.cs",
 
   // main input file - entrypoint for all other scripts (usually the one with public Program...)
   "main": "src/main.cs",
@@ -17,7 +17,10 @@
   "thumb": true,
   "allowLinq": true,
 
+  // if true, will minify the program after building to save space
   "minify": true,
+
+  // optionally, preserve the unminified version of the output file
   "unminified_file": "Unminified.cs",
 
   "ext": "../util/util.cs"

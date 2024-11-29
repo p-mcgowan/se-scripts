@@ -71,6 +71,9 @@ public static class Util {
 
     public static string ToItemName(MyProductionItem i) {
         string id = i.BlueprintId.ToString();
+        if (id.Contains("IngotBasic")) {
+            return "Stone to ingot";
+        }
         if (id.Contains("/")) {
             return id.Split('/')[1];
         }

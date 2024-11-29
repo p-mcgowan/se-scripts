@@ -302,15 +302,16 @@ public class PowerDetails {
         MyResourceSinkComponent resourceSink;
 
         foreach (IMyTerminalBlock block in this.consumers) {
-            if (block.Components.TryGet<MyResourceSinkComponent>(out resourceSink)) {
-                float powerConsumption = resourceSink.CurrentInputByType(this.electricity);
+            if (!block.Components.TryGet<MyResourceSinkComponent>(out resourceSink)) {
+                continue;
+            }
+            float powerConsumption = resourceSink.CurrentInputByType(this.electricity);
 
-                string blockName = block.DefinitionDisplayNameText.ToString();
-                if (!this.consumerDict.ContainsKey(blockName)) {
-                    this.consumerDict.Add(blockName, powerConsumption);
-                } else {
-                    this.consumerDict[blockName] = this.consumerDict[blockName] + powerConsumption;
-                }
+            string blockName = block.DefinitionDisplayNameText.ToString();
+            if (!this.consumerDict.ContainsKey(blockName)) {
+                this.consumerDict.Add(blockName, powerConsumption);
+            } else {
+                this.consumerDict[blockName] = this.consumerDict[blockName] + powerConsumption;
             }
         }
 

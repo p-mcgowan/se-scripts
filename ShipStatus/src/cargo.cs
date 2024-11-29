@@ -93,6 +93,12 @@ public class CargoStatus {
     }
 
     public void CargoItems(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        if (this.cargoItemCounts.Count() == 0) {
+            ds.Text(" ");
+
+            return;
+        }
+
         if (ds.width / (ds.charSizeInPx.X + 1f) < 40) {
             foreach (var item in this.cargoItemCounts) {
                 var fmtd = Util.FormatNumber(item.Value);

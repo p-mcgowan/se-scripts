@@ -55,6 +55,7 @@ public class DrawingSurface {
         { "brown", Color.Brown },
         { "cyan", Color.Cyan },
         { "dimgray", Color.DimGray },
+        { "dimgrey", Color.DimGray },
         { "gray", Color.Gray },
         { "green", Color.Green },
         { "orange", Color.Orange },

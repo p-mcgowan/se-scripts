@@ -370,6 +370,12 @@ public class CargoStatus {
     }
 
     public void CargoItems(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        if (this.cargoItemCounts.Count() == 0) {
+            ds.Text(" ");
+
+            return;
+        }
+
         if (ds.width / (ds.charSizeInPx.X + 1f) < 40) {
             foreach (var item in this.cargoItemCounts) {
                 var fmtd = Util.FormatNumber(item.Value);
@@ -1334,15 +1340,16 @@ public class PowerDetails {
         MyResourceSinkComponent resourceSink;
 
         foreach (IMyTerminalBlock block in this.consumers) {
-            if (block.Components.TryGet<MyResourceSinkComponent>(out resourceSink)) {
-                float powerConsumption = resourceSink.CurrentInputByType(this.electricity);
+            if (!block.Components.TryGet<MyResourceSinkComponent>(out resourceSink)) {
+                continue;
+            }
+            float powerConsumption = resourceSink.CurrentInputByType(this.electricity);
 
-                string blockName = block.DefinitionDisplayNameText.ToString();
-                if (!this.consumerDict.ContainsKey(blockName)) {
-                    this.consumerDict.Add(blockName, powerConsumption);
-                } else {
-                    this.consumerDict[blockName] = this.consumerDict[blockName] + powerConsumption;
-                }
+            string blockName = block.DefinitionDisplayNameText.ToString();
+            if (!this.consumerDict.ContainsKey(blockName)) {
+                this.consumerDict.Add(blockName, powerConsumption);
+            } else {
+                this.consumerDict[blockName] = this.consumerDict[blockName] + powerConsumption;
             }
         }
 
@@ -1538,9 +1545,10 @@ public class ProductionDetails {
         this.blockStatus = new Dictionary<ProductionBlock, string>();
         this.queueItems = new Dictionary<string, VRage.MyFixedPoint>();
         this.statusDotColour = new Dictionary<string, string>() {
-            { "Idle", "dimgreen" },
-            { "Working", "dimyellow" },
-            { "Blocked", "dimred" }
+            { "Broken", "dimred" },
+            { "Idle", "dimgray" },
+            { "Working", "dimgreen" },
+            { "Blocked", "dimyellow" }
         };
         this.queueBuilder = new StringBuilder();
         this.splitNewline = new[] { '\n' };
@@ -1739,7 +1747,7 @@ public class ProductionBlock {
 
     public bool IsIdle() {
         string status = this.Status();
-        if (status == "Idle") {
+        if (status == "Idle" || status == "Broken") {
             this.idleTime = (this.idleTime == -1) ? this.Now() : this.idleTime;
             return true;
         } else if (status == "Blocked" && !block.Enabled) {
@@ -1754,7 +1762,9 @@ public class ProductionBlock {
     }
 
     public string Status() {
-        if (this.block.IsQueueEmpty && !this.block.IsProducing) {
+        if (!this.block.IsFunctional) {
+            return "Broken";
+        } else if (this.block.IsQueueEmpty && !this.block.IsProducing) {
             return "Idle";
         } else if (this.block.IsProducing) {
             return "Working";
@@ -1826,6 +1836,7 @@ public class DrawingSurface {
         { "brown", Color.Brown },
         { "cyan", Color.Cyan },
         { "dimgray", Color.DimGray },
+        { "dimgrey", Color.DimGray },
         { "gray", Color.Gray },
         { "green", Color.Green },
         { "orange", Color.Orange },
@@ -2820,6 +2831,9 @@ public static class Util {
 
     public static string ToItemName(MyProductionItem i) {
         string id = i.BlueprintId.ToString();
+        if (id.Contains("IngotBasic")) {
+            return "Stone to ingot";
+        }
         if (id.Contains("/")) {
             return id.Split('/')[1];
         }
