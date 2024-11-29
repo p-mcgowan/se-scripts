@@ -438,7 +438,13 @@ public class CargoStatus {
             for (var i = 0; i < this.inventoryItems.Count; i++) {
                 fullName = this.inventoryItems[i].Type.ToString();
                 itemName = this.itemRegex.Replace(fullName, "");
-                if (this.ingotRegex.IsMatch(fullName)) {
+                if (itemName == "Stone") {
+                    if (this.ingotRegex.IsMatch(fullName)) {
+                        itemName = "Gravel";
+                    } else {
+                        itemName = "Stone";
+                    }
+                } else if (this.ingotRegex.IsMatch(fullName)) {
                     itemName += " Ingot";
                 } else if (this.oreRegex.IsMatch(fullName)) {
                     itemName += " Ore";
