@@ -76,7 +76,7 @@ public class ProductionDetails {
                     ds.Newline();
                 }
                 string status = blk.Key.Status();
-                string blockName = $"{blk.Key.block.CustomName}: {status} {(blk.Key.IsIdle() ? blk.Key.IdleTime() : "")}";
+                string blockName = $" {blk.Key.block.CustomName}: {status} {(blk.Key.IsIdle() ? blk.Key.IdleTime() : "")}";
                 Color? colour = DrawingSurface.StringToColour(this.statusDotColour.Get(status));
                 ds.TextCircle(colour, outline: false).Text(blockName);
 

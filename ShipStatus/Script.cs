@@ -15,6 +15,8 @@ const string customDataInit=@"; CustomData config:
 ;power=false
 ;health=false
 ;gas=false
+;gasEnableFillPct=-1
+;gasDisableFillPct=-1
 ;  airlock config (defaults are shown)
 ;airlockOpenTime=750
 ;airlockAllDoors=false
@@ -59,14 +61,14 @@ exclude;public string doorMatch="Door(.*)";public string doorExclude="Hangar";pu
 this.locationToAirlockMap=new Dictionary<string,List<IMyFunctionalBlock>>();this.Reset();}public void Reset(){this.Clear();this.doorMatch=this.program.config.Get("airlockDoorMatch","Door(.*)");this.doorExclude
 =this.program.config.Get("airlockDoorExclude","Hangar");this.include=Util.Regex(this.doorMatch);this.exclude=Util.Regex(this.doorExclude);this.timeOpen=Util.ParseFloat(this.program.config.Get("airlockOpenTime"),
 750f);}public void Clear(){this.airlocks.Clear();this.locationToAirlockMap.Clear();}public void CheckAirlocks(){if(!this.program.config.Enabled("airlock")){return;}foreach(var al in this.airlocks){al.Value.Check();
-}}public void GetBlock(IMyTerminalBlock block){if(block is IMyDoor){var match=this.include.Match(block.CustomName);var ignore=this.exclude.Match(block.CustomName);if(!match.Success||ignore.Success){return;
-}var key=match.Groups[1].ToString();if(!this.locationToAirlockMap.ContainsKey(key)){this.locationToAirlockMap.Add(key,new List<IMyFunctionalBlock>());}this.locationToAirlockMap[key].Add(block as IMyFunctionalBlock);
-}}public void GotBLocks(){bool doAllDoors=this.program.config.Enabled("airlockAllDoors");foreach(var keyval in this.locationToAirlockMap){if(!doAllDoors&&keyval.Value.Count<2){continue;}this.airlocks.Add(keyval.Key,
-new AirlockDoors(keyval.Value,this.program));}}}public class AirlockDoors{public Program program;private List<IMyFunctionalBlock>blocks;private List<IMyFunctionalBlock>areClosed;private List<IMyFunctionalBlock>
-areOpen;private double openTimer;public double timeOpen;public AirlockDoors(List<IMyFunctionalBlock>doors,Program program,double timeOpen=750f){this.program=program;this.blocks=new List<IMyFunctionalBlock>(doors);
-this.areClosed=new List<IMyFunctionalBlock>();this.areOpen=new List<IMyFunctionalBlock>();this.openTimer=timeOpen;this.timeOpen=timeOpen;}private bool IsOpen(IMyFunctionalBlock door){return(door as IMyDoor).OpenRatio
->0;}private void Lock(List<IMyFunctionalBlock>doors=null){doors=doors??this.blocks;foreach(var door in doors){(door as IMyDoor).Enabled=false;}}private void Unlock(List<IMyFunctionalBlock>doors=null){
-doors=doors??this.blocks;foreach(var door in doors){(door as IMyDoor).Enabled=true;}}private void OpenClose(string action,IMyFunctionalBlock door1,IMyFunctionalBlock door2=null){(door1 as IMyDoor).ApplyAction(action);
+}}public void GetBlock(IMyTerminalBlock block){if(!(block is IMyDoor)){return;}var match=this.include.Match(block.CustomName);var ignore=this.exclude.Match(block.CustomName);if(!match.Success||ignore.Success)
+{return;}var key=match.Groups[1].ToString();if(!this.locationToAirlockMap.ContainsKey(key)){this.locationToAirlockMap.Add(key,new List<IMyFunctionalBlock>());}this.locationToAirlockMap[key].Add(block as
+IMyFunctionalBlock);}public void GotBLocks(){bool doAllDoors=this.program.config.Enabled("airlockAllDoors");foreach(var keyval in this.locationToAirlockMap){if(!doAllDoors&&keyval.Value.Count<2){continue;
+}this.airlocks.Add(keyval.Key,new AirlockDoors(keyval.Value,this.program));}}}public class AirlockDoors{public Program program;private List<IMyFunctionalBlock>blocks;private List<IMyFunctionalBlock>areClosed;
+private List<IMyFunctionalBlock>areOpen;private double openTimer;public double timeOpen;public AirlockDoors(List<IMyFunctionalBlock>doors,Program program,double timeOpen=750f){this.program=program;this.blocks
+=new List<IMyFunctionalBlock>(doors);this.areClosed=new List<IMyFunctionalBlock>();this.areOpen=new List<IMyFunctionalBlock>();this.openTimer=timeOpen;this.timeOpen=timeOpen;}private bool IsOpen(IMyFunctionalBlock
+door){return(door as IMyDoor).OpenRatio>0;}private void Lock(List<IMyFunctionalBlock>doors=null){doors=doors??this.blocks;foreach(var door in doors){(door as IMyDoor).Enabled=false;}}private void Unlock(List<IMyFunctionalBlock>
+doors=null){doors=doors??this.blocks;foreach(var door in doors){(door as IMyDoor).Enabled=true;}}private void OpenClose(string action,IMyFunctionalBlock door1,IMyFunctionalBlock door2=null){(door1 as IMyDoor).ApplyAction(action);
 if(door2!=null){(door2 as IMyDoor).ApplyAction(action);}}private void Open(IMyFunctionalBlock door1,IMyFunctionalBlock door2=null){this.OpenClose("Open_On",door1,door2);}private void OpenAll(){foreach
 (var door in this.blocks){this.OpenClose("Open_On",door);}}private void Close(IMyFunctionalBlock door1,IMyFunctionalBlock door2=null){this.OpenClose("Open_Off",door1,door2);}private void CloseAll(){foreach
 (var door in this.blocks){this.OpenClose("Open_Off",door);}}public bool Check(){int openCount=0;this.areClosed.Clear();this.areOpen.Clear();foreach(var door in this.blocks){if(!Util.BlockValid(door)){
@@ -96,16 +98,16 @@ this.inventoryItems.Clear();this.max=0;this.vol=0;this.pct=0f;string fullName=""
 =this.cargoItemCounts[itemName]+itemQty;}}}this.cargoItemCounts=this.cargoItemCounts.OrderBy(x=>-x.Value.ToIntSafe()).ToDictionary(x=>x.Key,x=>x.Value);if(this.max!=0){this.pct=(float)this.vol/(float)this.max;
 }return;}}public class Config{public Dictionary<string,string>settings;public string customData;public Config(){this.settings=new Dictionary<string,string>();}public void Clear(){this.settings.Clear();
 this.customData=null;}public void Set(string name,string value){this.settings[name]=value;}public string Get(string name,string alt=null){return this.settings.Get(name,alt);}public bool Enabled(string
-name){return this.settings.Get(name)=="true";}}public static string[]globalConfigs=new string[]{"airlock","production","cargo","power","health","gas","healthIgnore","airlockOpenTime","airlockAllDoors",
-"airlockDoorMatch","airlockDoorExclude","healthOnHud","getAllGrids",};public bool ParseCustomData(){MyIniParseResult result;if(!ini.TryParse(Me.CustomData,out result)){Echo($"Failed to parse config:\n{result}");
-return false;}if(Me.CustomData==""){Me.CustomData=customDataInit;}config.Clear();config.customData=Me.CustomData;strings.Clear();ini.GetSections(strings);template.Reset();templates.Clear();config.Set("airlock",
-"true");string themeConfig="";if(ini.ContainsSection("global")){string setting="";foreach(string cfg in globalConfigs){if(ini.Get("global",cfg).TryGetString(out setting)){config.Set(cfg,setting);}}if(ini.Get("global",
-"config").TryGetString(out setting)){config.Set("config",setting);themeConfig=$"{{config:{setting}}}\n";}}foreach(string outname in strings){if(outname=="global"){continue;}var tpl=ini.Get(outname,"output");
-if(!tpl.IsEmpty){templates[outname]=themeConfig+tpl.ToString();}}string name;string surfaceName;IMyTextSurface surface;drawables.Clear();bool hasNumberedSurface;blocks.Clear();if(config.Enabled("getAllGrids"))
-{GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);}else{GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks,block=>block.IsSameConstructAs(Me));}foreach(IMyTextSurfaceProvider
-block in blocks){for(int i=0;i<block.SurfaceCount;i++){name=((IMyTerminalBlock)block).CustomName;surfaceName=$"{name} <{i}>";hasNumberedSurface=strings.Contains(surfaceName);if(!strings.Contains(name)
-&&!hasNumberedSurface){continue;}surface=block.GetSurface(i);if(hasNumberedSurface){drawables[surfaceName]=new DrawingSurface(surface,this,surfaceName);}else{drawables[name]=new DrawingSurface(surface,
-this,name);}}}return true;}public bool Configure(){if(stateMachine!=null){stateMachine.Dispose();}if(!ParseCustomData()){Runtime.UpdateFrequency&=UpdateFrequency.None;Echo("Failed to parse custom data");
+name){return this.settings.Get(name)=="true";}}public static string[]globalConfigs=new string[]{"airlock","production","cargo","power","health","gas","gasEnableFillPct","gasDisableFillPct","healthIgnore",
+"airlockOpenTime","airlockAllDoors","airlockDoorMatch","airlockDoorExclude","healthOnHud","getAllGrids",};public bool ParseCustomData(){MyIniParseResult result;if(!ini.TryParse(Me.CustomData,out result))
+{Echo($"Failed to parse config:\n{result}");return false;}if(Me.CustomData==""){Me.CustomData=customDataInit;}config.Clear();config.customData=Me.CustomData;strings.Clear();ini.GetSections(strings);template.Reset();
+templates.Clear();config.Set("airlock","true");string themeConfig="";if(ini.ContainsSection("global")){string setting="";foreach(string cfg in globalConfigs){if(ini.Get("global",cfg).TryGetString(out setting))
+{config.Set(cfg,setting);}}if(ini.Get("global","config").TryGetString(out setting)){config.Set("config",setting);themeConfig=$"{{config:{setting}}}\n";}}foreach(string outname in strings){if(outname==
+"global"){continue;}var tpl=ini.Get(outname,"output");if(!tpl.IsEmpty){templates[outname]=themeConfig+tpl.ToString();}}string name;string surfaceName;IMyTextSurface surface;drawables.Clear();bool hasNumberedSurface;
+blocks.Clear();if(config.Enabled("getAllGrids")){GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks);}else{GridTerminalSystem.GetBlocksOfType<IMyTextSurfaceProvider>(blocks,block=>block.IsSameConstructAs(Me));
+}foreach(IMyTextSurfaceProvider block in blocks){for(int i=0;i<block.SurfaceCount;i++){name=((IMyTerminalBlock)block).CustomName;surfaceName=$"{name} <{i}>";hasNumberedSurface=strings.Contains(surfaceName);
+if(!strings.Contains(name)&&!hasNumberedSurface){continue;}surface=block.GetSurface(i);if(hasNumberedSurface){drawables[surfaceName]=new DrawingSurface(surface,this,surfaceName);}else{drawables[name]=
+new DrawingSurface(surface,this,name);}}}return true;}public bool Configure(){if(stateMachine!=null){stateMachine.Dispose();}if(!ParseCustomData()){Runtime.UpdateFrequency&=UpdateFrequency.None;Echo("Failed to parse custom data");
 return false;}Runtime.UpdateFrequency=UpdateFrequency.Update100;if(config.Enabled("airlock")){Runtime.UpdateFrequency|=UpdateFrequency.Update10;}stateMachine=RunStuffOverTime();Runtime.UpdateFrequency
 |=UpdateFrequency.Once;return true;}public void RefetchBlocks(){cargoStatus.Clear();airlock.Clear();blockHealth.Clear();powerDetails.Clear();productionDetails.Clear();gasStatus.Clear();GridTerminalSystem.GetBlocks(allBlocks);
 foreach(IMyTerminalBlock block in allBlocks){if(!Util.BlockValid(block)){continue;}if(!config.Enabled("getAllGrids")&&!block.IsSameConstructAs(Me)){continue;}powerDetails.GetBlock(block);cargoStatus.GetBlock(block);
@@ -121,36 +123,42 @@ yield return"powerDetails";}if(config.Enabled("cargo")){cargoStatus.Refresh();yi
 if(screenConfig!=null){themeOpts=template.StringToOptions(screenConfig);}for(int j=0;j<drawables.Count;++j){var dw=drawables.ElementAt(j);if(themeOpts!=null){template.ConfigureScreen(dw.Value,themeOpts);
 }template.Render(dw.Value);yield return$"render {dw.Key}";}config.Set("config",null);yield break;}GasStatus gasStatus;public class GasStatus{public Program program;public Template template;public List<IMyGasTank>
 o2Tanks;public List<IMyGasTank>h2Tanks;public List<IMyGasGenerator>oxyGens;public Dictionary<string,double>tankMap;public double o2CurrentVolume;public float o2MaxVolume;public double o2FillPct;public
-int o2TankCount;public double h2CurrentVolume;public float h2MaxVolume;public double h2FillPct;public int h2TankCount;public GasStatus(Program program,Template template=null){this.program=program;this.template
-=template;this.o2Tanks=new List<IMyGasTank>();this.h2Tanks=new List<IMyGasTank>();this.oxyGens=new List<IMyGasGenerator>();this.tankMap=new Dictionary<string,double>();this.Reset();}public void Reset()
-{this.Clear();if(this.program.config.Enabled("gas")){this.RegisterTemplateVars();}}public void Clear(){this.ClearTotals();this.o2Tanks.Clear();this.h2Tanks.Clear();this.tankMap.Clear();}public void RegisterTemplateVars()
-{if(this.template==null){return;}this.template.Register("gas.o2CurrentVolume",()=>$"{Util.FormatNumber(this.o2CurrentVolume)}");this.template.Register("gas.h2CurrentVolume",()=>$"{Util.FormatNumber(this.h2CurrentVolume)}");
-this.template.Register("gas.o2MaxVolume",()=>$"{Util.FormatNumber(this.o2MaxVolume)}");this.template.Register("gas.h2MaxVolume",()=>$"{Util.FormatNumber(this.h2MaxVolume)}");this.template.Register("gas.o2FillPct",
-()=>Util.PctString(this.o2FillPct));this.template.Register("gas.h2FillPct",()=>Util.PctString(this.h2FillPct));this.template.Register("gas.o2Tanks",(DrawingSurface ds,string text,DrawingSurface.Options
-options)=>{this.PrintTanks(this.o2Tanks,ds,options);});this.template.Register("gas.h2Tanks",(DrawingSurface ds,string text,DrawingSurface.Options options)=>{this.PrintTanks(this.h2Tanks,ds,options);});
-this.template.Register("gas.generationEnabled",(DrawingSurface ds,string text,DrawingSurface.Options options)=>{string message=options.custom.Get("txtDisabled")??"Oxygen generation off";if(this.GetGenerators())
-{message=options.custom.Get("txtEnabled")??"Oxygen generation on";}ds.Text(message,options);});this.template.Register("gas.o2Bar",(DrawingSurface ds,string text,DrawingSurface.Options options)=>{this.GasBar((float)o2FillPct,
+int o2TankCount;public double h2CurrentVolume;public float h2MaxVolume;public double h2FillPct;public int h2TankCount;public double enableFillPct;public double disableFillPct;public GasStatus(Program program,
+Template template=null){this.program=program;this.template=template;this.o2Tanks=new List<IMyGasTank>();this.h2Tanks=new List<IMyGasTank>();this.oxyGens=new List<IMyGasGenerator>();this.tankMap=new Dictionary<string,
+double>();this.Reset();}public void Reset(){this.Clear();if(this.program.config.Enabled("gas")){this.RegisterTemplateVars();}}public void Clear(){this.ClearTotals();this.o2Tanks.Clear();this.h2Tanks.Clear();
+this.tankMap.Clear();}public void RegisterTemplateVars(){if(this.template==null){return;}this.template.Register("gas.o2CurrentVolume",()=>$"{Util.FormatNumber(this.o2CurrentVolume)}");this.template.Register("gas.h2CurrentVolume",
+()=>$"{Util.FormatNumber(this.h2CurrentVolume)}");this.template.Register("gas.o2MaxVolume",()=>$"{Util.FormatNumber(this.o2MaxVolume)}");this.template.Register("gas.h2MaxVolume",()=>$"{Util.FormatNumber(this.h2MaxVolume)}");
+this.template.Register("gas.o2FillPct",()=>Util.PctString(this.o2FillPct));this.template.Register("gas.h2FillPct",()=>Util.PctString(this.h2FillPct));this.template.Register("gas.o2Tanks",(DrawingSurface
+ds,string text,DrawingSurface.Options options)=>{this.PrintTanks(this.o2Tanks,ds,options);});this.template.Register("gas.h2Tanks",(DrawingSurface ds,string text,DrawingSurface.Options options)=>{this.PrintTanks(this.h2Tanks,
+ds,options);});this.template.Register("gas.generationEnabled",(DrawingSurface ds,string text,DrawingSurface.Options options)=>{string message=options.custom.Get("txtDisabled")??"Gas generation off";if
+(this.GetGenerators()){message=options.custom.Get("txtEnabled")??"Gas generation on";}ds.Text(message,options);});this.template.Register("gas.generationEnabledExtended",(DrawingSurface ds,string text,
+DrawingSurface.Options options)=>{this.GasExtendedMessage(ds,text,options);});this.template.Register("gas.o2Bar",(DrawingSurface ds,string text,DrawingSurface.Options options)=>{this.GasBar((float)o2FillPct,
 ds,options);});this.template.Register("gas.h2Bar",(DrawingSurface ds,string text,DrawingSurface.Options options)=>{this.GasBar((float)h2FillPct,ds,options);});}public void GetBlock(IMyTerminalBlock block)
 {if(block is IMyGasTank){string name=block.DefinitionDisplayNameText.ToString();if(name.Contains("Oxygen Tank")){this.o2Tanks.Add((IMyGasTank)block);}else if(name.Contains("Hydrogen Tank")){this.h2Tanks.Add((IMyGasTank)block);
-}}else if(block is IMyGasGenerator){this.oxyGens.Add((IMyGasGenerator)block);}}public void GotBLocks(){}public void Refresh(){this.ClearTotals();this.GetGasLevels();}public void ClearTotals(){this.o2CurrentVolume
-=0f;this.o2MaxVolume=0f;this.o2FillPct=0f;this.o2TankCount=0;this.h2CurrentVolume=0f;this.h2MaxVolume=0f;this.h2FillPct=0f;this.h2TankCount=0;}public void PrintTanks(List<IMyGasTank>tanks,DrawingSurface
-ds,DrawingSurface.Options options){foreach(IMyGasTank tank in tanks){double currentVolume=(tank.FilledRatio*tank.Capacity);ds.Text($@"{tank.CustomName}: {Util.FormatNumber(currentVolume)} / {Util.FormatNumber((double)tank.Capacity)} L ({Util.PctString(tank.FilledRatio)})",
+}}else if(block is IMyGasGenerator){this.oxyGens.Add((IMyGasGenerator)block);}}public void GotBLocks(){this.enableFillPct=Util.ParseFloat(this.program.config.Get("gasEnableFillPct"),-1f);this.disableFillPct
+=Util.ParseFloat(this.program.config.Get("gasDisableFillPct"),-1f);}public void Refresh(){this.ClearTotals();this.GetGasLevels();}public void ClearTotals(){this.o2CurrentVolume=0f;this.o2MaxVolume=0f;
+this.o2FillPct=0f;this.o2TankCount=0;this.h2CurrentVolume=0f;this.h2MaxVolume=0f;this.h2FillPct=0f;this.h2TankCount=0;}public void PrintTanks(List<IMyGasTank>tanks,DrawingSurface ds,DrawingSurface.Options
+options){foreach(IMyGasTank tank in tanks){double currentVolume=(tank.FilledRatio*tank.Capacity);ds.Text($@"{tank.CustomName}: {Util.FormatNumber(currentVolume)} / {Util.FormatNumber((double)tank.Capacity)} L ({Util.PctString(tank.FilledRatio)})",
 options).Newline();}ds.Newline(reverse:true);}public void GasBar(float pct,DrawingSurface ds,DrawingSurface.Options options){options.pct=pct;options.text=Util.PctString(pct);options.textColour=options.textColour
 ??ds.surface.ScriptForegroundColor;ds.Bar(options);}public void SetGenerators(bool enabled){foreach(IMyGasGenerator genny in this.oxyGens){genny.Enabled=enabled;}}public bool GetGenerators(){foreach(IMyGasGenerator
 genny in this.oxyGens){if(genny.Enabled){return true;}}return false;}public void GetGasLevels(){this.tankMap.Clear();foreach(IMyGasTank tank in this.o2Tanks){this.o2CurrentVolume+=(tank.FilledRatio*tank.Capacity);
 this.o2MaxVolume+=tank.Capacity;this.o2TankCount++;if(!this.tankMap.ContainsKey(tank.CustomName)){this.tankMap.Add(tank.CustomName,tank.FilledRatio);}else{this.tankMap[tank.CustomName]=this.tankMap[tank.CustomName]
 +tank.FilledRatio;}}foreach(IMyGasTank tank in this.h2Tanks){this.h2CurrentVolume+=(tank.FilledRatio*tank.Capacity);this.h2MaxVolume+=tank.Capacity;this.h2TankCount++;if(!this.tankMap.ContainsKey(tank.CustomName))
 {this.tankMap.Add(tank.CustomName,tank.FilledRatio);}else{this.tankMap[tank.CustomName]=this.tankMap[tank.CustomName]+tank.FilledRatio;}}this.o2FillPct=this.o2TankCount==0?0:this.o2CurrentVolume/this.o2MaxVolume;
-this.h2FillPct=this.h2TankCount==0?0:this.h2CurrentVolume/this.h2MaxVolume;}}BlockHealth blockHealth;class BlockHealth{public Program program;public Template template;public System.Text.RegularExpressions.Regex
-ignoreHealth;public List<IMyTerminalBlock>blocks;public Dictionary<string,string>damaged;public string status;public BlockHealth(Program program,Template template){this.program=program;this.template=template;
-this.blocks=new List<IMyTerminalBlock>();this.damaged=new Dictionary<string,string>();this.Reset();}public void Reset(){this.Clear();if(this.program.config.Enabled("health")){this.RegisterTemplateVars();
-string ignore=this.program.config.Get("healthIgnore");if(ignore!=""&&ignore!=null){this.ignoreHealth=Util.Regex(System.Text.RegularExpressions.Regex.Replace(ignore,@"\s*,\s*","|"));}}}public void Clear()
-{this.blocks.Clear();this.damaged.Clear();}public void RegisterTemplateVars(){if(this.template==null){return;}this.template.Register("health.status",()=>this.status);this.template.Register("health.blocks",
-(DrawingSurface ds,string text,DrawingSurface.Options options)=>{foreach(KeyValuePair<string,string>block in this.damaged){ds.Text($"{block.Key} [{block.Value}]").Newline();}ds.Newline(reverse:true);});
-}public float GetHealth(IMyTerminalBlock block){IMySlimBlock slimblock=block.CubeGrid.GetCubeBlock(block.Position);if(slimblock==null){return 1f;}float MaxIntegrity=slimblock.MaxIntegrity;float BuildIntegrity
-=slimblock.BuildIntegrity;float CurrentDamage=slimblock.CurrentDamage;return(BuildIntegrity-CurrentDamage)/MaxIntegrity;}public void GetBlock(IMyTerminalBlock block){this.blocks.Add(block);}public void
-GotBLocks(){}public void Refresh(){if(this.blocks==null){return;}this.damaged.Clear();bool showOnHud=this.program.config.Enabled("healthOnHud");foreach(var b in this.blocks){if(!Util.BlockValid(b)){continue;
-}if(this.ignoreHealth!=null&&this.ignoreHealth.IsMatch(b.CustomName)){continue;}var health=this.GetHealth(b);if(health!=1f){this.damaged[b.CustomName]=Util.PctString(health);}if(showOnHud){b.ShowOnHUD
+this.h2FillPct=this.h2TankCount==0?0:this.h2CurrentVolume/this.h2MaxVolume;if(this.enableFillPct!=-1&&(this.o2FillPct<=this.enableFillPct||this.h2FillPct<=this.enableFillPct)){this.SetGenerators(true);
+}if(this.disableFillPct!=-1&&this.o2FillPct>=this.disableFillPct&&this.h2FillPct>=this.disableFillPct){this.SetGenerators(false);}}public void GasExtendedMessage(DrawingSurface ds,string text,DrawingSurface.Options
+options){var max=Math.Floor(100*Math.Max(this.o2FillPct,this.h2FillPct));var min=Math.Ceiling(100*Math.Min(this.o2FillPct,this.h2FillPct));string message=options.custom.Get("txtDisabled")??$"Gas generation off";
+if(this.enableFillPct!=-1){message=message+$", enabled at {Math.Floor(100 * this.enableFillPct)}% (current: {min}%)";}if(this.GetGenerators()){message=options.custom.Get("txtEnabled")??$"Gas generation on";
+if(this.disableFillPct!=-1){message=message+$", disabled at {Math.Ceiling(100 * this.disableFillPct)}% (current: {max}%)";}}ds.Text(message,options);}}BlockHealth blockHealth;class BlockHealth{public Program
+program;public Template template;public System.Text.RegularExpressions.Regex ignoreHealth;public List<IMyTerminalBlock>blocks;public Dictionary<string,string>damaged;public string status;public BlockHealth(Program
+program,Template template){this.program=program;this.template=template;this.blocks=new List<IMyTerminalBlock>();this.damaged=new Dictionary<string,string>();this.Reset();}public void Reset(){this.Clear();
+if(this.program.config.Enabled("health")){this.RegisterTemplateVars();string ignore=this.program.config.Get("healthIgnore");if(ignore!=""&&ignore!=null){this.ignoreHealth=Util.Regex(System.Text.RegularExpressions.Regex.Replace(ignore,
+@"\s*,\s*","|"));}}}public void Clear(){this.blocks.Clear();this.damaged.Clear();}public void RegisterTemplateVars(){if(this.template==null){return;}this.template.Register("health.status",()=>this.status);
+this.template.Register("health.blocks",(DrawingSurface ds,string text,DrawingSurface.Options options)=>{foreach(KeyValuePair<string,string>block in this.damaged){ds.Text($"{block.Key} [{block.Value}]").Newline();
+}ds.Newline(reverse:true);});}public float GetHealth(IMyTerminalBlock block){IMySlimBlock slimblock=block.CubeGrid.GetCubeBlock(block.Position);if(slimblock==null){return 1f;}float MaxIntegrity=slimblock.MaxIntegrity;
+float BuildIntegrity=slimblock.BuildIntegrity;float CurrentDamage=slimblock.CurrentDamage;return(BuildIntegrity-CurrentDamage)/MaxIntegrity;}public void GetBlock(IMyTerminalBlock block){this.blocks.Add(block);
+}public void GotBLocks(){}public void Refresh(){if(this.blocks==null){return;}this.damaged.Clear();bool showOnHud=this.program.config.Enabled("healthOnHud");foreach(var b in this.blocks){if(!Util.BlockValid(b))
+{continue;}if(this.ignoreHealth!=null&&this.ignoreHealth.IsMatch(b.CustomName)){continue;}var health=this.GetHealth(b);if(health!=1f){this.damaged[b.CustomName]=Util.PctString(health);}if(showOnHud){b.ShowOnHUD
 =health!=1f;}}this.status=$"{(this.damaged.Count == 0 ? "No damage" : "Damage")} detected";}}PowerDetails powerDetails;public class PowerDetails{public Program program;public Template template;public List<IMyTerminalBlock>
 powerProducerBlocks;public List<IMyTerminalBlock>jumpDriveBlocks;public List<IMyTerminalBlock>consumers;public List<MyInventoryItem>items;public List<float>ioFloats;public List<Color>ioColours;public Dictionary<string,
 Color>ioLegendNames;public Dictionary<string,float>consumerDict;public float batteryCurrent;public float batteryInput;public float batteryInputMax;public float batteryMax;public float batteryOutputDisabled;
@@ -235,7 +243,7 @@ this.blockStatus=new Dictionary<ProductionBlock,string>();this.queueItems=new Di
 {this.RegisterTemplateVars();}}public void Clear(){this.blocks.Clear();this.productionItems.Clear();this.productionBlocks.Clear();this.blockStatus.Clear();this.queueItems.Clear();this.idleTime=0;this.timeDisabled
 =0;this.checking=false;}public void RegisterTemplateVars(){if(this.template==null){return;}this.template.Register("production.status",()=>this.status);this.template.Register("production.blocks",(DrawingSurface
 ds,string text,DrawingSurface.Options options)=>{bool first=true;foreach(KeyValuePair<ProductionBlock,string>blk in this.blockStatus){if(!first){ds.Newline();}string status=blk.Key.Status();string blockName
-=$"{blk.Key.block.CustomName}: {status} {(blk.Key.IsIdle() ? blk.Key.IdleTime() : "")}";Color?colour=DrawingSurface.StringToColour(this.statusDotColour.Get(status));ds.TextCircle(colour,outline:false).Text(blockName);
+=$" {blk.Key.block.CustomName}: {status} {(blk.Key.IsIdle() ? blk.Key.IdleTime() : "")}";Color?colour=DrawingSurface.StringToColour(this.statusDotColour.Get(status));ds.TextCircle(colour,outline:false).Text(blockName);
 foreach(string str in blk.Value.Split(this.splitNewline,StringSplitOptions.RemoveEmptyEntries)){ds.Newline().Text(str);}first=false;}});}public void GetBlock(IMyTerminalBlock block){if((block is IMyAssembler
 ||block is IMyRefinery)&&!block.CustomName.Contains(this.productionIgnoreString)){this.productionBlocks.Add(new ProductionBlock(this.program,block as IMyProductionBlock));}}public void GotBLocks(){this.productionBlocks
 =this.productionBlocks.OrderBy(b=>b.block.CustomName).ToList();}public void Refresh(){if(this.productionBlocks.Count==0){return;}string itemName;bool allIdle=true;int assemblers=0;int refineries=0;this.blockStatus.Clear();

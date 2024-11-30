@@ -48,19 +48,20 @@ public class Airlock {
     }
 
     public void GetBlock(IMyTerminalBlock block) {
-        // Get all door blocks
-        if (block is IMyDoor) {
-            var match = this.include.Match(block.CustomName);
-            var ignore = this.exclude.Match(block.CustomName);
-            if (!match.Success || ignore.Success) {
-                return;
-            }
-            var key = match.Groups[1].ToString();
-            if (!this.locationToAirlockMap.ContainsKey(key)) {
-                this.locationToAirlockMap.Add(key, new List<IMyFunctionalBlock>());
-            }
-            this.locationToAirlockMap[key].Add(block as IMyFunctionalBlock);
+        if (!(block is IMyDoor)) {
+            return;
         }
+
+        var match = this.include.Match(block.CustomName);
+        var ignore = this.exclude.Match(block.CustomName);
+        if (!match.Success || ignore.Success) {
+            return;
+        }
+        var key = match.Groups[1].ToString();
+        if (!this.locationToAirlockMap.ContainsKey(key)) {
+            this.locationToAirlockMap.Add(key, new List<IMyFunctionalBlock>());
+        }
+        this.locationToAirlockMap[key].Add(block as IMyFunctionalBlock);
 
     }
 

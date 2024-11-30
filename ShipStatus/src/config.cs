@@ -34,6 +34,8 @@ public static string[] globalConfigs = new string[] {
     "power",
     "health",
     "gas",
+    "gasEnableFillPct",
+    "gasDisableFillPct",
     "healthIgnore",
     "airlockOpenTime",
     "airlockAllDoors",

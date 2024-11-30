@@ -15,6 +15,8 @@ const string customDataInit = @"; CustomData config:
 ;power=false
 ;health=false
 ;gas=false
+;gasEnableFillPct=-1
+;gasDisableFillPct=-1
 ;  airlock config (defaults are shown)
 ;airlockOpenTime=750
 ;airlockAllDoors=false

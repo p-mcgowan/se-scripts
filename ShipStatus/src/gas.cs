@@ -18,6 +18,8 @@ public class GasStatus {
     public float h2MaxVolume;
     public double h2FillPct;
     public int h2TankCount;
+    public double enableFillPct;
+    public double disableFillPct;
 
     public GasStatus(Program program, Template template = null) {
         this.program = program;
@@ -62,11 +64,14 @@ public class GasStatus {
             this.PrintTanks(this.h2Tanks, ds, options);
         });
         this.template.Register("gas.generationEnabled", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
-            string message = options.custom.Get("txtDisabled") ?? "Oxygen generation off";
+            string message = options.custom.Get("txtDisabled") ?? "Gas generation off";
             if (this.GetGenerators()) {
-                message = options.custom.Get("txtEnabled") ?? "Oxygen generation on";
+                message = options.custom.Get("txtEnabled") ?? "Gas generation on";
             }
             ds.Text(message, options);
+        });
+        this.template.Register("gas.generationEnabledExtended", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+            this.GasExtendedMessage(ds, text, options);
         });
         this.template.Register("gas.o2Bar", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
             this.GasBar((float)o2FillPct, ds, options);
@@ -89,7 +94,10 @@ public class GasStatus {
         }
     }
 
-    public void GotBLocks() {}
+    public void GotBLocks() {
+        this.enableFillPct = Util.ParseFloat(this.program.config.Get("gasEnableFillPct"), -1f);
+        this.disableFillPct = Util.ParseFloat(this.program.config.Get("gasDisableFillPct"), -1f);
+    }
 
     public void Refresh() {
         this.ClearTotals();
@@ -171,6 +179,29 @@ public class GasStatus {
 
         this.o2FillPct = this.o2TankCount == 0 ? 0 : this.o2CurrentVolume / this.o2MaxVolume;
         this.h2FillPct = this.h2TankCount == 0 ? 0 : this.h2CurrentVolume / this.h2MaxVolume;
+
+        if (this.enableFillPct != -1 && (this.o2FillPct <= this.enableFillPct || this.h2FillPct <= this.enableFillPct)) {
+            this.SetGenerators(true);
+        }
+        if (this.disableFillPct != -1 && this.o2FillPct >= this.disableFillPct && this.h2FillPct >= this.disableFillPct) {
+            this.SetGenerators(false);
+        }
+    }
+
+    public void GasExtendedMessage(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        var max = Math.Floor(100 * Math.Max(this.o2FillPct, this.h2FillPct));
+        var min = Math.Ceiling(100 * Math.Min(this.o2FillPct, this.h2FillPct));
+        string message = options.custom.Get("txtDisabled") ?? $"Gas generation off";
+        if (this.enableFillPct != -1) {
+            message = message + $", enabled at {Math.Floor(100 * this.enableFillPct)}% (current: {min}%)";
+        }
+        if (this.GetGenerators()) {
+            message = options.custom.Get("txtEnabled") ?? $"Gas generation on";
+            if (this.disableFillPct != -1) {
+                message = message + $", disabled at {Math.Ceiling(100 * this.disableFillPct)}% (current: {max}%)";
+            }
+        }
+        ds.Text(message, options);
     }
 }
 /* GAS */

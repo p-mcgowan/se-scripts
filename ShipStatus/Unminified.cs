@@ -15,6 +15,8 @@ const string customDataInit = @"; CustomData config:
 ;power=false
 ;health=false
 ;gas=false
+;gasEnableFillPct=-1
+;gasDisableFillPct=-1
 ;  airlock config (defaults are shown)
 ;airlockOpenTime=750
 ;airlockAllDoors=false
@@ -152,19 +154,20 @@ public class Airlock {
     }
 
     public void GetBlock(IMyTerminalBlock block) {
-        // Get all door blocks
-        if (block is IMyDoor) {
-            var match = this.include.Match(block.CustomName);
-            var ignore = this.exclude.Match(block.CustomName);
-            if (!match.Success || ignore.Success) {
-                return;
-            }
-            var key = match.Groups[1].ToString();
-            if (!this.locationToAirlockMap.ContainsKey(key)) {
-                this.locationToAirlockMap.Add(key, new List<IMyFunctionalBlock>());
-            }
-            this.locationToAirlockMap[key].Add(block as IMyFunctionalBlock);
+        if (!(block is IMyDoor)) {
+            return;
         }
+
+        var match = this.include.Match(block.CustomName);
+        var ignore = this.exclude.Match(block.CustomName);
+        if (!match.Success || ignore.Success) {
+            return;
+        }
+        var key = match.Groups[1].ToString();
+        if (!this.locationToAirlockMap.ContainsKey(key)) {
+            this.locationToAirlockMap.Add(key, new List<IMyFunctionalBlock>());
+        }
+        this.locationToAirlockMap[key].Add(block as IMyFunctionalBlock);
 
     }
 
@@ -505,6 +508,8 @@ public static string[] globalConfigs = new string[] {
     "power",
     "health",
     "gas",
+    "gasEnableFillPct",
+    "gasDisableFillPct",
     "healthIgnore",
     "airlockOpenTime",
     "airlockAllDoors",
@@ -783,6 +788,8 @@ public class GasStatus {
     public float h2MaxVolume;
     public double h2FillPct;
     public int h2TankCount;
+    public double enableFillPct;
+    public double disableFillPct;
 
     public GasStatus(Program program, Template template = null) {
         this.program = program;
@@ -827,11 +834,14 @@ public class GasStatus {
             this.PrintTanks(this.h2Tanks, ds, options);
         });
         this.template.Register("gas.generationEnabled", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
-            string message = options.custom.Get("txtDisabled") ?? "Oxygen generation off";
+            string message = options.custom.Get("txtDisabled") ?? "Gas generation off";
             if (this.GetGenerators()) {
-                message = options.custom.Get("txtEnabled") ?? "Oxygen generation on";
+                message = options.custom.Get("txtEnabled") ?? "Gas generation on";
             }
             ds.Text(message, options);
+        });
+        this.template.Register("gas.generationEnabledExtended", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+            this.GasExtendedMessage(ds, text, options);
         });
         this.template.Register("gas.o2Bar", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
             this.GasBar((float)o2FillPct, ds, options);
@@ -854,7 +864,10 @@ public class GasStatus {
         }
     }
 
-    public void GotBLocks() {}
+    public void GotBLocks() {
+        this.enableFillPct = Util.ParseFloat(this.program.config.Get("gasEnableFillPct"), -1f);
+        this.disableFillPct = Util.ParseFloat(this.program.config.Get("gasDisableFillPct"), -1f);
+    }
 
     public void Refresh() {
         this.ClearTotals();
@@ -936,6 +949,29 @@ public class GasStatus {
 
         this.o2FillPct = this.o2TankCount == 0 ? 0 : this.o2CurrentVolume / this.o2MaxVolume;
         this.h2FillPct = this.h2TankCount == 0 ? 0 : this.h2CurrentVolume / this.h2MaxVolume;
+
+        if (this.enableFillPct != -1 && (this.o2FillPct <= this.enableFillPct || this.h2FillPct <= this.enableFillPct)) {
+            this.SetGenerators(true);
+        }
+        if (this.disableFillPct != -1 && this.o2FillPct >= this.disableFillPct && this.h2FillPct >= this.disableFillPct) {
+            this.SetGenerators(false);
+        }
+    }
+
+    public void GasExtendedMessage(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        var max = Math.Floor(100 * Math.Max(this.o2FillPct, this.h2FillPct));
+        var min = Math.Ceiling(100 * Math.Min(this.o2FillPct, this.h2FillPct));
+        string message = options.custom.Get("txtDisabled") ?? $"Gas generation off";
+        if (this.enableFillPct != -1) {
+            message = message + $", enabled at {Math.Floor(100 * this.enableFillPct)}% (current: {min}%)";
+        }
+        if (this.GetGenerators()) {
+            message = options.custom.Get("txtEnabled") ?? $"Gas generation on";
+            if (this.disableFillPct != -1) {
+                message = message + $", disabled at {Math.Ceiling(100 * this.disableFillPct)}% (current: {max}%)";
+            }
+        }
+        ds.Text(message, options);
     }
 }
 /* GAS */
@@ -1594,7 +1630,7 @@ public class ProductionDetails {
                     ds.Newline();
                 }
                 string status = blk.Key.Status();
-                string blockName = $"{blk.Key.block.CustomName}: {status} {(blk.Key.IsIdle() ? blk.Key.IdleTime() : "")}";
+                string blockName = $" {blk.Key.block.CustomName}: {status} {(blk.Key.IsIdle() ? blk.Key.IdleTime() : "")}";
                 Color? colour = DrawingSurface.StringToColour(this.statusDotColour.Get(status));
                 ds.TextCircle(colour, outline: false).Text(blockName);
 
