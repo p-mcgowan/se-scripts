@@ -9,6 +9,7 @@ class BlockHealth {
     public System.Text.RegularExpressions.Regex ignoreHealth;
     public List<IMyTerminalBlock> blocks;
     public Dictionary<string, string> damaged;
+    public Dictionary<long, IMyTerminalBlock> shownOnHud;
     public string status;
 
     public BlockHealth(Program program, Template template) {
@@ -16,12 +17,14 @@ class BlockHealth {
         this.template = template;
         this.blocks = new List<IMyTerminalBlock>();
         this.damaged = new Dictionary<string, string>();
+        this.shownOnHud = new Dictionary<long, IMyTerminalBlock>();
 
         this.Reset();
     }
 
     public void Reset() {
         this.Clear();
+        this.shownOnHud.Clear();
 
         if (this.program.config.Enabled("health")) {
             this.RegisterTemplateVars();
@@ -46,6 +49,10 @@ class BlockHealth {
         this.template.Register("health.status", () => this.status);
         this.template.Register("health.blocks",
             (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+                if (this.damaged.Count() == 0) {
+                    ds.Text("");
+                    return;
+                }
                 foreach (KeyValuePair<string, string> block in this.damaged) {
                     ds.Text($"{block.Key} [{block.Value}]").Newline();
                 }
@@ -91,9 +98,24 @@ class BlockHealth {
             var health = this.GetHealth(b);
             if (health != 1f) {
                 this.damaged[b.CustomName] = Util.PctString(health);
+
+                if (showOnHud && !b.ShowOnHUD) {
+                    this.shownOnHud[b.EntityId] = b;
+                    b.ShowOnHUD = true;
+                }
             }
-            if (showOnHud) {
-                b.ShowOnHUD = health != 1f;
+        }
+
+        if (showOnHud) {
+            foreach (long key in this.shownOnHud.Keys.ToList()) {
+                IMyTerminalBlock block = this.shownOnHud[key];
+                if (block == null || !Util.BlockValid(block)) {
+                    this.shownOnHud.Remove(key);
+                }
+                if (this.GetHealth(block) == 1f) {
+                    block.ShowOnHUD = false;
+                    this.shownOnHud.Remove(key);
+                }
             }
         }
 

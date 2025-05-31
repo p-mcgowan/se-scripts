@@ -1,7 +1,7 @@
 /*
  * GAS
  */
- GasStatus gasStatus;
+GasStatus gasStatus;
 
 public class GasStatus {
     public Program program;
@@ -117,6 +117,10 @@ public class GasStatus {
     }
 
     public void PrintTanks(List<IMyGasTank> tanks, DrawingSurface ds, DrawingSurface.Options options) {
+        if (tanks.Count == 0) {
+            ds.Text("");
+            return;
+        }
         foreach (IMyGasTank tank in tanks) {
             double currentVolume = (tank.FilledRatio * tank.Capacity);
 

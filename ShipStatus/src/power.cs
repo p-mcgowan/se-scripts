@@ -393,6 +393,7 @@ public class PowerDetails {
         if (this.solars > 0) {
             this.ioLegendNames["Solar"] = this.solarsColour;
         }
+
         ds.sb.Clear();
         ds.sb.Append(string.Join(" / ", this.ioLegendNames.Keys));
         Vector2 size = ds.surface.MeasureStringInPixels(ds.sb, ds.surface.Font, ds.surface.FontSize);
@@ -410,6 +411,7 @@ public class PowerDetails {
 
     public void JumpBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
         if (this.jumpDrives == 0) {
+            ds.Text("");
             return;
         }
         options.pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
@@ -426,6 +428,7 @@ public class PowerDetails {
 
     public void ReactorString(DrawingSurface ds, string text, DrawingSurface.Options options) {
         if (this.reactors == 0) {
+            ds.Text("");
             return;
         }
         string msg = text ?? options.text ?? "Reactors: ";
@@ -434,6 +437,11 @@ public class PowerDetails {
 
     public void PowerConsumers(DrawingSurface ds, string text, DrawingSurface.Options options) {
         int max = Util.ParseInt(options.custom.Get("count") ?? "10");
+
+        if (this.consumerDict.Count() == 0) {
+            ds.Text("");
+            return;
+        }
 
         if (ds.width / (ds.charSizeInPx.X + 1f) < 40) {
             foreach (var item in this.consumerDict) {

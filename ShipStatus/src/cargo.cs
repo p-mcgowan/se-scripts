@@ -68,17 +68,20 @@ public class CargoStatus {
     }
 
     public void CargoBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        Color? defaultText = options.textColour ?? ds.surface.ScriptForegroundColor;
         string colourName = options.custom.Get("colourLow") ?? "dimgreen";
+        options.textColour = DrawingSurface.StringToColour(options.custom.Get("textColourLow")) ?? defaultText;
         if (this.pct > 0.85) {
             colourName = options.custom.Get("colourHigh") ?? "dimred";
+            options.textColour = DrawingSurface.StringToColour(options.custom.Get("textColourHigh")) ?? defaultText;
         } else if (this.pct > 0.60) {
             colourName = options.custom.Get("colourMid") ?? "dimyellow";
+            options.textColour = DrawingSurface.StringToColour(options.custom.Get("textColourMid")) ?? defaultText;
         }
 
         options.pct = this.pct;
         options.fillColour = DrawingSurface.StringToColour(colourName);
         options.text = Util.PctString(this.pct);
-        options.textColour = options.textColour ?? ds.surface.ScriptForegroundColor;
 
         ds.Bar(options);
     }
@@ -94,7 +97,7 @@ public class CargoStatus {
 
     public void CargoItems(DrawingSurface ds, string text, DrawingSurface.Options options) {
         if (this.cargoItemCounts.Count() == 0) {
-            ds.Text(" ");
+            ds.Text("");
 
             return;
         }

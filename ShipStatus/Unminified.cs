@@ -348,17 +348,20 @@ public class CargoStatus {
     }
 
     public void CargoBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        Color? defaultText = options.textColour ?? ds.surface.ScriptForegroundColor;
         string colourName = options.custom.Get("colourLow") ?? "dimgreen";
+        options.textColour = DrawingSurface.StringToColour(options.custom.Get("textColourLow")) ?? defaultText;
         if (this.pct > 0.85) {
             colourName = options.custom.Get("colourHigh") ?? "dimred";
+            options.textColour = DrawingSurface.StringToColour(options.custom.Get("textColourHigh")) ?? defaultText;
         } else if (this.pct > 0.60) {
             colourName = options.custom.Get("colourMid") ?? "dimyellow";
+            options.textColour = DrawingSurface.StringToColour(options.custom.Get("textColourMid")) ?? defaultText;
         }
 
         options.pct = this.pct;
         options.fillColour = DrawingSurface.StringToColour(colourName);
         options.text = Util.PctString(this.pct);
-        options.textColour = options.textColour ?? ds.surface.ScriptForegroundColor;
 
         ds.Bar(options);
     }
@@ -374,7 +377,7 @@ public class CargoStatus {
 
     public void CargoItems(DrawingSurface ds, string text, DrawingSurface.Options options) {
         if (this.cargoItemCounts.Count() == 0) {
-            ds.Text(" ");
+            ds.Text("");
 
             return;
         }
@@ -664,7 +667,10 @@ public bool RecheckFailed() {
 
     if ((tickCount++) % 2 == 0) {
         RefetchBlocks();
+    }
+    if (tickCount % 20 == 0) {
         log.Clear();
+        tickCount = 0;
     }
 
     return false;
@@ -771,7 +777,7 @@ public IEnumerator<string> RunStuffOverTime()  {
 /*
  * GAS
  */
- GasStatus gasStatus;
+GasStatus gasStatus;
 
 public class GasStatus {
     public Program program;
@@ -887,6 +893,10 @@ public class GasStatus {
     }
 
     public void PrintTanks(List<IMyGasTank> tanks, DrawingSurface ds, DrawingSurface.Options options) {
+        if (tanks.Count == 0) {
+            ds.Text("");
+            return;
+        }
         foreach (IMyGasTank tank in tanks) {
             double currentVolume = (tank.FilledRatio * tank.Capacity);
 
@@ -986,6 +996,7 @@ class BlockHealth {
     public System.Text.RegularExpressions.Regex ignoreHealth;
     public List<IMyTerminalBlock> blocks;
     public Dictionary<string, string> damaged;
+    public Dictionary<long, IMyTerminalBlock> shownOnHud;
     public string status;
 
     public BlockHealth(Program program, Template template) {
@@ -993,12 +1004,14 @@ class BlockHealth {
         this.template = template;
         this.blocks = new List<IMyTerminalBlock>();
         this.damaged = new Dictionary<string, string>();
+        this.shownOnHud = new Dictionary<long, IMyTerminalBlock>();
 
         this.Reset();
     }
 
     public void Reset() {
         this.Clear();
+        this.shownOnHud.Clear();
 
         if (this.program.config.Enabled("health")) {
             this.RegisterTemplateVars();
@@ -1023,6 +1036,10 @@ class BlockHealth {
         this.template.Register("health.status", () => this.status);
         this.template.Register("health.blocks",
             (DrawingSurface ds, string text, DrawingSurface.Options options) => {
+                if (this.damaged.Count() == 0) {
+                    ds.Text("");
+                    return;
+                }
                 foreach (KeyValuePair<string, string> block in this.damaged) {
                     ds.Text($"{block.Key} [{block.Value}]").Newline();
                 }
@@ -1068,9 +1085,24 @@ class BlockHealth {
             var health = this.GetHealth(b);
             if (health != 1f) {
                 this.damaged[b.CustomName] = Util.PctString(health);
+
+                if (showOnHud && !b.ShowOnHUD) {
+                    this.shownOnHud[b.EntityId] = b;
+                    b.ShowOnHUD = true;
+                }
             }
-            if (showOnHud) {
-                b.ShowOnHUD = health != 1f;
+        }
+
+        if (showOnHud) {
+            foreach (long key in this.shownOnHud.Keys.ToList()) {
+                IMyTerminalBlock block = this.shownOnHud[key];
+                if (block == null || !Util.BlockValid(block)) {
+                    this.shownOnHud.Remove(key);
+                }
+                if (this.GetHealth(block) == 1f) {
+                    block.ShowOnHUD = false;
+                    this.shownOnHud.Remove(key);
+                }
             }
         }
 
@@ -1473,6 +1505,7 @@ public class PowerDetails {
         if (this.solars > 0) {
             this.ioLegendNames["Solar"] = this.solarsColour;
         }
+
         ds.sb.Clear();
         ds.sb.Append(string.Join(" / ", this.ioLegendNames.Keys));
         Vector2 size = ds.surface.MeasureStringInPixels(ds.sb, ds.surface.Font, ds.surface.FontSize);
@@ -1490,6 +1523,7 @@ public class PowerDetails {
 
     public void JumpBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
         if (this.jumpDrives == 0) {
+            ds.Text("");
             return;
         }
         options.pct = this.GetPercent(this.jumpCurrent, this.jumpMax);
@@ -1506,6 +1540,7 @@ public class PowerDetails {
 
     public void ReactorString(DrawingSurface ds, string text, DrawingSurface.Options options) {
         if (this.reactors == 0) {
+            ds.Text("");
             return;
         }
         string msg = text ?? options.text ?? "Reactors: ";
@@ -1514,6 +1549,11 @@ public class PowerDetails {
 
     public void PowerConsumers(DrawingSurface ds, string text, DrawingSurface.Options options) {
         int max = Util.ParseInt(options.custom.Get("count") ?? "10");
+
+        if (this.consumerDict.Count() == 0) {
+            ds.Text("");
+            return;
+        }
 
         if (ds.width / (ds.charSizeInPx.X + 1f) < 40) {
             foreach (var item in this.consumerDict) {
@@ -1625,6 +1665,10 @@ public class ProductionDetails {
         this.template.Register("production.status", () => this.status);
         this.template.Register("production.blocks",  (DrawingSurface ds, string text, DrawingSurface.Options options) => {
             bool first = true;
+            if (this.blockStatus.Count() == 0) {
+                ds.Text("");
+                return;
+            }
             foreach (KeyValuePair<ProductionBlock, string> blk in this.blockStatus) {
                 if (!first) {
                     ds.Newline();

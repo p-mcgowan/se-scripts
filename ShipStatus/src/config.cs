@@ -190,7 +190,10 @@ public bool RecheckFailed() {
 
     if ((tickCount++) % 2 == 0) {
         RefetchBlocks();
+    }
+    if (tickCount % 20 == 0) {
         log.Clear();
+        tickCount = 0;
     }
 
     return false;

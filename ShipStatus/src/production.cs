@@ -71,6 +71,10 @@ public class ProductionDetails {
         this.template.Register("production.status", () => this.status);
         this.template.Register("production.blocks",  (DrawingSurface ds, string text, DrawingSurface.Options options) => {
             bool first = true;
+            if (this.blockStatus.Count() == 0) {
+                ds.Text("");
+                return;
+            }
             foreach (KeyValuePair<ProductionBlock, string> blk in this.blockStatus) {
                 if (!first) {
                     ds.Newline();
