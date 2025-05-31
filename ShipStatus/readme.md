@@ -40,10 +40,14 @@ Images generated with ini format CustomData (see [Malware's MDK](https://github.
 ;power=false
 ;health=false
 ;  airlock config (defaults are shown)
+;  just name 2 doors the same name (matching airlockDoorMatch) and they will only open 1 at a time
+;  airlockAllDoors=true will auto close all open doors, unless the name matches airlockDoorExclude
+;  airlockDoorManual will still lock, but not auto close airlock pairs matching the name (by default ""[AL]"")
 ;airlockOpenTime=750
 ;airlockAllDoors=false
 ;airlockDoorMatch=Door(.*)
 ;airlockDoorExclude=Hangar
+;airlockDoorManual=\\[AL\\]
 ;  health config (defaults are shown)
 ;healthIgnore=
 ;healthOnHud=false

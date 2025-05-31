@@ -18,10 +18,14 @@ const string customDataInit = @"; CustomData config:
 ;gasEnableFillPct=-1
 ;gasDisableFillPct=-1
 ;  airlock config (defaults are shown)
+;  just name 2 doors the same name (matching airlockDoorMatch) and they will only open 1 at a time
+;  airlockAllDoors=true will auto close all open doors, unless the name matches airlockDoorExclude
+;  airlockDoorManual will still lock, but not auto close airlock pairs matching the name (by default ""[AL]"")
 ;airlockOpenTime=750
 ;airlockAllDoors=false
 ;airlockDoorMatch=Door(.*)
 ;airlockDoorExclude=Hangar
+;airlockDoorManual=\\[AL\\]
 ;  health config (defaults are shown)
 ;healthIgnore=
 ;healthOnHud=false
@@ -113,13 +117,14 @@ public class Airlock {
     public Program program;
     public Dictionary<string, AirlockDoors> airlocks;
     public Dictionary<string, List<IMyFunctionalBlock>> locationToAirlockMap;
+    // The name to match (Default will match regular doors). The capture group "(.*)" is used when grouping airlock doors, config  = "airlockDoorMatch", defualt = "Door(.*)";
     public System.Text.RegularExpressions.Regex include;
+    // // The exclusion tag (can be anything). config = "airlockDoorExclude", default = "Hangar|Hatch";
     public System.Text.RegularExpressions.Regex exclude;
-
-    // The name to match (Default will match regular doors). The capture group "(.*)" is used when grouping airlock doors.
-    public string doorMatch = "Door(.*)";
-    public string doorExclude = "Hangar";  // The exclusion tag (can be anything).
-    public double timeOpen = 720f;  // Duration before auto close (milliseconds)
+    // Manual airlocks are paired but not auto closed, config = "airlockDoorManual", default = "\\[AL\\]";
+    public System.Text.RegularExpressions.Regex manual;
+    // Duration before auto close (milliseconds), config = "airlockOpenTime", default = "750"
+    public double timeOpen = 720f;
 
     public Airlock(Program program) {
         this.program = program;
@@ -132,10 +137,9 @@ public class Airlock {
     public void Reset() {
         this.Clear();
 
-        this.doorMatch = this.program.config.Get("airlockDoorMatch", "Door(.*)");
-        this.doorExclude = this.program.config.Get("airlockDoorExclude", "Hangar");
-        this.include = Util.Regex(this.doorMatch);
-        this.exclude = Util.Regex(this.doorExclude);
+        this.include = Util.Regex(this.program.config.Get("airlockDoorMatch", "Door(.*)"));
+        this.exclude = Util.Regex(this.program.config.Get("airlockDoorExclude", "Hangar|Hatch"));
+        this.manual = Util.Regex(this.program.config.Get("airlockDoorManual", "\\[AL\\]"));
         this.timeOpen = Util.ParseFloat(this.program.config.Get("airlockOpenTime"), 750f);
     }
 
@@ -177,7 +181,7 @@ public class Airlock {
             if (!doAllDoors && keyval.Value.Count < 2) {
                 continue;
             }
-            this.airlocks.Add(keyval.Key, new AirlockDoors(keyval.Value, this.program));
+            this.airlocks.Add(keyval.Key, new AirlockDoors(keyval.Value, this.program, this.timeOpen, this.manual));
         }
     }
 }
@@ -188,15 +192,23 @@ public class AirlockDoors {
     private List<IMyFunctionalBlock> areClosed;
     private List<IMyFunctionalBlock> areOpen;
     private double openTimer;
-    public double timeOpen;
+    private double timeOpen;
+    private bool shouldAutoClose;
 
-    public AirlockDoors(List<IMyFunctionalBlock> doors, Program program, double timeOpen = 750f) {
+    public AirlockDoors(List<IMyFunctionalBlock> doors, Program program, double timeOpen, System.Text.RegularExpressions.Regex manual) {
         this.program = program;
         this.blocks = new List<IMyFunctionalBlock>(doors);
         this.areClosed = new List<IMyFunctionalBlock>();
         this.areOpen = new List<IMyFunctionalBlock>();
         this.openTimer = timeOpen;
         this.timeOpen = timeOpen;
+        this.shouldAutoClose = true;
+
+        foreach (var door in doors) {
+            if (manual.Match(door.CustomName).Success) {
+                this.shouldAutoClose = false;
+            }
+        }
     }
 
     private bool IsOpen(IMyFunctionalBlock door) {
@@ -224,20 +236,6 @@ public class AirlockDoors {
         }
     }
 
-    private void Open(IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
-        this.OpenClose("Open_On", door1, door2);
-    }
-
-    private void OpenAll() {
-        foreach (var door in this.blocks) {
-            this.OpenClose("Open_On", door);
-        }
-    }
-
-    private void Close(IMyFunctionalBlock door1, IMyFunctionalBlock door2 = null) {
-        this.OpenClose("Open_Off", door1, door2);
-    }
-
     private void CloseAll() {
         foreach (var door in this.blocks) {
             this.OpenClose("Open_Off", door);
@@ -261,17 +259,18 @@ public class AirlockDoors {
             }
         }
 
-        if (areOpen.Count > 0) {
-            this.openTimer -= this.program.Runtime.TimeSinceLastRun.TotalMilliseconds;
-            if (this.openTimer < 0) {
-                this.CloseAll();
-            } else {
-                this.Lock(this.areClosed);
-                this.Unlock(this.areOpen);
-            }
-        } else {
+        if (areOpen.Count == 0) {
             this.Unlock();
             this.openTimer = this.timeOpen;
+            return true;
+        }
+
+        this.openTimer -= this.program.Runtime.TimeSinceLastRun.TotalMilliseconds;
+        if (this.openTimer < 0 && this.shouldAutoClose) {
+            this.CloseAll();
+        } else {
+            this.Lock(this.areClosed);
+            this.Unlock(this.areOpen);
         }
 
         return true;

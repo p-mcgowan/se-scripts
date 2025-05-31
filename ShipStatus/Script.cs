@@ -18,10 +18,14 @@ const string customDataInit=@"; CustomData config:
 ;gasEnableFillPct=-1
 ;gasDisableFillPct=-1
 ;  airlock config (defaults are shown)
+;  just name 2 doors the same name (matching airlockDoorMatch) and they will only open 1 at a time
+;  airlockAllDoors=true will auto close all open doors, unless the name matches airlockDoorExclude
+;  airlockDoorManual will still lock, but not auto close airlock pairs matching the name (by default ""[AL]"")
 ;airlockOpenTime=750
 ;airlockAllDoors=false
 ;airlockDoorMatch=Door(.*)
 ;airlockDoorExclude=Hangar
+;airlockDoorManual=\\[AL\\]
 ;  health config (defaults are shown)
 ;healthIgnore=
 ;healthOnHud=false
@@ -57,30 +61,30 @@ new CargoStatus(this,template);blockHealth=new BlockHealth(this,template);produc
 ==UpdateType.Update10&&config.Enabled("airlock")){airlock.CheckAirlocks();}if((updateType&UpdateType.Update100)==UpdateType.Update100){if(RecheckFailed()){Runtime.UpdateFrequency&=UpdateFrequency.None;
 Echo("Failed to parse custom data");return;}if(stateMachine==null){stateMachine=RunStuffOverTime();Runtime.UpdateFrequency|=UpdateFrequency.Once;}}}Airlock airlock;public class Airlock{public Program program;
 public Dictionary<string,AirlockDoors>airlocks;public Dictionary<string,List<IMyFunctionalBlock>>locationToAirlockMap;public System.Text.RegularExpressions.Regex include;public System.Text.RegularExpressions.Regex
-exclude;public string doorMatch="Door(.*)";public string doorExclude="Hangar";public double timeOpen=720f;public Airlock(Program program){this.program=program;this.airlocks=new Dictionary<string,AirlockDoors>();
-this.locationToAirlockMap=new Dictionary<string,List<IMyFunctionalBlock>>();this.Reset();}public void Reset(){this.Clear();this.doorMatch=this.program.config.Get("airlockDoorMatch","Door(.*)");this.doorExclude
-=this.program.config.Get("airlockDoorExclude","Hangar");this.include=Util.Regex(this.doorMatch);this.exclude=Util.Regex(this.doorExclude);this.timeOpen=Util.ParseFloat(this.program.config.Get("airlockOpenTime"),
-750f);}public void Clear(){this.airlocks.Clear();this.locationToAirlockMap.Clear();}public void CheckAirlocks(){if(!this.program.config.Enabled("airlock")){return;}foreach(var al in this.airlocks){al.Value.Check();
-}}public void GetBlock(IMyTerminalBlock block){if(!(block is IMyDoor)){return;}var match=this.include.Match(block.CustomName);var ignore=this.exclude.Match(block.CustomName);if(!match.Success||ignore.Success)
-{return;}var key=match.Groups[1].ToString();if(!this.locationToAirlockMap.ContainsKey(key)){this.locationToAirlockMap.Add(key,new List<IMyFunctionalBlock>());}this.locationToAirlockMap[key].Add(block as
-IMyFunctionalBlock);}public void GotBLocks(){bool doAllDoors=this.program.config.Enabled("airlockAllDoors");foreach(var keyval in this.locationToAirlockMap){if(!doAllDoors&&keyval.Value.Count<2){continue;
-}this.airlocks.Add(keyval.Key,new AirlockDoors(keyval.Value,this.program));}}}public class AirlockDoors{public Program program;private List<IMyFunctionalBlock>blocks;private List<IMyFunctionalBlock>areClosed;
-private List<IMyFunctionalBlock>areOpen;private double openTimer;public double timeOpen;public AirlockDoors(List<IMyFunctionalBlock>doors,Program program,double timeOpen=750f){this.program=program;this.blocks
-=new List<IMyFunctionalBlock>(doors);this.areClosed=new List<IMyFunctionalBlock>();this.areOpen=new List<IMyFunctionalBlock>();this.openTimer=timeOpen;this.timeOpen=timeOpen;}private bool IsOpen(IMyFunctionalBlock
-door){return(door as IMyDoor).OpenRatio>0;}private void Lock(List<IMyFunctionalBlock>doors=null){doors=doors??this.blocks;foreach(var door in doors){(door as IMyDoor).Enabled=false;}}private void Unlock(List<IMyFunctionalBlock>
-doors=null){doors=doors??this.blocks;foreach(var door in doors){(door as IMyDoor).Enabled=true;}}private void OpenClose(string action,IMyFunctionalBlock door1,IMyFunctionalBlock door2=null){(door1 as IMyDoor).ApplyAction(action);
-if(door2!=null){(door2 as IMyDoor).ApplyAction(action);}}private void Open(IMyFunctionalBlock door1,IMyFunctionalBlock door2=null){this.OpenClose("Open_On",door1,door2);}private void OpenAll(){foreach
-(var door in this.blocks){this.OpenClose("Open_On",door);}}private void Close(IMyFunctionalBlock door1,IMyFunctionalBlock door2=null){this.OpenClose("Open_Off",door1,door2);}private void CloseAll(){foreach
-(var door in this.blocks){this.OpenClose("Open_Off",door);}}public bool Check(){int openCount=0;this.areClosed.Clear();this.areOpen.Clear();foreach(var door in this.blocks){if(!Util.BlockValid(door)){
-continue;}if(this.IsOpen(door)){openCount++;this.areOpen.Add(door);}else{this.areClosed.Add(door);}}if(areOpen.Count>0){this.openTimer-=this.program.Runtime.TimeSinceLastRun.TotalMilliseconds;if(this.openTimer
-<0){this.CloseAll();}else{this.Lock(this.areClosed);this.Unlock(this.areOpen);}}else{this.Unlock();this.openTimer=this.timeOpen;}return true;}}CargoStatus cargoStatus;public class CargoStatus{public Program
-program;public List<IMyTerminalBlock>cargoBlocks;public Dictionary<string,VRage.MyFixedPoint>cargoItemCounts;public List<MyInventoryItem>inventoryItems;public System.Text.RegularExpressions.Regex itemRegex;
-public System.Text.RegularExpressions.Regex ingotRegex;public System.Text.RegularExpressions.Regex oreRegex;public VRage.MyFixedPoint max;public VRage.MyFixedPoint vol;public Template template;public List<float>
-widths;public string itemText;public float pct;public CargoStatus(Program program,Template template=null){this.program=program;this.template=template;this.itemRegex=Util.Regex(".*/");this.ingotRegex=Util.Regex("Ingot/");
-this.oreRegex=Util.Regex("Ore/(?!Ice)");this.widths=new List<float>(){0,0,0,0};this.cargoItemCounts=new Dictionary<string,VRage.MyFixedPoint>();this.inventoryItems=new List<MyInventoryItem>();this.cargoBlocks
-=new List<IMyTerminalBlock>();this.itemText="";this.pct=0f;this.Reset();}public void Reset(){this.Clear();if(this.program.config.Enabled("cargo")){this.RegisterTemplateVars();}}public void Clear(){this.cargoItemCounts.Clear();
-this.inventoryItems.Clear();this.cargoBlocks.Clear();}public void RegisterTemplateVars(){if(this.template==null){return;}this.template.Register("cargo.stored",()=>$"{Util.FormatNumber(1000 * this.vol)} L");
-this.template.Register("cargo.cap",()=>$"{Util.FormatNumber(1000 * this.max)} L");this.template.Register("cargo.fullString",()=>{string capFmt=Util.GetFormatNumberStr(1000*this.max);return$"{Util.FormatNumber(1000 * this.vol, capFmt)} / {Util.FormatNumber(1000 * this.max, capFmt)} L";
+exclude;public System.Text.RegularExpressions.Regex manual;public double timeOpen=720f;public Airlock(Program program){this.program=program;this.airlocks=new Dictionary<string,AirlockDoors>();this.locationToAirlockMap
+=new Dictionary<string,List<IMyFunctionalBlock>>();this.Reset();}public void Reset(){this.Clear();this.include=Util.Regex(this.program.config.Get("airlockDoorMatch","Door(.*)"));this.exclude=Util.Regex(this.program.config.Get("airlockDoorExclude",
+"Hangar|Hatch"));this.manual=Util.Regex(this.program.config.Get("airlockDoorManual","\\[AL\\]"));this.timeOpen=Util.ParseFloat(this.program.config.Get("airlockOpenTime"),750f);}public void Clear(){this.airlocks.Clear();
+this.locationToAirlockMap.Clear();}public void CheckAirlocks(){if(!this.program.config.Enabled("airlock")){return;}foreach(var al in this.airlocks){al.Value.Check();}}public void GetBlock(IMyTerminalBlock
+block){if(!(block is IMyDoor)){return;}var match=this.include.Match(block.CustomName);var ignore=this.exclude.Match(block.CustomName);if(!match.Success||ignore.Success){return;}var key=match.Groups[1].ToString();
+if(!this.locationToAirlockMap.ContainsKey(key)){this.locationToAirlockMap.Add(key,new List<IMyFunctionalBlock>());}this.locationToAirlockMap[key].Add(block as IMyFunctionalBlock);}public void GotBLocks()
+{bool doAllDoors=this.program.config.Enabled("airlockAllDoors");foreach(var keyval in this.locationToAirlockMap){if(!doAllDoors&&keyval.Value.Count<2){continue;}this.airlocks.Add(keyval.Key,new AirlockDoors(keyval.Value,
+this.program,this.timeOpen,this.manual));}}}public class AirlockDoors{public Program program;private List<IMyFunctionalBlock>blocks;private List<IMyFunctionalBlock>areClosed;private List<IMyFunctionalBlock>
+areOpen;private double openTimer;private double timeOpen;private bool shouldAutoClose;public AirlockDoors(List<IMyFunctionalBlock>doors,Program program,double timeOpen,System.Text.RegularExpressions.Regex
+manual){this.program=program;this.blocks=new List<IMyFunctionalBlock>(doors);this.areClosed=new List<IMyFunctionalBlock>();this.areOpen=new List<IMyFunctionalBlock>();this.openTimer=timeOpen;this.timeOpen
+=timeOpen;this.shouldAutoClose=true;foreach(var door in doors){if(manual.Match(door.CustomName).Success){this.shouldAutoClose=false;}}}private bool IsOpen(IMyFunctionalBlock door){return(door as IMyDoor).OpenRatio
+>0;}private void Lock(List<IMyFunctionalBlock>doors=null){doors=doors??this.blocks;foreach(var door in doors){(door as IMyDoor).Enabled=false;}}private void Unlock(List<IMyFunctionalBlock>doors=null){
+doors=doors??this.blocks;foreach(var door in doors){(door as IMyDoor).Enabled=true;}}private void OpenClose(string action,IMyFunctionalBlock door1,IMyFunctionalBlock door2=null){(door1 as IMyDoor).ApplyAction(action);
+if(door2!=null){(door2 as IMyDoor).ApplyAction(action);}}private void CloseAll(){foreach(var door in this.blocks){this.OpenClose("Open_Off",door);}}public bool Check(){int openCount=0;this.areClosed.Clear();
+this.areOpen.Clear();foreach(var door in this.blocks){if(!Util.BlockValid(door)){continue;}if(this.IsOpen(door)){openCount++;this.areOpen.Add(door);}else{this.areClosed.Add(door);}}if(areOpen.Count==0)
+{this.Unlock();this.openTimer=this.timeOpen;return true;}this.openTimer-=this.program.Runtime.TimeSinceLastRun.TotalMilliseconds;if(this.openTimer<0&&this.shouldAutoClose){this.CloseAll();}else{this.Lock(this.areClosed);
+this.Unlock(this.areOpen);}return true;}}CargoStatus cargoStatus;public class CargoStatus{public Program program;public List<IMyTerminalBlock>cargoBlocks;public Dictionary<string,VRage.MyFixedPoint>cargoItemCounts;
+public List<MyInventoryItem>inventoryItems;public System.Text.RegularExpressions.Regex itemRegex;public System.Text.RegularExpressions.Regex ingotRegex;public System.Text.RegularExpressions.Regex oreRegex;
+public VRage.MyFixedPoint max;public VRage.MyFixedPoint vol;public Template template;public List<float>widths;public string itemText;public float pct;public CargoStatus(Program program,Template template
+=null){this.program=program;this.template=template;this.itemRegex=Util.Regex(".*/");this.ingotRegex=Util.Regex("Ingot/");this.oreRegex=Util.Regex("Ore/(?!Ice)");this.widths=new List<float>(){0,0,0,0};
+this.cargoItemCounts=new Dictionary<string,VRage.MyFixedPoint>();this.inventoryItems=new List<MyInventoryItem>();this.cargoBlocks=new List<IMyTerminalBlock>();this.itemText="";this.pct=0f;this.Reset();
+}public void Reset(){this.Clear();if(this.program.config.Enabled("cargo")){this.RegisterTemplateVars();}}public void Clear(){this.cargoItemCounts.Clear();this.inventoryItems.Clear();this.cargoBlocks.Clear();
+}public void RegisterTemplateVars(){if(this.template==null){return;}this.template.Register("cargo.stored",()=>$"{Util.FormatNumber(1000 * this.vol)} L");this.template.Register("cargo.cap",()=>$"{Util.FormatNumber(1000 * this.max)} L");
+this.template.Register("cargo.fullString",()=>{string capFmt=Util.GetFormatNumberStr(1000*this.max);return$"{Util.FormatNumber(1000 * this.vol, capFmt)} / {Util.FormatNumber(1000 * this.max, capFmt)} L";
 });this.template.Register("cargo.bar",this.CargoBar);this.template.Register("cargo.items",this.CargoItems);this.template.Register("cargo.item",this.CargoItem);}public void CargoBar(DrawingSurface ds,string
 text,DrawingSurface.Options options){Color?defaultText=options.textColour??ds.surface.ScriptForegroundColor;string colourName=options.custom.Get("colourLow")??"dimgreen";options.textColour=DrawingSurface.StringToColour(options.custom.Get("textColourLow"))
 ??defaultText;if(this.pct>0.85){colourName=options.custom.Get("colourHigh")??"dimred";options.textColour=DrawingSurface.StringToColour(options.custom.Get("textColourHigh"))??defaultText;}else if(this.pct
