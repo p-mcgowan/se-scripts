@@ -1,9 +1,7 @@
 /*
  * BLOCK_HEALTH
  */
-BlockHealth blockHealth;
-
-class BlockHealth {
+class BlockHealth : Runnable {
     public Program program;
     public Template template;
     public System.Text.RegularExpressions.Regex ignoreHealth;

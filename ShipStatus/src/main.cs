@@ -54,6 +54,14 @@ output=
 |{cargo.items}
 ";
 
+public interface Runnable {
+    void Reset();
+    void Clear();
+    void GetBlock(IMyTerminalBlock block);
+    void GotBLocks();
+    void Refresh();
+}
+
 public StringBuilder log = new StringBuilder("");
 Dictionary<string, DrawingSurface> drawables = new Dictionary<string, DrawingSurface>();
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
@@ -65,6 +73,13 @@ Config config = new Config();
 Dictionary<string, string> templates = new Dictionary<string, string>();
 IEnumerator<string> stateMachine;
 int tickCount = 1;
+
+PowerDetails powerDetails;
+CargoStatus cargoStatus;
+BlockHealth blockHealth;
+ProductionDetails productionDetails;
+Airlock airlock;
+GasStatus gasStatus;
 
 public Program() {
     GridTerminalSystem.GetBlocks(allBlocks);

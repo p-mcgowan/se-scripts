@@ -1,9 +1,7 @@
 /*
  * GAS
  */
-GasStatus gasStatus;
-
-public class GasStatus {
+public class GasStatus : Runnable {
     public Program program;
     public Template template;
     public List<IMyGasTank> o2Tanks;

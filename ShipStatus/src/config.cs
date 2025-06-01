@@ -27,24 +27,6 @@ public class Config {
     }
 }
 
-public static string[] globalConfigs = new string[] {
-    "airlock",
-    "production",
-    "cargo",
-    "power",
-    "health",
-    "gas",
-    "gasEnableFillPct",
-    "gasDisableFillPct",
-    "healthIgnore",
-    "airlockOpenTime",
-    "airlockAllDoors",
-    "airlockDoorMatch",
-    "airlockDoorExclude",
-    "healthOnHud",
-    "getAllGrids",
-};
-
 public bool ParseCustomData() {
     MyIniParseResult result;
     if (!ini.TryParse(Me.CustomData, out result)) {
@@ -68,14 +50,16 @@ public bool ParseCustomData() {
 
     if (ini.ContainsSection("global")) {
         string setting = "";
-        foreach (string cfg in globalConfigs) {
-            if (ini.Get("global", cfg).TryGetString(out setting)) {
-                config.Set(cfg, setting);
+        List<MyIniKey> keys = new List<MyIniKey>();
+        ini.GetKeys("global", keys);
+        foreach (MyIniKey key in keys) {
+            if (ini.Get(key).TryGetString(out setting)) {
+                string configKey = key.ToString().Replace("global/", "");
+                config.Set(configKey, setting);
+                if (configKey == "config") {
+                    themeConfig = $"{{config:{setting}}}\n";
+                }
             }
-        }
-        if (ini.Get("global", "config").TryGetString(out setting)) {
-            config.Set("config", setting);
-            themeConfig = $"{{config:{setting}}}\n";
         }
     }
 
@@ -151,11 +135,11 @@ public bool Configure() {
 }
 
 public void RefetchBlocks() {
-    cargoStatus.Clear();
-    airlock.Clear();
-    blockHealth.Clear();
     powerDetails.Clear();
+    cargoStatus.Clear();
+    blockHealth.Clear();
     productionDetails.Clear();
+    airlock.Clear();
     gasStatus.Clear();
 
     GridTerminalSystem.GetBlocks(allBlocks);
@@ -171,15 +155,15 @@ public void RefetchBlocks() {
         cargoStatus.GetBlock(block);
         blockHealth.GetBlock(block);
         productionDetails.GetBlock(block);
-        gasStatus.GetBlock(block);
         airlock.GetBlock(block);
+        gasStatus.GetBlock(block);
     }
 
-    cargoStatus.GotBLocks();
-    airlock.GotBLocks();
-    blockHealth.GotBLocks();
     powerDetails.GotBLocks();
+    cargoStatus.GotBLocks();
+    blockHealth.GotBLocks();
     productionDetails.GotBLocks();
+    airlock.GotBLocks();
     gasStatus.GotBLocks();
 }
 

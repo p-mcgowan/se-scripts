@@ -1,9 +1,7 @@
 /*
  * POWER
  */
-PowerDetails powerDetails;
-
-public class PowerDetails {
+public class PowerDetails : Runnable {
     public Program program;
     public Template template;
     public List<IMyTerminalBlock> powerProducerBlocks;

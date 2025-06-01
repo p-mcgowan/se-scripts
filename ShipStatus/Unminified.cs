@@ -54,6 +54,14 @@ output=
 |{cargo.items}
 ";
 
+public interface Runnable {
+    void Reset();
+    void Clear();
+    void GetBlock(IMyTerminalBlock block);
+    void GotBLocks();
+    void Refresh();
+}
+
 public StringBuilder log = new StringBuilder("");
 Dictionary<string, DrawingSurface> drawables = new Dictionary<string, DrawingSurface>();
 List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
@@ -65,6 +73,13 @@ Config config = new Config();
 Dictionary<string, string> templates = new Dictionary<string, string>();
 IEnumerator<string> stateMachine;
 int tickCount = 1;
+
+PowerDetails powerDetails;
+CargoStatus cargoStatus;
+BlockHealth blockHealth;
+ProductionDetails productionDetails;
+Airlock airlock;
+GasStatus gasStatus;
 
 public Program() {
     GridTerminalSystem.GetBlocks(allBlocks);
@@ -111,25 +126,41 @@ public void Main(string argument, UpdateType updateType) {
 /*
  * AIRLOCK
  */
-Airlock airlock;
+public struct AirlockDoors {
+    public double openTimer;
+    public List<IMyFunctionalBlock> blocks;
+    public bool shouldAutoClose;
 
-public class Airlock {
-    public Program program;
-    public Dictionary<string, AirlockDoors> airlocks;
-    public Dictionary<string, List<IMyFunctionalBlock>> locationToAirlockMap;
+    public AirlockDoors(List<IMyFunctionalBlock> doors, bool shouldAutoClose, double openTimer) {
+        this.blocks = doors;
+        this.shouldAutoClose = shouldAutoClose;
+        this.openTimer = openTimer;
+    }
+}
+
+public class Airlock : Runnable {
+    private Program program;
+    private Dictionary<string, AirlockDoors> airlocks;
+    private Dictionary<string, List<IMyFunctionalBlock>> locationToAirlockMap;
     // The name to match (Default will match regular doors). The capture group "(.*)" is used when grouping airlock doors, config  = "airlockDoorMatch", defualt = "Door(.*)";
-    public System.Text.RegularExpressions.Regex include;
+    private System.Text.RegularExpressions.Regex include;
     // // The exclusion tag (can be anything). config = "airlockDoorExclude", default = "Hangar|Hatch";
-    public System.Text.RegularExpressions.Regex exclude;
+    private System.Text.RegularExpressions.Regex exclude;
     // Manual airlocks are paired but not auto closed, config = "airlockDoorManual", default = "\\[AL\\]";
-    public System.Text.RegularExpressions.Regex manual;
+    private System.Text.RegularExpressions.Regex manual;
     // Duration before auto close (milliseconds), config = "airlockOpenTime", default = "750"
-    public double timeOpen = 720f;
+    private double timeOpen = 750f;
+    private List<IMyFunctionalBlock> areClosed;
+    private List<IMyFunctionalBlock> areOpen;
+    private bool doAllDoors;
+    private bool enabled;
 
     public Airlock(Program program) {
         this.program = program;
         this.airlocks = new Dictionary<string, AirlockDoors>();
         this.locationToAirlockMap = new Dictionary<string, List<IMyFunctionalBlock>>();
+        this.areClosed = new List<IMyFunctionalBlock>();
+        this.areOpen = new List<IMyFunctionalBlock>();
 
         this.Reset();
     }
@@ -141,6 +172,8 @@ public class Airlock {
         this.exclude = Util.Regex(this.program.config.Get("airlockDoorExclude", "Hangar|Hatch"));
         this.manual = Util.Regex(this.program.config.Get("airlockDoorManual", "\\[AL\\]"));
         this.timeOpen = Util.ParseFloat(this.program.config.Get("airlockOpenTime"), 750f);
+        this.doAllDoors = this.program.config.Enabled("airlockAllDoors");
+        this.enabled = this.program.config.Enabled("airlock");
     }
 
     public void Clear() {
@@ -149,11 +182,13 @@ public class Airlock {
     }
 
     public void CheckAirlocks() {
-        if (!this.program.config.Enabled("airlock")) {
+        if (!this.enabled) {
             return;
         }
-        foreach (var al in this.airlocks) {
-            al.Value.Check();
+        foreach (string key in this.airlocks.Keys.ToList()) {
+            AirlockDoors airlockDoors = this.airlocks.Get(key);
+            this.Check(ref airlockDoors);
+            this.airlocks[key] = airlockDoors;
         }
     }
 
@@ -176,54 +211,33 @@ public class Airlock {
     }
 
     public void GotBLocks() {
-        bool doAllDoors = this.program.config.Enabled("airlockAllDoors");
         foreach (var keyval in this.locationToAirlockMap) {
-            if (!doAllDoors && keyval.Value.Count < 2) {
+            if (!this.doAllDoors && keyval.Value.Count < 2) {
                 continue;
             }
-            this.airlocks.Add(keyval.Key, new AirlockDoors(keyval.Value, this.program, this.timeOpen, this.manual));
-        }
-    }
-}
-
-public class AirlockDoors {
-    public Program program;
-    private List<IMyFunctionalBlock> blocks;
-    private List<IMyFunctionalBlock> areClosed;
-    private List<IMyFunctionalBlock> areOpen;
-    private double openTimer;
-    private double timeOpen;
-    private bool shouldAutoClose;
-
-    public AirlockDoors(List<IMyFunctionalBlock> doors, Program program, double timeOpen, System.Text.RegularExpressions.Regex manual) {
-        this.program = program;
-        this.blocks = new List<IMyFunctionalBlock>(doors);
-        this.areClosed = new List<IMyFunctionalBlock>();
-        this.areOpen = new List<IMyFunctionalBlock>();
-        this.openTimer = timeOpen;
-        this.timeOpen = timeOpen;
-        this.shouldAutoClose = true;
-
-        foreach (var door in doors) {
-            if (manual.Match(door.CustomName).Success) {
-                this.shouldAutoClose = false;
+            bool shouldAutoClose = true;
+            foreach (var door in keyval.Value) {
+                if (manual.Match(door.CustomName).Success) {
+                    shouldAutoClose = false;
+                }
             }
+            this.airlocks.Add(keyval.Key, new AirlockDoors(keyval.Value, shouldAutoClose, this.timeOpen));
         }
     }
+
+    public void Refresh() {}
 
     private bool IsOpen(IMyFunctionalBlock door) {
         return (door as IMyDoor).OpenRatio > 0;
     }
 
-    private void Lock(List<IMyFunctionalBlock> doors = null) {
-        doors = doors ?? this.blocks;
+    private void Lock(List<IMyFunctionalBlock> doors) {
         foreach (var door in doors) {
             (door as IMyDoor).Enabled = false;
         }
     }
 
-    private void Unlock(List<IMyFunctionalBlock> doors = null) {
-        doors = doors ?? this.blocks;
+    private void Unlock(List<IMyFunctionalBlock> doors) {
         foreach (var door in doors) {
             (door as IMyDoor).Enabled = true;
         }
@@ -236,18 +250,20 @@ public class AirlockDoors {
         }
     }
 
-    private void CloseAll() {
-        foreach (var door in this.blocks) {
+    private void CloseAll(List<IMyFunctionalBlock> doors) {
+        foreach (var door in doors) {
             this.OpenClose("Open_Off", door);
         }
     }
 
-    public bool Check() {
+    public bool Check(ref AirlockDoors airlockDoors) {
         int openCount = 0;
         this.areClosed.Clear();
         this.areOpen.Clear();
 
-        foreach (var door in this.blocks) {
+        bool shouldLog = airlockDoors.blocks[0].CustomName[0] == '_';
+
+        foreach (IMyFunctionalBlock door in airlockDoors.blocks) {
             if (!Util.BlockValid(door)) {
                 continue;
             }
@@ -259,15 +275,17 @@ public class AirlockDoors {
             }
         }
 
-        if (areOpen.Count == 0) {
-            this.Unlock();
-            this.openTimer = this.timeOpen;
+        if (this.areOpen.Count == 0) {
+            this.Unlock(airlockDoors.blocks);
+            airlockDoors.openTimer = this.timeOpen;
+
             return true;
         }
 
-        this.openTimer -= this.program.Runtime.TimeSinceLastRun.TotalMilliseconds;
-        if (this.openTimer < 0 && this.shouldAutoClose) {
-            this.CloseAll();
+        airlockDoors.openTimer -= this.program.Runtime.TimeSinceLastRun.TotalMilliseconds;
+
+        if (airlockDoors.openTimer < 0 && airlockDoors.shouldAutoClose) {
+            this.CloseAll(airlockDoors.blocks);
         } else {
             this.Lock(this.areClosed);
             this.Unlock(this.areOpen);
@@ -280,9 +298,7 @@ public class AirlockDoors {
 /*
  * CARGO
  */
-CargoStatus cargoStatus;
-
-public class CargoStatus {
+public class CargoStatus : Runnable {
     public Program program;
     public List<IMyTerminalBlock> cargoBlocks;
     public Dictionary<string, VRage.MyFixedPoint> cargoItemCounts;
@@ -503,24 +519,6 @@ public class Config {
     }
 }
 
-public static string[] globalConfigs = new string[] {
-    "airlock",
-    "production",
-    "cargo",
-    "power",
-    "health",
-    "gas",
-    "gasEnableFillPct",
-    "gasDisableFillPct",
-    "healthIgnore",
-    "airlockOpenTime",
-    "airlockAllDoors",
-    "airlockDoorMatch",
-    "airlockDoorExclude",
-    "healthOnHud",
-    "getAllGrids",
-};
-
 public bool ParseCustomData() {
     MyIniParseResult result;
     if (!ini.TryParse(Me.CustomData, out result)) {
@@ -544,14 +542,16 @@ public bool ParseCustomData() {
 
     if (ini.ContainsSection("global")) {
         string setting = "";
-        foreach (string cfg in globalConfigs) {
-            if (ini.Get("global", cfg).TryGetString(out setting)) {
-                config.Set(cfg, setting);
+        List<MyIniKey> keys = new List<MyIniKey>();
+        ini.GetKeys("global", keys);
+        foreach (MyIniKey key in keys) {
+            if (ini.Get(key).TryGetString(out setting)) {
+                string configKey = key.ToString().Replace("global/", "");
+                config.Set(configKey, setting);
+                if (configKey == "config") {
+                    themeConfig = $"{{config:{setting}}}\n";
+                }
             }
-        }
-        if (ini.Get("global", "config").TryGetString(out setting)) {
-            config.Set("config", setting);
-            themeConfig = $"{{config:{setting}}}\n";
         }
     }
 
@@ -627,11 +627,11 @@ public bool Configure() {
 }
 
 public void RefetchBlocks() {
-    cargoStatus.Clear();
-    airlock.Clear();
-    blockHealth.Clear();
     powerDetails.Clear();
+    cargoStatus.Clear();
+    blockHealth.Clear();
     productionDetails.Clear();
+    airlock.Clear();
     gasStatus.Clear();
 
     GridTerminalSystem.GetBlocks(allBlocks);
@@ -647,15 +647,15 @@ public void RefetchBlocks() {
         cargoStatus.GetBlock(block);
         blockHealth.GetBlock(block);
         productionDetails.GetBlock(block);
-        gasStatus.GetBlock(block);
         airlock.GetBlock(block);
+        gasStatus.GetBlock(block);
     }
 
-    cargoStatus.GotBLocks();
-    airlock.GotBLocks();
-    blockHealth.GotBLocks();
     powerDetails.GotBLocks();
+    cargoStatus.GotBLocks();
+    blockHealth.GotBLocks();
     productionDetails.GotBLocks();
+    airlock.GotBLocks();
     gasStatus.GotBLocks();
 }
 
@@ -705,7 +705,7 @@ public IEnumerator<string> RunStuffOverTime()  {
         if (template.IsPrerendered(outputName, content)) {
             tokens = template.templateVars[outputName];
         } else {
-            log.Append($"Adding or updating {outputName}\n");
+            log.Append($"Adding {outputName}\n");
             tokens = template.PreRender(outputName, content);
         }
 
@@ -776,9 +776,7 @@ public IEnumerator<string> RunStuffOverTime()  {
 /*
  * GAS
  */
-GasStatus gasStatus;
-
-public class GasStatus {
+public class GasStatus : Runnable {
     public Program program;
     public Template template;
     public List<IMyGasTank> o2Tanks;
@@ -987,9 +985,7 @@ public class GasStatus {
 /*
  * BLOCK_HEALTH
  */
-BlockHealth blockHealth;
-
-class BlockHealth {
+class BlockHealth : Runnable {
     public Program program;
     public Template template;
     public System.Text.RegularExpressions.Regex ignoreHealth;
@@ -1112,9 +1108,7 @@ class BlockHealth {
 /*
  * POWER
  */
-PowerDetails powerDetails;
-
-public class PowerDetails {
+public class PowerDetails : Runnable {
     public Program program;
     public Template template;
     public List<IMyTerminalBlock> powerProducerBlocks;
@@ -1594,15 +1588,24 @@ public class PowerDetails {
 /*
  * PRODUCTION
  */
-public ProductionDetails productionDetails;
 
-public class ProductionDetails {
+public struct ProductionBlock {
+    public double idleTime;
+    public IMyProductionBlock block;
+
+    public ProductionBlock(IMyProductionBlock block) {
+        this.idleTime = -1;
+        this.block = block;
+    }
+}
+
+public class ProductionDetails : Runnable {
     public Program program;
     public Template template;
     public List<MyProductionItem> productionItems;
-    public List<ProductionBlock> productionBlocks;
+    public Dictionary<long, ProductionBlock> productionBlocks;
     public List<IMyProductionBlock> blocks;
-    public Dictionary<ProductionBlock, string> blockStatus;
+    public Dictionary<long, string> blockStatus;
     public Dictionary<string, string> statusDotColour;
     public Dictionary<string, VRage.MyFixedPoint> queueItems;
     public double productionCheckFreqMs = 2 * 60 * 1000;
@@ -1611,7 +1614,7 @@ public class ProductionDetails {
     public string productionIgnoreString = "[x]";
     public string status;
     public StringBuilder queueBuilder;
-    public double idleTime = 0;
+    public double allIdleSince = 0;
     public double timeDisabled = 0;
     public bool checking = false;
     public double lastCheck = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
@@ -1622,8 +1625,8 @@ public class ProductionDetails {
         this.template = template;
         this.blocks = new List<IMyProductionBlock>();
         this.productionItems = new List<MyProductionItem>();
-        this.productionBlocks = new List<ProductionBlock>();
-        this.blockStatus = new Dictionary<ProductionBlock, string>();
+        this.productionBlocks = new Dictionary<long, ProductionBlock>();
+        this.blockStatus = new Dictionary<long, string>();
         this.queueItems = new Dictionary<string, VRage.MyFixedPoint>();
         this.statusDotColour = new Dictionary<string, string>() {
             { "Broken", "dimred" },
@@ -1639,6 +1642,7 @@ public class ProductionDetails {
 
     public void Reset() {
         this.Clear();
+        this.productionBlocks.Clear();
 
         if (this.program.config.Enabled("power")) {
             this.RegisterTemplateVars();
@@ -1648,10 +1652,9 @@ public class ProductionDetails {
     public void Clear() {
         this.blocks.Clear();
         this.productionItems.Clear();
-        this.productionBlocks.Clear();
         this.blockStatus.Clear();
         this.queueItems.Clear();
-        this.idleTime = 0;
+        this.allIdleSince = 0;
         this.timeDisabled = 0;
         this.checking = false;
     }
@@ -1668,72 +1671,81 @@ public class ProductionDetails {
                 ds.Text("");
                 return;
             }
-            foreach (KeyValuePair<ProductionBlock, string> blk in this.blockStatus) {
+
+            foreach (long blockId in this.blockStatus.Keys.OrderBy(id => this.productionBlocks.Get(id).block.CustomName).ToList()) {
+                ProductionBlock productionBlock = this.productionBlocks.Get(blockId);
+                if (!this.productionBlocks.ContainsKey(blockId)) {
+                    continue;
+                }
                 if (!first) {
                     ds.Newline();
                 }
-                string status = blk.Key.Status();
-                string blockName = $" {blk.Key.block.CustomName}: {status} {(blk.Key.IsIdle() ? blk.Key.IdleTime() : "")}";
+                first = false;
+
+                string status = this.Status(productionBlock.block);
+                string blockName = $" {productionBlock.block.CustomName}: {status} {(this.IsIdle(ref productionBlock) ? this.IdleTime(ref productionBlock) : "")}";
                 Color? colour = DrawingSurface.StringToColour(this.statusDotColour.Get(status));
                 ds.TextCircle(colour, outline: false).Text(blockName);
 
-                foreach (string str in blk.Value.Split(this.splitNewline, StringSplitOptions.RemoveEmptyEntries)) {
+                foreach (string str in this.blockStatus[blockId].Split(this.splitNewline, StringSplitOptions.RemoveEmptyEntries)) {
                     ds.Newline().Text(str);
                 }
-                first = false;
             }
         });
     }
 
     public void GetBlock(IMyTerminalBlock block) {
-        if ((block is IMyAssembler || block is IMyRefinery) && !block.CustomName.Contains(this.productionIgnoreString)) {
-            this.productionBlocks.Add(new ProductionBlock(this.program, block as IMyProductionBlock));
+        if (!this.productionBlocks.ContainsKey(block.EntityId) && (block is IMyAssembler || block is IMyRefinery) && !block.CustomName.Contains(this.productionIgnoreString)) {
+            this.productionBlocks.Add(block.EntityId, new ProductionBlock(block as IMyProductionBlock));
         }
     }
 
     public void GotBLocks() {
-        this.productionBlocks = this.productionBlocks.OrderBy(b => b.block.CustomName).ToList();
+        foreach (long key in this.productionBlocks.Keys.ToList()) {
+            ProductionBlock productionBlock = this.productionBlocks.Get(key);
+            if (!Util.BlockValid(productionBlock.block)) {
+                this.productionBlocks.Remove(key);
+            }
+        }
     }
 
     public void Refresh() {
+        this.blockStatus.Clear();
+        this.status = "";
+
         if (this.productionBlocks.Count == 0) {
             return;
         }
 
-        string itemName;
+        int workingAssemblers = 0;
         bool allIdle = true;
-        int assemblers = 0;
-        int refineries = 0;
-
-        this.blockStatus.Clear();
-        this.status = "";
-
-        foreach (var block in this.productionBlocks) {
-            if (block == null || !Util.BlockValid(block.block)) {
+        string itemName;
+        foreach (long blockId in this.productionBlocks.Keys.ToList()) {
+            ProductionBlock productionBlock = this.productionBlocks.Get(blockId);
+            if (!Util.BlockValid(productionBlock.block)) {
+                this.productionBlocks.Remove(blockId);
                 continue;
             }
-            bool idle = block.IsIdle();
-            if (block.block.DefinitionDisplayNameText.ToString() != "Survival Kit") {
+
+            this.UpdateStatus(ref productionBlock);
+            bool idle = this.IsIdle(ref productionBlock);
+            if (productionBlock.block.DefinitionDisplayNameText.ToString() != "Survival Kit") {
                 allIdle = allIdle && idle;
             }
-            if (idle) {
-                if (block.block is IMyAssembler) {
-                    assemblers++;
-                } else {
-                    refineries++;
-                }
+            if (!idle && productionBlock.block is IMyAssembler) {
+                workingAssemblers++;
             }
 
             this.queueItems.Clear();
 
-            if (!block.IsIdle()) {
-                block.GetQueue(this.productionItems);
-                foreach (MyProductionItem i in this.productionItems) {
-                    itemName = Util.ToItemName(i);
+            if (!idle) {
+                this.GetQueue(productionBlock.block, this.productionItems);
+                foreach (MyProductionItem item in this.productionItems) {
+                    itemName = Util.ToItemName(item);
                     if (!this.queueItems.ContainsKey(itemName)) {
-                        this.queueItems.Add(itemName, i.Amount);
+                        this.queueItems.Add(itemName, item.Amount);
                     } else {
-                        this.queueItems[itemName] = this.queueItems[itemName] + i.Amount;
+                        this.queueItems[itemName] = this.queueItems[itemName] + item.Amount;
                     }
                 }
             }
@@ -1743,124 +1755,123 @@ public class ProductionDetails {
                 this.queueBuilder.Append($"  {Util.FormatNumber(kv.Value)} x {kv.Key}\n");
             }
 
-            this.blockStatus.Add(block, this.queueBuilder.ToString());
+            this.blockStatus.Add(productionBlock.block.EntityId, this.queueBuilder.ToString());
+            this.productionBlocks[blockId] = productionBlock;
         }
 
         double timeNow = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
 
         if (allIdle) {
-            idleTime = (idleTime == 0 ? timeNow : idleTime);
+            this.allIdleSince = (this.allIdleSince == 0 ? timeNow : this.allIdleSince);
 
-            if (timeDisabled == 0) {
-                foreach (var block in this.productionBlocks) {
-                    block.Enabled = false;
+            if (this.timeDisabled == 0) {
+                foreach (ProductionBlock productionBlock in this.productionBlocks.Values) {
+                    this.Enable(productionBlock.block, false);
                 }
-                timeDisabled = timeNow;
+                this.timeDisabled = timeNow;
             } else {
-                if (!checking) {
-                    if (timeNow - lastCheck > this.productionCheckFreqMs)  {
+                if (!this.checking) {
+                    if (timeNow - this.lastCheck > this.productionCheckFreqMs)  {
                         // We disabled them over this.productionCheckFreqMs ago, and need to check them
-                        foreach (var block in this.productionBlocks) {
-                            block.Enabled = true;
+                        foreach (var productionBlock in this.productionBlocks.Values) {
+                            this.Enable(productionBlock.block, true);
                         }
-                        checking = true;
-                        lastCheck = timeNow;
-                        this.status = $"Power saving mode {Util.TimeFormat(timeNow - idleTime)} (checking)";
+                        this.checking = true;
+                        this.lastCheck = timeNow;
+                        this.status = $"Power saving mode {Util.TimeFormat(timeNow - this.allIdleSince)} (checking)";
                     }
                 } else {
-                    if (timeNow - lastCheck > this.productionOnWaitMs) {
+                    if (timeNow - this.lastCheck > this.productionOnWaitMs) {
                         // We waited 5 seconds and they are still not producing
-                        foreach (var block in this.productionBlocks) {
-                            block.Enabled = false;
+                        foreach (var productionBlock in this.productionBlocks.Values) {
+                            this.Enable(productionBlock.block, false);
                         }
-                        checking = false;
-                        lastCheck = timeNow;
+                        this.checking = false;
+                        this.lastCheck = timeNow;
                     } else {
-                        this.status = $"Power saving mode {Util.TimeFormat(timeNow - idleTime)} (checking)";
+                        this.status = $"Power saving mode {Util.TimeFormat(timeNow - this.allIdleSince)} (checking)";
                     }
                 }
             }
             if (this.status == "") {
-                this.status = $"Power saving mode {Util.TimeFormat(timeNow - idleTime)} " +
-                    $"(check in {Util.TimeFormat(this.productionCheckFreqMs - (timeNow - lastCheck), true)})";
+                this.status = $"Power saving mode {Util.TimeFormat(timeNow - this.allIdleSince)} " +
+                    $"(check in {Util.TimeFormat(this.productionCheckFreqMs - (timeNow - this.lastCheck), true)})";
             }
         } else {
-            if (this.productionBlocks.Where(b => b.Status() == "Blocked").Any()) {
+            if (this.productionBlocks.Values.ToList().Where(b => this.Status(b.block) == "Blocked").Any()) {
                 this.status = "Production Enabled (Halted)";
             } else {
                 this.status = "Production Enabled";
             }
 
             // If any assemblers are on, make sure they are all on (in case working together)
-            if (assemblers > 0) {
-                foreach (var block in this.productionBlocks.Where(b => b.block is IMyAssembler).ToList()) {
-                    block.Enabled = true;
+            if (workingAssemblers > 0) {
+                foreach (ProductionBlock productionBlock in this.productionBlocks.Values.ToList().Where(b => b.block is IMyAssembler).ToList()) {
+                    this.Enable(productionBlock.block, true);
                 }
             }
 
-            idleTime = 0;
-            timeDisabled = 0;
-            checking = false;
-        }
-    }
-}
-
-public class ProductionBlock {
-    public Program program;
-    public double idleTime;
-    public IMyProductionBlock block;
-    public bool Enabled {
-        get { return block.Enabled; }
-        set {
-            if (block.DefinitionDisplayNameText.ToString() == "Survival Kit") {
-                return;
-            }
-            block.Enabled = value;
+            this.allIdleSince = 0;
+            this.timeDisabled = 0;
+            this.checking = false;
         }
     }
 
-    public ProductionBlock(Program program, IMyProductionBlock block) {
-        this.idleTime = -1;
-        this.block = block;
-        this.program = program;
-    }
-
-    public void GetQueue(List<MyProductionItem> productionItems) {
+    public void GetQueue(IMyProductionBlock productionBlock, List<MyProductionItem> productionItems) {
         productionItems.Clear();
-        block.GetQueue(productionItems);
+        productionBlock.GetQueue(productionItems);
     }
 
-    public bool IsIdle() {
-        string status = this.Status();
+    public bool IsIdle(ref ProductionBlock productionBlock) {
+        string status = this.Status(productionBlock.block);
+
+        return (status == "Idle" || status == "Broken");
+    }
+
+    public bool UpdateStatus(ref ProductionBlock productionBlock) {
+        string status = this.Status(productionBlock.block);
         if (status == "Idle" || status == "Broken") {
-            this.idleTime = (this.idleTime == -1) ? this.Now() : this.idleTime;
+            if (productionBlock.idleTime == -1) {
+                productionBlock.idleTime = this.Now();
+            }
+
             return true;
-        } else if (status == "Blocked" && !block.Enabled) {
-            block.Enabled = true;
         }
-        this.idleTime = -1;
+
+        if (status == "Blocked" && !productionBlock.block.Enabled) {
+            this.Enable(productionBlock.block, true);
+        }
+        this.allIdleSince = -1;
+
         return false;
     }
 
-    public string IdleTime() {
-        return Util.TimeFormat(this.Now() - this.idleTime);
+    public string IdleTime(ref ProductionBlock productionBlock) {
+        return Util.TimeFormat(this.Now() - productionBlock.idleTime);
     }
 
-    public string Status() {
-        if (!this.block.IsFunctional) {
+    public string Status(IMyProductionBlock block) {
+        if (!block.IsFunctional) {
             return "Broken";
-        } else if (this.block.IsQueueEmpty && !this.block.IsProducing) {
-            return "Idle";
-        } else if (this.block.IsProducing) {
+        }
+        if (block.IsProducing) {
             return "Working";
-        } else if (!this.block.IsQueueEmpty && !this.block.IsProducing) {
+        }
+        if (block.IsQueueEmpty) {
+            return "Idle";
+        } else {
             return "Blocked";
         }
-        return "???";
     }
 
     public double Now() {
         return DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
+    }
+
+    public void Enable(IMyProductionBlock block, bool enabled) {
+        if (block.DefinitionDisplayNameText.ToString() != "Survival Kit") {
+            block.Enabled = (bool)enabled;
+        }
     }
 }
 /* PRODUCTION */
@@ -2874,9 +2885,11 @@ public static class Util {
         int n = Math.Max(0, (int)input);
         if (n == 0) {
             return "0";
-        } else if (n < 10000) {
+        }
+        if (n < 10000) {
             return "#,,#";
-        } else if (n < 1000000) {
+        }
+        if (n < 1000000) {
             return "###,,0,K";
         }
 
@@ -2907,11 +2920,12 @@ public static class Util {
         TimeSpan t = TimeSpan.FromMilliseconds(ms);
         if (t.Hours != 0) {
             return String.Format("{0:D}h{1:D}m", t.Hours, t.Minutes);
-        } else if (t.Minutes != 0) {
-            return String.Format("{0:D}m", t.Minutes);
-        } else {
-            return (s ? String.Format("{0:D}s", t.Seconds) : "< 1m");
         }
+        if (t.Minutes != 0) {
+            return String.Format("{0:D}m", t.Minutes);
+        }
+
+        return (s ? String.Format("{0:D}s", t.Seconds) : "< 1m");
     }
 
     public static string ToItemName(MyProductionItem i) {
@@ -2922,6 +2936,7 @@ public static class Util {
         if (id.Contains("/")) {
             return id.Split('/')[1];
         }
+
         return id;
     }
 

@@ -1,9 +1,7 @@
 /*
  * CARGO
  */
-CargoStatus cargoStatus;
-
-public class CargoStatus {
+public class CargoStatus : Runnable {
     public Program program;
     public List<IMyTerminalBlock> cargoBlocks;
     public Dictionary<string, VRage.MyFixedPoint> cargoItemCounts;

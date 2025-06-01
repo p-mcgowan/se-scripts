@@ -28,7 +28,7 @@ public IEnumerator<string> RunStuffOverTime()  {
         if (template.IsPrerendered(outputName, content)) {
             tokens = template.templateVars[outputName];
         } else {
-            log.Append($"Adding or updating {outputName}\n");
+            log.Append($"Adding {outputName}\n");
             tokens = template.PreRender(outputName, content);
         }
 
