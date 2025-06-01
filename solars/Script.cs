@@ -275,6 +275,7 @@ public class DrawingSurface {
         { "brown", Color.Brown },
         { "cyan", Color.Cyan },
         { "dimgray", Color.DimGray },
+        { "dimgrey", Color.DimGray },
         { "gray", Color.Gray },
         { "green", Color.Green },
         { "orange", Color.Orange },
@@ -626,7 +627,7 @@ public class DrawingSurface {
 
     public DrawingSurface Bar(Options options) {
         if (options == null || options.pct == 0f) {
-            return this.Bar(0f, text: "--/--");
+            options.text = options.text ?? "--/--";
         }
 
         return this.Bar(
@@ -698,7 +699,7 @@ public class DrawingSurface {
         text = text ?? Util.PctString(pct);
         if (text != null && text != "") {
             this.cursor.X += (width / 2);
-            this.Text(text, textColour ?? this.surface.ScriptForegroundColor, textAlignment: textAlignment, scale: 0.8f);
+            this.Text(text, textColour ?? this.surface.ScriptForegroundColor, textAlignment: textAlignment, scale: 0.875f);
             this.cursor.X += (width / 2);
         } else {
             this.cursor.X += width;
@@ -871,13 +872,23 @@ public static class Util {
     public static System.Text.RegularExpressions.Regex surfaceExtractor =
         Util.Regex(@"\s<(\d+)>$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
+    public static string GetFormatNumberStr(double input) {
+        return Util.GetFormatNumberStr((VRage.MyFixedPoint)input);
+    }
+
+    public static string GetFormatNumberStr(float input) {
+        return Util.GetFormatNumberStr((VRage.MyFixedPoint)input);
+    }
+
     public static string GetFormatNumberStr(VRage.MyFixedPoint input) {
         int n = Math.Max(0, (int)input);
         if (n == 0) {
             return "0";
-        } else if (n < 10000) {
+        }
+        if (n < 10000) {
             return "#,,#";
-        } else if (n < 1000000) {
+        }
+        if (n < 1000000) {
             return "###,,0,K";
         }
 
@@ -887,6 +898,14 @@ public static class Util {
         }
 
         return $"{sb}0,,.0M";
+    }
+
+    public static string FormatNumber(double input, string fmt = null) {
+        return Util.FormatNumber((VRage.MyFixedPoint)input, fmt);
+    }
+
+    public static string FormatNumber(float input, string fmt = null) {
+        return Util.FormatNumber((VRage.MyFixedPoint)input, fmt);
     }
 
     public static string FormatNumber(VRage.MyFixedPoint input, string fmt = null) {
@@ -900,19 +919,28 @@ public static class Util {
         TimeSpan t = TimeSpan.FromMilliseconds(ms);
         if (t.Hours != 0) {
             return String.Format("{0:D}h{1:D}m", t.Hours, t.Minutes);
-        } else if (t.Minutes != 0) {
-            return String.Format("{0:D}m", t.Minutes);
-        } else {
-            return (s ? String.Format("{0:D}s", t.Seconds) : "< 1m");
         }
+        if (t.Minutes != 0) {
+            return String.Format("{0:D}m", t.Minutes);
+        }
+
+        return (s ? String.Format("{0:D}s", t.Seconds) : "< 1m");
     }
 
     public static string ToItemName(MyProductionItem i) {
         string id = i.BlueprintId.ToString();
+        if (id.Contains("IngotBasic")) {
+            return "Stone to ingot";
+        }
         if (id.Contains("/")) {
             return id.Split('/')[1];
         }
+
         return id;
+    }
+
+    public static string PctString(double val) {
+        return Util.PctString((float)val);
     }
 
     public static string PctString(float val) {

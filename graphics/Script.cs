@@ -726,9 +726,11 @@ public static class Util {
         int n = Math.Max(0, (int)input);
         if (n == 0) {
             return "0";
-        } else if (n < 10000) {
+        }
+        if (n < 10000) {
             return "#,,#";
-        } else if (n < 1000000) {
+        }
+        if (n < 1000000) {
             return "###,,0,K";
         }
 
@@ -759,11 +761,12 @@ public static class Util {
         TimeSpan t = TimeSpan.FromMilliseconds(ms);
         if (t.Hours != 0) {
             return String.Format("{0:D}h{1:D}m", t.Hours, t.Minutes);
-        } else if (t.Minutes != 0) {
-            return String.Format("{0:D}m", t.Minutes);
-        } else {
-            return (s ? String.Format("{0:D}s", t.Seconds) : "< 1m");
         }
+        if (t.Minutes != 0) {
+            return String.Format("{0:D}m", t.Minutes);
+        }
+
+        return (s ? String.Format("{0:D}s", t.Seconds) : "< 1m");
     }
 
     public static string ToItemName(MyProductionItem i) {
@@ -774,6 +777,7 @@ public static class Util {
         if (id.Contains("/")) {
             return id.Split('/')[1];
         }
+
         return id;
     }
 
