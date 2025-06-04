@@ -1641,6 +1641,9 @@ public class ProductionDetails : Runnable {
     }
 
     public void Reset() {
+        this.allIdleSince = 0;
+        this.timeDisabled = 0;
+        this.checking = false;
         this.Clear();
         this.productionBlocks.Clear();
 
@@ -1654,9 +1657,6 @@ public class ProductionDetails : Runnable {
         this.productionItems.Clear();
         this.blockStatus.Clear();
         this.queueItems.Clear();
-        this.allIdleSince = 0;
-        this.timeDisabled = 0;
-        this.checking = false;
     }
 
     public void RegisterTemplateVars() {
@@ -1762,7 +1762,11 @@ public class ProductionDetails : Runnable {
         double timeNow = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
 
         if (allIdle) {
-            this.allIdleSince = (this.allIdleSince == 0 ? timeNow : this.allIdleSince);
+            if (this.allIdleSince == 0) {
+                this.allIdleSince = timeNow;
+            }
+            double timeIdle = timeNow - this.allIdleSince;
+            string timeIdleMsg = Util.TimeFormat(timeIdle);
 
             if (this.timeDisabled == 0) {
                 foreach (ProductionBlock productionBlock in this.productionBlocks.Values) {
@@ -1778,7 +1782,7 @@ public class ProductionDetails : Runnable {
                         }
                         this.checking = true;
                         this.lastCheck = timeNow;
-                        this.status = $"Power saving mode {Util.TimeFormat(timeNow - this.allIdleSince)} (checking)";
+                        this.status = $"Power saving mode {timeIdleMsg} (checking)";
                     }
                 } else {
                     if (timeNow - this.lastCheck > this.productionOnWaitMs) {
@@ -1789,13 +1793,12 @@ public class ProductionDetails : Runnable {
                         this.checking = false;
                         this.lastCheck = timeNow;
                     } else {
-                        this.status = $"Power saving mode {Util.TimeFormat(timeNow - this.allIdleSince)} (checking)";
+                        this.status = $"Power saving mode {timeIdleMsg} (checking)";
                     }
                 }
             }
             if (this.status == "") {
-                this.status = $"Power saving mode {Util.TimeFormat(timeNow - this.allIdleSince)} " +
-                    $"(check in {Util.TimeFormat(this.productionCheckFreqMs - (timeNow - this.lastCheck), true)})";
+                this.status = $"Power saving mode {timeIdleMsg} (check in {Util.TimeFormat(this.productionCheckFreqMs - timeIdle, true)})";
             }
         } else {
             if (this.productionBlocks.Values.ToList().Where(b => this.Status(b.block) == "Blocked").Any()) {
@@ -1841,7 +1844,6 @@ public class ProductionDetails : Runnable {
         if (status == "Blocked" && !productionBlock.block.Enabled) {
             this.Enable(productionBlock.block, true);
         }
-        this.allIdleSince = -1;
 
         return false;
     }
