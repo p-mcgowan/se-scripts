@@ -95,7 +95,7 @@ public class CargoStatus : Runnable {
 
     public void CargoItems(DrawingSurface ds, string text, DrawingSurface.Options options) {
         if (this.cargoItemCounts.Count() == 0) {
-            ds.Text("");
+            ds.Text(" ");
 
             return;
         }

@@ -93,7 +93,7 @@ text,DrawingSurface.Options options){Color?defaultText=options.textColour??ds.su
 >0.60){colourName=options.custom.Get("colourMid")??"dimyellow";options.textColour=DrawingSurface.StringToColour(options.custom.Get("textColourMid"))??defaultText;}options.pct=this.pct;options.fillColour
 =DrawingSurface.StringToColour(colourName);options.text=Util.PctString(this.pct);ds.Bar(options);}public void CargoItem(DrawingSurface ds,string text,DrawingSurface.Options options){string name=options.custom.Get("name");
 VRage.MyFixedPoint itemCount;if(!this.cargoItemCounts.TryGetValue(name,out itemCount)){itemCount=0;}ds.Text(Util.FormatNumber(itemCount),options);}public void CargoItems(DrawingSurface ds,string text,
-DrawingSurface.Options options){if(this.cargoItemCounts.Count()==0){ds.Text("");return;}if(ds.width/(ds.charSizeInPx.X+1f)<40){foreach(var item in this.cargoItemCounts){var fmtd=Util.FormatNumber(item.Value);
+DrawingSurface.Options options){if(this.cargoItemCounts.Count()==0){ds.Text(" ");return;}if(ds.width/(ds.charSizeInPx.X+1f)<40){foreach(var item in this.cargoItemCounts){var fmtd=Util.FormatNumber(item.Value);
 ds.Text($"{item.Key}").SetCursor(ds.width,null).Text(fmtd,textAlignment:TextAlignment.RIGHT).Newline();}}else{this.widths[0]=0;this.widths[1]=ds.width/2-1.5f*ds.charSizeInPx.X;this.widths[2]=ds.width/
 2+1.5f*ds.charSizeInPx.X;this.widths[3]=ds.width;int i=0;foreach(var item in this.cargoItemCounts){var fmtd=Util.FormatNumber(item.Value);ds.SetCursor(this.widths[(i++%4)],null).Text($"{item.Key}").SetCursor(this.widths[(i++
 %4)],null).Text(fmtd,textAlignment:TextAlignment.RIGHT);if((i%4)==0||i>=this.cargoItemCounts.Count*2){ds.Newline();}}}ds.Newline(reverse:true);}public void GetBlock(IMyTerminalBlock block){if(block is
