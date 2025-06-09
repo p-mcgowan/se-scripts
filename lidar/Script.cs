@@ -52,7 +52,7 @@ public void SetCamRaycasting(string blockName, bool on) {
     block.EnableRaycast = on;
 }
 
-public string GetCli(MyCommandLine cli, string[] args, int argc = 0) {
+public string GetCliArg(MyCommandLine cli, string[] args, int argc = 0) {
     foreach (string arg in args) {
         string res = cli.Switch(arg, argc);
         if (res != null) {
@@ -117,13 +117,13 @@ public void Run(string argument, UpdateType updateSource) {
         return;
     }
 
-    string distance = GetCli(cli, new[] { "--distance", "-d" });
-    string raycast = GetCli(cli, new[] { "--cast", "-c" });
-    string leftCam = GetCli(cli, new[] { "--left", "-l" });
-    string rightCam = GetCli(cli, new[] { "--right", "-r" });
-    string name = GetCli(cli, new[] { "--name", "-n" });
-    string point = GetCli(cli, new[] { "--point", "-p" });
-    string towards = GetCli(cli, new[] { "--towards", "-t" });
+    string raycast = GetCliArg(cli, new[] { "--cast", "-c" });
+    string leftCam = GetCliArg(cli, new[] { "--left", "-l" });
+    string rightCam = GetCliArg(cli, new[] { "--right", "-r" });
+    string name = GetCliArg(cli, new[] { "--name", "-n" });
+    string point = GetCliArg(cli, new[] { "--point", "-p" });
+    string distance = GetCliArg(cli, new[] { "--distance", "-d" });
+    string towards = GetCliArg(cli, new[] { "--towards", "-t" });
 
     if (cli.Switch("-on") || cli.Switch("o") || cli.Switch("-off") || cli.Switch("O")) {
         bool on = cli.Switch("-on") || cli.Switch("o");
