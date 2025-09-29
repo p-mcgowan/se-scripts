@@ -256,6 +256,8 @@ public class ProductionDetails : Runnable {
 
         if (status == "Blocked" && !productionBlock.block.Enabled) {
             this.Enable(productionBlock.block, true);
+        } else {
+            productionBlock.idleTime = -1;
         }
 
         return false;
