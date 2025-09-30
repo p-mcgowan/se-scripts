@@ -63,7 +63,7 @@ public class GasStatus : Runnable {
         });
         this.template.Register("gas.generationEnabled", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
             string message = options.custom.Get("txtDisabled") ?? "Gas generation off";
-            if (this.GetGenerators()) {
+            if (this.AnyGeneratorEnabled()) {
                 message = options.custom.Get("txtEnabled") ?? "Gas generation on";
             }
             ds.Text(message, options);
@@ -87,7 +87,7 @@ public class GasStatus : Runnable {
             } else if (name.Contains("Hydrogen Tank")) {
                 this.h2Tanks.Add((IMyGasTank)block);
             }
-        } else if (block is IMyGasGenerator) {
+        } else if (block is IMyGasGenerator && block.DefinitionDisplayNameText.ToString() != "Irrigation System") {
             this.oxyGens.Add((IMyGasGenerator)block);
         }
     }
@@ -143,7 +143,7 @@ public class GasStatus : Runnable {
         }
     }
 
-    public bool GetGenerators() {
+    public bool AnyGeneratorEnabled() {
         foreach (IMyGasGenerator genny in this.oxyGens) {
             if (genny.Enabled) {
                 return true;
@@ -191,16 +191,15 @@ public class GasStatus : Runnable {
     }
 
     public void GasExtendedMessage(DrawingSurface ds, string text, DrawingSurface.Options options) {
-        var max = Math.Floor(100 * Math.Max(this.o2FillPct, this.h2FillPct));
-        var min = Math.Ceiling(100 * Math.Min(this.o2FillPct, this.h2FillPct));
+        var current = Math.Ceiling(100 * Math.Min(this.o2FillPct, this.h2FillPct));
         string message = options.custom.Get("txtDisabled") ?? $"Gas generation off";
         if (this.enableFillPct != -1) {
-            message = message + $", enabled at {Math.Floor(100 * this.enableFillPct)}% (current: {min}%)";
+            message = message + $", enabled at {Math.Floor(100 * this.enableFillPct)}% (current: {current}%)";
         }
-        if (this.GetGenerators()) {
+        if (this.AnyGeneratorEnabled()) {
             message = options.custom.Get("txtEnabled") ?? $"Gas generation on";
             if (this.disableFillPct != -1) {
-                message = message + $", disabled at {Math.Ceiling(100 * this.disableFillPct)}% (current: {max}%)";
+                message = message + $", disabled at {Math.Ceiling(100 * this.disableFillPct)}% (current: {current}%)";
             }
         }
         ds.Text(message, options);
