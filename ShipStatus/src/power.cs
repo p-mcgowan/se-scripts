@@ -103,6 +103,7 @@ public class PowerDetails : Runnable {
         }
         this.template.Register("power.batteries", () => this.batteries.ToString());
         this.template.Register("power.batteryBar", this.BatteryBar);
+        this.template.Register("power.chargeBar", this.ChargeBar);
         this.template.Register("power.batteryCurrent", () => String.Format("{0:0.##}", this.batteryCurrent));
         this.template.Register("power.batteryInput", () => String.Format("{0:0.##}", this.batteryInput));
         this.template.Register("power.batteryInputMax", () => String.Format("{0:0.##}", this.batteryInputMax));
@@ -320,6 +321,24 @@ public class PowerDetails : Runnable {
         this.batteryPotential = (this.batteries - this.batteriesDisabled) == 0 ? 0f : (this.batteryOutputMW / (float)(this.batteries - this.batteriesDisabled)) * (float)this.batteriesDisabled;
         this.turbinePotential = (this.turbines - this.turbinesDisabled) == 0 ? 0f : (this.turbineOutputMW / (float)(this.turbines - this.turbinesDisabled)) * (float)this.turbinesDisabled;
         this.solarPotential = (this.solars - this.solarsDisabled) == 0 ? 0f : (this.solarOutputMW / (float)(this.solars - this.solarsDisabled)) * (float)this.solarsDisabled;
+    }
+
+    public void ChargeBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        if (this.batteries == 0 || this.batteryMax == 0) {
+            return;
+        }
+        float pct = this.batteryCurrent / this.batteryMax;
+        string colourName = "dimred";
+        if (pct > 0.85) {
+            colourName = "dimgreen";
+        } else if (pct > 0.5) {
+            colourName = "dimyellow";
+        }
+        options.pct = pct;
+        options.fillColour = DrawingSurface.StringToColour(colourName);
+        options.text = options.text ?? Util.PctString(pct);
+
+        ds.Bar(options);
     }
 
     public void BatteryBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
