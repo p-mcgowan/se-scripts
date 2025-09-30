@@ -37,6 +37,7 @@ Images generated with ini format CustomData (see [Malware's MDK](https://github.
 ;airlock=true
 ;production=false
 ;cargo=false
+;cargoIgnore=
 ;power=false
 ;health=false
 ;  airlock config (defaults are shown)
@@ -193,60 +194,74 @@ output=
 
 setting|value type|description|default
 ---|---|---|---
-airlock|true/false|Toggle program airlock|false
-production|true/false|Toggle program production|auto (if in template)
-cargo|true/false|Toggle program cargo|auto (if in template)
-power|true/false|Toggle program power|auto (if in template)
-health|true/false|Toggle program health|auto (if in template)
-airlockOpenTime|integer|Set airlock auto-close time (ms)|750
 airlockAllDoors|true/false|Toggle auto door closing for non-airlock doors|false
-airlockDoorMatch|string|Door pattern to match (regex)|Door(.*)
 airlockDoorExclude|string|Door pattern to exclude|Hangar
+airlockDoorManual|string|Pattern to treat as airlock pair without auto-closing (only locking)|[AL]
+airlockDoorMatch|string|Door pattern to match (regex)|Door(.*)
+airlockOpenTime|integer|Set airlock auto-close time (ms)|750
+airlock|true/false|Toggle program airlock|false
+cargoIgnore|string|Pattern to exclude containers (eg `Lockers|Armory`)|none
+cargo|true/false|Toggle program cargo|auto (if in template)
+config|string|Configure all displays to use a theme (see config template var below)|none
 healthIgnore|string|Pattern to ignore (eg Thrust,Wheel)|none
 healthOnHud|true/false|Enable "Show on HUD" for damaged blocks|false
-config|string|Configure all displays to use a theme (see config template var below)|none
-
+health|true/false|Toggle program health|auto (if in template)
+power|true/false|Toggle program power|auto (if in template)
+production|true/false|Toggle program production|auto (if in template)
 
 #### Template variables:
 The template vars available by default are:
 template var|options|description
 ---|---|---
-config| font: set the font <br/>size: set the font size <br/>textPadding: set the padding <br/>colour: set the text colour <br/>bgColour: set the background colour |Configure the display (only runs once)
 cargo.bar|colourLow: colour, colourMid: colour, colourHigh: colour|A coloured fill bar which goes from green to red (unless overridden) based on % full
 cargo.cap|none|The cargo volume capacity
+cargo.containers|none|List of blocks and fill percentages
+cargo.containerBars|colourLow: colour, colourMid: colour, colourHigh: colour|List of blocks and fill percentages as bars
 cargo.fullString|none|A nicely formatted `<current> / <max> L` volume string
 cargo.items|none|A list of all items in cargo. Will split into 2 columns if display is wide enough 
 cargo.item|name: name of the item to select (as shown in cargo.items)|The count of a particular item 
 cargo.stored|none|Current cargo volume
+config| font: set the font <br/>size: set the font size <br/>textPadding: set the padding <br/>colour: set the text colour <br/>bgColour: set the background colour |Configure the display (only runs once)
+gas.generationEnabled|txtDisabled: text to show when disabled, txtEnabled: text to show when enabled|Text for O2 generators enabled or disabled.
+gas.h2Bar|[default bar options](https://github.com/p-mcgowan/se-scripts/tree/master/graphics)|H2 tank filled percent bar.
+gas.h2CurrentVolume|none|H2 tank volume (L).
+gas.h2FillPct|none|H2 tank fill pct.
+gas.h2MaxVolume|none|H2 tank capacity (L).
+gas.h2Tanks|none|Listing of H2 tanks names and volume (current/cap and %).
+gas.o2Bar|[default bar options](https://github.com/p-mcgowan/se-scripts/tree/master/graphics)|O2 tank filled percent bar.
+gas.o2CurrentVolume|none|O2 tank volume (L).
+gas.o2FillPct|none|O2 tank fill pct.
+gas.o2MaxVolume|none|O2 tank capacity (L).
+gas.o2Tanks|none|Listing of O2 tanks names and volume (current/cap and %).
 health.blocks|none|A list of all damaged blocks and their percent health
 health.status|none|A message saying whether damage is detected or not
 power.batteries|none|Count of batteries
 power.batteryBar|[default bar options](https://github.com/p-mcgowan/se-scripts/tree/master/graphics)|Coloured bar showing discharge / recharge rate and time remaining
 power.batteryCurrent|none|Total of battery charge (MWh).
-power.batteryInput|none|Current battery input (MW).
 power.batteryInputMax|none|Max battery input (MW).
+power.batteryInput|none|Current battery input (MW).
 power.batteryMax|none|Max battery capacity (MWh).
-power.batteryOutput|none|Current battery output (MW).
 power.batteryOutputMax|none|Max battery output (MW).
+power.batteryOutput|none|Current battery output (MW).
 power.consumers|count: int|Prints top _count_ power consumers (default 10, all when _count_=0).
 power.engineOutputMax|none|Max H2 engine output (MW).
 power.engineOutputMW|none|Current H2 engine output (MW).
 power.engines|none|Count of H2 engines
-power.ioString|none|Formatted energy IO: net output / max output (utilization %).
-power.ioLegend|none|Shows a coloured legend for the io bar.
 power.input|none|Current energy input (MW).
-power.output|none|Current energy output (MW).
-power.maxOutput|none|Max possible energy output (MW).
 power.ioBar|none|Bar showing contribution to total power by block. Reactors are blue, H2 engines red, betteries green, turbines yellow, solars cyan. If blocks are disabled, they are shown in a darker colour.
+power.ioLegend|none|Shows a coloured legend for the io bar.
+power.ioString|none|Formatted energy IO: net output / max output (utilization %).
 power.jumpBar|[default bar options](https://github.com/p-mcgowan/se-scripts/tree/master/graphics), text: string, pct: float|Jump drive charge status. Text and percent override the default bar contents.
 power.jumpCurrent|none|Jump drive current charge (MW).
 power.jumpDrives|none|Jump drive count.
 power.jumpMax|none|Jump drive max charge (MW).
+power.maxOutput|none|Max possible energy output (MW).
+power.output|none|Current energy output (MW).
 power.reactorOutputMax|none|Reactor max output (MW).
 power.reactorOutputMW|none|Reactor current output (MW).
-power.reactors|none|Reactor count.
 power.reactorString|text: string|Formatted reactor string: &lt;text or Reactors: >&lt;count>, Output: &lt;output> MW, Ur: &lt;uranium> kg"
 power.reactors|none|Reactor count
+power.reactors|none|Reactor count.
 power.reactorUr|none|Reactor uranium in kg.
 power.solarOutputMax|none|Max solar output.
 power.solarOutputMW|none|Current solar output.
@@ -256,17 +271,6 @@ power.turbineOutputMW|none|Current wind turbine output.
 power.turbines|none|Wind turbine count.
 production.blocks|none|List of assemblers and refineries, with a status icon and their queue (if any).
 production.status|none|Overall production status (power saving, enabled, halted). The production class will turn on / off production blocks if they idle for a long time, then check every 4 minutes to see if they need to start up again.
-gas.o2CurrentVolume|none|O2 tank volume (L).
-gas.o2MaxVolume|none|O2 tank capacity (L).
-gas.o2FillPct|none|O2 tank fill pct.
-gas.o2Tanks|none|Listing of O2 tanks names and volume (current/cap and %).
-gas.o2Bar|[default bar options](https://github.com/p-mcgowan/se-scripts/tree/master/graphics)|O2 tank filled percent bar.
-gas.generationEnabled|txtDisabled: text to show when disabled, txtEnabled: text to show when enabled|Text for O2 generators enabled or disabled.
-gas.h2CurrentVolume|none|H2 tank volume (L).
-gas.h2MaxVolume|none|H2 tank capacity (L).
-gas.h2FillPct|none|H2 tank fill pct.
-gas.h2Tanks|none|Listing of H2 tanks names and volume (current/cap and %).
-gas.h2Bar|[default bar options](https://github.com/p-mcgowan/se-scripts/tree/master/graphics)|H2 tank filled percent bar.
 
 You can also register any render method you want, and use any of the values in each of the status programs (Cargo, Production, etc..).
 

@@ -295,6 +295,18 @@ public class Airlock : Runnable {
     }
 }
 /* AIRLOCK */
+public struct FillPct {
+    public VRage.MyFixedPoint current;
+    public VRage.MyFixedPoint max;
+    public string name;
+
+    public FillPct(VRage.MyFixedPoint current, VRage.MyFixedPoint max, string name) {
+        this.current = current;
+        this.max = max;
+        this.name = name;
+    }
+}
+
 /*
  * CARGO
  */
@@ -302,10 +314,12 @@ public class CargoStatus : Runnable {
     public Program program;
     public List<IMyTerminalBlock> cargoBlocks;
     public Dictionary<string, VRage.MyFixedPoint> cargoItemCounts;
+    public Dictionary<long, FillPct> containerPercentages;
     public List<MyInventoryItem> inventoryItems;
     public System.Text.RegularExpressions.Regex itemRegex;
     public System.Text.RegularExpressions.Regex ingotRegex;
     public System.Text.RegularExpressions.Regex oreRegex;
+    public System.Text.RegularExpressions.Regex filterContainers;
     public VRage.MyFixedPoint max;
     public VRage.MyFixedPoint vol;
     public Template template;
@@ -325,6 +339,7 @@ public class CargoStatus : Runnable {
         this.cargoItemCounts = new Dictionary<string, VRage.MyFixedPoint>();
         this.inventoryItems = new List<MyInventoryItem>();
         this.cargoBlocks = new List<IMyTerminalBlock>();
+        this.containerPercentages = new Dictionary<long, FillPct>();
         this.itemText = "";
         this.pct = 0f;
 
@@ -333,6 +348,7 @@ public class CargoStatus : Runnable {
 
     public void Reset() {
         this.Clear();
+        this.filterContainers = Util.Regex(this.program.config.Get("cargoIgnore", "$^"));
 
         if (this.program.config.Enabled("cargo")) {
             this.RegisterTemplateVars();
@@ -343,6 +359,7 @@ public class CargoStatus : Runnable {
         this.cargoItemCounts.Clear();
         this.inventoryItems.Clear();
         this.cargoBlocks.Clear();
+        this.containerPercentages.Clear();
     }
 
     public void RegisterTemplateVars() {
@@ -352,31 +369,73 @@ public class CargoStatus : Runnable {
 
         this.template.Register("cargo.stored", () => $"{Util.FormatNumber(1000 * this.vol)} L");
         this.template.Register("cargo.cap", () => $"{Util.FormatNumber(1000 * this.max)} L");
-        this.template.Register("cargo.fullString", () => {
-            string capFmt = Util.GetFormatNumberStr(1000 * this.max);
-
-            return $"{Util.FormatNumber(1000 * this.vol, capFmt)} / {Util.FormatNumber(1000 * this.max, capFmt)} L";
-        });
-        this.template.Register("cargo.bar", this.CargoBar);
+        this.template.Register("cargo.fullString", () => this.Filled(this.vol, this.max));
+        this.template.Register("cargo.bar", (DrawingSurface ds, string text, DrawingSurface.Options options) => this.CargoBar(ds, text, options, this.pct));
         this.template.Register("cargo.items", this.CargoItems);
         this.template.Register("cargo.item", this.CargoItem);
+        this.template.Register("cargo.containers", this.CargoContainerPercentages);
+        this.template.Register("cargo.containerBars", this.CargoContainerBars);
     }
 
-    public void CargoBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
-        Color? defaultText = options.textColour ?? ds.surface.ScriptForegroundColor;
+    public string Filled(VRage.MyFixedPoint vol, VRage.MyFixedPoint max) {
+        string capFmt = Util.GetFormatNumberStr(1000 * max);
+
+        return $"{Util.FormatNumber(1000 * vol, capFmt)} / {Util.FormatNumber(1000 * max, capFmt)} L";
+    }
+
+    public void CargoContainerPercentages(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        if (this.containerPercentages.Count() == 0) {
+            ds.Text(" ");
+
+            return;
+        }
+
+        foreach (var item in this.containerPercentages) {
+            string filled = this.Filled(item.Value.current, item.Value.max);
+            float pct = (float)item.Value.current / (float)item.Value.max;
+
+            ds.Text($"{item.Value.name}").SetCursor(ds.width, null).Text($"{filled} ({Util.PctString(pct)})", textAlignment: TextAlignment.RIGHT).Newline();
+        }
+        ds.Newline(reverse: true);
+    }
+
+    public void CargoContainerBars(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        if (this.containerPercentages.Count() == 0) {
+            ds.Text(" ");
+
+            return;
+        }
+
+        foreach (var item in this.containerPercentages) {
+            string filled = this.Filled(item.Value.current, item.Value.max);
+            float pct = (float)item.Value.current / (float)item.Value.max;
+            DrawingSurface.Options barOpts = new DrawingSurface.Options();
+            barOpts.text = $"{item.Value.name} {filled} ({Util.PctString(pct)})";
+            barOpts.pct = pct;
+            barOpts.custom = options.custom;
+            barOpts.textColour = options.textColour;
+            this.CargoBar(ds, text, barOpts, pct);
+            ds.Newline();
+        }
+
+        ds.Newline(reverse: true);
+    }
+
+    public void CargoBar(DrawingSurface ds, string text, DrawingSurface.Options options, float pct) {
+        Color defaultText = options.textColour ?? ds.surface.ScriptForegroundColor;
         string colourName = options.custom.Get("colourLow") ?? "dimgreen";
         options.textColour = DrawingSurface.StringToColour(options.custom.Get("textColourLow")) ?? defaultText;
-        if (this.pct > 0.85) {
+        if (pct > 0.85) {
             colourName = options.custom.Get("colourHigh") ?? "dimred";
             options.textColour = DrawingSurface.StringToColour(options.custom.Get("textColourHigh")) ?? defaultText;
-        } else if (this.pct > 0.60) {
+        } else if (pct > 0.60) {
             colourName = options.custom.Get("colourMid") ?? "dimyellow";
             options.textColour = DrawingSurface.StringToColour(options.custom.Get("textColourMid")) ?? defaultText;
         }
 
-        options.pct = this.pct;
+        options.pct = pct;
         options.fillColour = DrawingSurface.StringToColour(colourName);
-        options.text = Util.PctString(this.pct);
+        options.text = options.text ?? Util.PctString(pct);
 
         ds.Bar(options);
     }
@@ -427,7 +486,9 @@ public class CargoStatus : Runnable {
 
     public void GetBlock(IMyTerminalBlock block) {
         if (block is IMyCargoContainer || block is IMyShipDrill || block is IMyShipConnector || block is IMyAssembler || block is IMyRefinery) {
-            this.cargoBlocks.Add(block);
+            if (!this.filterContainers.Match(block.CustomName).Success) {
+                this.cargoBlocks.Add(block);
+            }
         }
     }
 
@@ -440,6 +501,7 @@ public class CargoStatus : Runnable {
 
         this.cargoItemCounts.Clear();
         this.inventoryItems.Clear();
+        this.containerPercentages.Clear();
         this.max = 0;
         this.vol = 0;
         this.pct = 0f;
@@ -451,6 +513,10 @@ public class CargoStatus : Runnable {
                 continue;
             }
             var inv = c.GetInventory(0);
+            if (inv.MaxVolume == 0) {
+                continue;
+            }
+            this.containerPercentages.Add(c.EntityId,  new FillPct(inv.CurrentVolume, inv.MaxVolume, c.CustomName));
             this.vol += inv.CurrentVolume;
             this.max += inv.MaxVolume;
 
@@ -838,7 +904,7 @@ public class GasStatus : Runnable {
         });
         this.template.Register("gas.generationEnabled", (DrawingSurface ds, string text, DrawingSurface.Options options) => {
             string message = options.custom.Get("txtDisabled") ?? "Gas generation off";
-            if (this.GetGenerators()) {
+            if (this.AnyGeneratorEnabled()) {
                 message = options.custom.Get("txtEnabled") ?? "Gas generation on";
             }
             ds.Text(message, options);
@@ -862,7 +928,8 @@ public class GasStatus : Runnable {
             } else if (name.Contains("Hydrogen Tank")) {
                 this.h2Tanks.Add((IMyGasTank)block);
             }
-        } else if (block is IMyGasGenerator) {
+        } else if (block is IMyGasGenerator && block.DefinitionDisplayNameText.ToString() != "Irrigation System") {
+            this.program.log.Append($"gas gen: {block.DefinitionDisplayNameText.ToString()}\n");
             this.oxyGens.Add((IMyGasGenerator)block);
         }
     }
@@ -918,7 +985,7 @@ public class GasStatus : Runnable {
         }
     }
 
-    public bool GetGenerators() {
+    public bool AnyGeneratorEnabled() {
         foreach (IMyGasGenerator genny in this.oxyGens) {
             if (genny.Enabled) {
                 return true;
@@ -966,16 +1033,15 @@ public class GasStatus : Runnable {
     }
 
     public void GasExtendedMessage(DrawingSurface ds, string text, DrawingSurface.Options options) {
-        var max = Math.Floor(100 * Math.Max(this.o2FillPct, this.h2FillPct));
-        var min = Math.Ceiling(100 * Math.Min(this.o2FillPct, this.h2FillPct));
+        var current = Math.Ceiling(100 * Math.Min(this.o2FillPct, this.h2FillPct));
         string message = options.custom.Get("txtDisabled") ?? $"Gas generation off";
         if (this.enableFillPct != -1) {
-            message = message + $", enabled at {Math.Floor(100 * this.enableFillPct)}% (current: {min}%)";
+            message = message + $", enabled at {Math.Floor(100 * this.enableFillPct)}% (current: {current}%)";
         }
-        if (this.GetGenerators()) {
+        if (this.AnyGeneratorEnabled()) {
             message = options.custom.Get("txtEnabled") ?? $"Gas generation on";
             if (this.disableFillPct != -1) {
-                message = message + $", disabled at {Math.Ceiling(100 * this.disableFillPct)}% (current: {max}%)";
+                message = message + $", disabled at {Math.Ceiling(100 * this.disableFillPct)}% (current: {current}%)";
             }
         }
         ds.Text(message, options);
@@ -1210,6 +1276,7 @@ public class PowerDetails : Runnable {
         }
         this.template.Register("power.batteries", () => this.batteries.ToString());
         this.template.Register("power.batteryBar", this.BatteryBar);
+        this.template.Register("power.chargeBar", this.ChargeBar);
         this.template.Register("power.batteryCurrent", () => String.Format("{0:0.##}", this.batteryCurrent));
         this.template.Register("power.batteryInput", () => String.Format("{0:0.##}", this.batteryInput));
         this.template.Register("power.batteryInputMax", () => String.Format("{0:0.##}", this.batteryInputMax));
@@ -1427,6 +1494,24 @@ public class PowerDetails : Runnable {
         this.batteryPotential = (this.batteries - this.batteriesDisabled) == 0 ? 0f : (this.batteryOutputMW / (float)(this.batteries - this.batteriesDisabled)) * (float)this.batteriesDisabled;
         this.turbinePotential = (this.turbines - this.turbinesDisabled) == 0 ? 0f : (this.turbineOutputMW / (float)(this.turbines - this.turbinesDisabled)) * (float)this.turbinesDisabled;
         this.solarPotential = (this.solars - this.solarsDisabled) == 0 ? 0f : (this.solarOutputMW / (float)(this.solars - this.solarsDisabled)) * (float)this.solarsDisabled;
+    }
+
+    public void ChargeBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
+        if (this.batteries == 0 || this.batteryMax == 0) {
+            return;
+        }
+        float pct = this.batteryCurrent / this.batteryMax;
+        string colourName = "dimred";
+        if (pct > 0.85) {
+            colourName = "dimgreen";
+        } else if (pct > 0.5) {
+            colourName = "dimyellow";
+        }
+        options.pct = pct;
+        options.fillColour = DrawingSurface.StringToColour(colourName);
+        options.text = options.text ?? Util.PctString(pct);
+
+        ds.Bar(options);
     }
 
     public void BatteryBar(DrawingSurface ds, string text, DrawingSurface.Options options) {
@@ -1843,6 +1928,8 @@ public class ProductionDetails : Runnable {
 
         if (status == "Blocked" && !productionBlock.block.Enabled) {
             this.Enable(productionBlock.block, true);
+        } else {
+            productionBlock.idleTime = -1;
         }
 
         return false;
@@ -2912,6 +2999,9 @@ public static class Util {
     }
 
     public static string FormatNumber(VRage.MyFixedPoint input, string fmt = null) {
+        if ((int)input == 0) {
+            return "0";
+        }
         fmt = fmt ?? Util.GetFormatNumberStr(input);
         int n = Math.Max(0, (int)input);
 
