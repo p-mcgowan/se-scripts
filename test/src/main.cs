@@ -1,69 +1,45 @@
-Config config = new Config();
+// public void Main(string argument) {
+//     var x = VRage.Game.ObjectBuilders.ComponentSystem.MyObjectBuilder_SunTrackingComponent;
+//     // DateTime GameDateTime = Sandbox.ModAPI.MyAPIGateway.Session.GameDateTime;
+//     // double time = MySandboxGame.TotalGamePlayTimeInMilliseconds;
+// }
 
-public static TValue DictGet<TKey, TValue>(Dictionary<TKey, TValue> dict, TKey key, TValue defaultValue = default(TValue)) {
-    TValue value;
-    return dict.TryGetValue(key, out value) ? value : defaultValue;
-}
+public void Main(string argument) {
+    string[] countWhat = argument.Split(' ');
 
-public class Config {
-    public MyIni ini;
-    public string customData;
-    public Dictionary<string, string> settings;
-    public List<MyIniKey> keys;
+    double count;
+    if (!double.TryParse(countWhat[0], out count)) {
+        Echo($"invalid count - use eg. '3 veg'");
 
-    public Config() {
-        this.ini = new MyIni();
-        this.settings = new Dictionary<string, string>();
-        this.keys = new List<MyIniKey>();
+        return;
     }
 
-    public void Clear() {
-        this.ini.Clear();
-        this.settings.Clear();
-        this.keys.Clear();
-        this.customData = null;
+    MyDefinitionId? what = null;
+
+    switch (countWhat[1]) {
+        case "veg":
+            what = MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/Position0030_Seeds_Vegetables");
+        break;
+
+        case "grain":
+            what = MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/Position0020_Seeds_Grain");
+        break;
+
+        case "fruit":
+            what = MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/Position0010_Seeds_Fruit");
+        break;
+
+        case "mush":
+            what = MyDefinitionId.Parse("MyObjectBuilder_BlueprintDefinition/Position0040_Spores_Mushrooms");
+        break;
     }
 
-    public bool Parse(Program p) {
-        this.Clear();
+    if (what == null) {
+        Echo($"invalid req - must be 'veg', 'grain', 'fruit', or 'mush'");
 
-        MyIniParseResult result;
-        if (!this.ini.TryParse(p.Me.CustomData, out result)) {
-            p.Echo($"failed to parse custom data\n{result}");
-            return false;
-        }
-        this.customData = p.Me.CustomData;
-
-        string value;
-        ini.GetKeys(this.keys);
-
-        foreach (MyIniKey key in this.keys) {
-            if (ini.Get(key.Section, key.Name).TryGetString(out value)) {
-                p.Echo($"setting {key.ToString()} = {value}");
-                this.Set(key.ToString(), value);
-            }
-        }
-
-        return true;
+        return;
     }
 
-    public void Set(string name, string value) {
-        this.settings[name] = value;
-    }
-
-    public string Get(string name, string alt = null) {
-        return DictGet<string, string>(this.settings, name, null) ?? alt;
-    }
-
-    public bool Enabled(string name) {
-        return DictGet<string, string>(this.settings, name, "false") == "true";
-    }
-}
-
-public Program() {
-    config.Parse(this);
-}
-
-public void Main() {
-
+    IMyProductionBlock processor = (IMyProductionBlock)GridTerminalSystem.GetBlockWithName("Food Processor");
+    processor.AddQueueItem((MyDefinitionId)what, count);
 }
