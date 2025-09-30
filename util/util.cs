@@ -54,6 +54,9 @@ public static class Util {
     }
 
     public static string FormatNumber(VRage.MyFixedPoint input, string fmt = null) {
+        if ((int)input == 0) {
+            return "0";
+        }
         fmt = fmt ?? Util.GetFormatNumberStr(input);
         int n = Math.Max(0, (int)input);
 
